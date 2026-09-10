@@ -54,6 +54,29 @@ def run_detection(csv_path: str | Path, dataset: str, config: AppConfig, seed: i
     )
 
 
+def attribution_configurations() -> list[str]:
+    return [
+        'DC',
+        'DC+BSS',
+        'DC+BSS+ECS',
+        'DC+BSS+ECS+MAS',
+        'WEF',
+        'ACFM',
+    ]
+
+
+def experiment_contract(dataset: str, seed: int, detector_names: list[str] | None = None) -> dict:
+    return {
+        'schema_version': 'XAITA-OT-V2-CONTRACT-1.0',
+        'dataset': dataset,
+        'seed': seed,
+        'detectors': detector_names or ['RF', 'CNN', 'LSTM', 'CNN-LSTM'],
+        'attribution_configurations': attribution_configurations(),
+        'outputs': ['metrics', 'runtime', 'config', 'provenance', 'xai', 'artifacts'],
+        'status_semantics': ['planned', 'running', 'completed', 'failed', 'blocked_data'],
+    }
+
+
 def aggregate_runs(runs: list[ExperimentRun]) -> dict:
     if not runs:
         return {'schema_version': 'XAITA-OT-V2-EXPERIMENT-1.0', 'runs': [], 'aggregate': {}}
