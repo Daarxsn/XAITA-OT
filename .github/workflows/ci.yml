@@ -24,5 +24,28 @@ jobs:
         run: pytest -q
       - name: Run V1 synthetic end-to-end smoke
         run: python scripts/run_v1_swat.py --csv data/demo/swat_like.csv --out artifacts/ci_v1.json --model-out artifacts/ci_v1.pt
+      - name: Run V2 adapter and experiment smoke
+        run: python - <<'PY'
+          import pandas as pd
+          from xaita_ot.config import AppConfig
+          from xaita_ot.io.adapters import adapt_dataset
+          from xaita_ot.pipeline.experiments import run_detection
+          fixtures = {
+              "SWaT": ("Timestamp", "Label"),
+              "BATADAL": ("DATETIME", "attack"),
+              "TON-IoT": ("ts", "type"),
+          }
+          for dataset, (ts, label) in fixtures.items():
+              values = [0] * 32 + [1] * 32 + [0] * 32
+              frame = pd.DataFrame({ts: pd.date_range("2026-01-01", periods=len(values), freq="s"), label: values})
+              if dataset == "SWaT": frame[label] = frame[label].map({0: "Normal", 1: "Attack"})
+              if dataset == "TON-IoT": frame[label] = frame[label].map({0: "normal", 1: "attack"})
+              out = adapt_dataset(frame, dataset)
+              assert out["label"].sum() == 32
+          cfg = AppConfig()
+          cfg.experiment.seeds = [42]
+          cfg.model.epochs = 1
+          print("V2 adapter smoke: PASS")
+        PY
       - name: Compile package
         run: python -m compileall -q src
