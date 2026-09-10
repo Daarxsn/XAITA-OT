@@ -5,7 +5,8 @@ import pandas as pd
 from xaita_ot.config import AppConfig
 from xaita_ot.core.btae import event_relation, reconstruct
 from xaita_ot.core.schemas import DetectionEvent, AttributionHypothesis, OTEvent, ProvenanceRecord
-from xaita_ot.pipeline.evaluation import chronological_split, expected_calibration_error
+from xaita_ot.pipeline.evaluation import chronological_split, expected_calibration_error, attribution_ablation
+from xaita_ot.pipeline.experiments import attribution_configurations, experiment_contract
 
 
 def _events():
@@ -50,3 +51,22 @@ def test_episode_aware_split_keeps_attack_runs_together():
 def test_ece_is_bounded():
     value = expected_calibration_error([0, 0, 1, 1], [0.1, 0.2, 0.8, 0.9])
     assert 0.0 <= value <= 1.0
+
+
+def test_v2_contract_has_four_detectors_and_six_attribution_methods():
+    contract = experiment_contract("SWaT", 42)
+    assert contract["detectors"] == ["RF", "CNN", "LSTM", "CNN-LSTM"]
+    assert contract["attribution_configurations"] == attribution_configurations()
+    assert len(contract["attribution_configurations"]) == 6
+
+
+def test_attribution_ablation_executes_all_six_methods():
+    evidence = {
+        "H1": {"DC": .90, "BSS": .82, "ECS": .76, "EC": .70, "MAS": .68},
+        "H2": {"DC": .40, "BSS": .45, "ECS": .50, "EC": .30, "MAS": .42},
+        "H3": {"DC": .50, "BSS": .50, "ECS": .50, "EC": .50, "MAS": .50},
+    }
+    reliability = {"DC": .90, "BSS": .85, "ECS": .80, "EC": .75, "MAS": .70}
+    results = attribution_ablation(evidence, ["H1", "H2", "H3"], reliability)
+    assert list(results) == ["DC", "DC+BSS", "DC+BSS+ECS", "DC+BSS+ECS+MAS", "ACFM", "WEF"]
+    assert all(results[name] for name in results)
