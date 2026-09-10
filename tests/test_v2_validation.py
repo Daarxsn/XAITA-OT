@@ -4,7 +4,7 @@ import pandas as pd
 
 from xaita_ot.config import AppConfig
 from xaita_ot.core.btae import event_relation, reconstruct
-from xaita_ot.core.schemas import DetectionEvent
+from xaita_ot.core.schemas import DetectionEvent, AttributionHypothesis, OTEvent, ProvenanceRecord
 from xaita_ot.pipeline.evaluation import chronological_split, expected_calibration_error
 
 
@@ -16,7 +16,7 @@ def _events():
 def test_configurable_btae_weights_sum_to_one():
     cfg = AppConfig()
     assert abs(sum(cfg.correlation.weights.values()) - 1.0) < 1e-9
-    expected = 0.35 * (1.0 - 5.0 / 60.0) + 0.25 + 0.20 + 0.20
+    expected = 0.30 * (1.0 - 5.0 / 60.0) + 0.20 + 0.15 + 0.15 * 0.50 + 0.20
     assert abs(event_relation(_events()[0], _events()[1], 60, cfg.correlation.weights) - expected) < 1e-6
 
 
@@ -25,6 +25,17 @@ def test_episode_preserves_correlation_edges():
     assert len(episode.correlation_edges) == 3
     assert episode.correlation_edges[0]["source_event"] == "e0"
     assert episode.correlation_edges[0]["target_event"] == "e1"
+    assert "communication_relationship" in episode.correlation_edges[0]
+
+
+def test_canonical_evidence_objects_exist():
+    now = datetime.now(timezone.utc)
+    observation = OTEvent("obs-1", now, provenance=["sensor-1"])
+    hypothesis = AttributionHypothesis("H1", "Candidate attribution", "Test hypothesis")
+    provenance = ProvenanceRecord("obs-1", "telemetry", "sensor-1", now)
+    assert observation.event_id == hypothesis.hypothesis_id.replace("H1", "obs-1") or observation.event_id == "obs-1"
+    assert hypothesis.status == "candidate"
+    assert provenance.parent_ids == []
 
 
 def test_episode_aware_split_keeps_attack_runs_together():
