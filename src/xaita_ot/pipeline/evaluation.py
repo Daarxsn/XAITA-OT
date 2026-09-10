@@ -33,13 +33,16 @@ def chronological_split(df, train=0.70, val=0.15, label_col="label", episode_awa
     if not episode_aware or label_col not in df.columns:
         a, b = int(n * train), int(n * (train + val))
         return df.iloc[:a].copy(), df.iloc[a:b].copy(), df.iloc[b:].copy()
+    if train <= 0 or val <= 0 or train + val >= 1:
+        raise ValueError("train/validation fractions must be positive and sum to less than 1")
     labels = df[label_col].astype(int).to_numpy(); episodes = _binary_episode_ids(labels)
     boundaries = [i for i in range(1, n) if episodes[i - 1] != episodes[i]]
     target_a, target_b = n * train, n * (train + val)
-    a = min(boundaries, key=lambda x: abs(x - target_a)) if boundaries else int(target_a)
-    after_a = [i for i in boundaries if i > a]
-    b = min(after_a, key=lambda x: abs(x - target_b)) if after_a else int(target_b)
-    b = min(n, max(a + 1, b))
+    feasible = [(a, b) for a in boundaries for b in boundaries if a < b]
+    if not feasible:
+        a, b = int(target_a), int(target_b)
+    else:
+        a, b = min(feasible, key=lambda pair: abs(pair[0] - target_a) + abs(pair[1] - target_b))
     return df.iloc[:a].copy(), df.iloc[a:b].copy(), df.iloc[b:].copy()
 
 
@@ -74,7 +77,7 @@ def train_baselines(train_wd, val_wd, test_wd, cfg):
     return out
 
 
-def attribution_ablation(evidence, hypotheses, reliabilities):
+def attribution_ablation(evidence, hypotheses, reliabilities, support_threshold=0.60, conflict_threshold=0.35):
     """Run the planned evidence ladder. Results are raw assessments, never fabricated."""
     from ..core.attribution import assess
     methods = {
@@ -86,5 +89,5 @@ def attribution_ablation(evidence, hypotheses, reliabilities):
     results = {}
     for name, sources in methods.items():
         filtered = {h: {k: v for k, v in evidence.get(h, {}).items() if k in sources} for h in hypotheses}
-        results[name] = [assess(hypotheses, filtered, reliabilities)[0] for _ in [0]] if hypotheses else []
+        results[name] = [assess(hypotheses, filtered, reliabilities, support_threshold, conflict_threshold)[0] for _ in [0]] if hypotheses else []
     return results
