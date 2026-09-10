@@ -1,0 +1,14 @@
+# Behavior-to-ATT&CK-for-ICS mappings are configuration, not hard-coded actor attribution.
+# Validate the mapping against the ATT&CK release used for a given evaluation.
+reconnaissance:
+  technique_id: T0846
+  name: Remote System Discovery
+protocol:
+  technique_id: T0869
+  name: Standard Application Layer Protocol
+unauthorized_command:
+  technique_id: T0855
+  name: Unauthorized Command Message
+process_deviation:
+  technique_id: T0831
+  name: Manipulation of Control

@@ -1,0 +1,7 @@
+services:
+  xaita-ot:
+    build: .
+    ports:
+      - "8080:8080"
+    read_only: true
+    restart: unless-stopped

@@ -1,0 +1,30 @@
+seed: 42
+attack_label_column: label
+timestamp_column: timestamp
+output_dir: artifacts
+model:
+  input_features: 16
+  window_size: 32
+  cnn_channels: 32
+  lstm_hidden: 64
+  dropout: 0.20
+  epochs: 8
+  batch_size: 128
+  learning_rate: 0.001
+correlation:
+  temporal_window_seconds: 60
+  threshold: 0.55
+attribution:
+  reliability:
+    DC: 0.70
+    BSS: 0.80
+    ECS: 0.85
+    EC: 0.80
+    MAS: 0.65
+  ambiguity_margin: 0.08
+risk:
+  weights:
+    severity: 0.30
+    operational_impact: 0.30
+    criticality: 0.25
+    attribution: 0.15

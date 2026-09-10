@@ -1,0 +1,4 @@
+Copyright (c) 2026 XAITA-OT Research Project.
+
+This repository is supplied for research and controlled evaluation. Commercial deployment,
+redistribution, and production use require an appropriate license and security review.

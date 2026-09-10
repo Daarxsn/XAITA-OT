@@ -1,0 +1,370 @@
+[
+  {
+    "schema_version": "XAITA-OT-CTI-1.0",
+    "incident_id": "EP-00001",
+    "generated_at": "2026-09-10T07:28:55.487830+00:00",
+    "detection": {
+      "event_ids": [
+        "e1",
+        "e2",
+        "e3",
+        "e4",
+        "e5",
+        "e6",
+        "e7",
+        "e8",
+        "e9",
+        "e10",
+        "e11",
+        "e12"
+      ],
+      "mean_detection_confidence": 0.8975000000000001
+    },
+    "behavior": {
+      "episode_id": "EP-00001",
+      "event_ids": [
+        "e1",
+        "e2",
+        "e3",
+        "e4",
+        "e5",
+        "e6",
+        "e7",
+        "e8",
+        "e9",
+        "e10",
+        "e11",
+        "e12"
+      ],
+      "correlation_strength": 0.84,
+      "stages": [
+        "reconnaissance",
+        "protocol",
+        "unauthorized_command",
+        "process_deviation",
+        "reconnaissance",
+        "protocol",
+        "unauthorized_command",
+        "process_deviation",
+        "reconnaissance",
+        "protocol",
+        "unauthorized_command",
+        "process_deviation"
+      ]
+    },
+    "context": [
+      {
+        "event_id": "e1",
+        "technique_id": "T0846",
+        "name": "Remote System Discovery",
+        "supporting_evidence": [
+          "e1"
+        ]
+      },
+      {
+        "event_id": "e2",
+        "technique_id": "T0869",
+        "name": "Standard Application Layer Protocol",
+        "supporting_evidence": [
+          "e2"
+        ]
+      },
+      {
+        "event_id": "e3",
+        "technique_id": "T0855",
+        "name": "Unauthorized Command Message",
+        "supporting_evidence": [
+          "e3"
+        ]
+      },
+      {
+        "event_id": "e4",
+        "technique_id": "T0814",
+        "name": "DoS: Network Flooding",
+        "supporting_evidence": [
+          "e4"
+        ]
+      },
+      {
+        "event_id": "e5",
+        "technique_id": "T0846",
+        "name": "Remote System Discovery",
+        "supporting_evidence": [
+          "e5"
+        ]
+      },
+      {
+        "event_id": "e6",
+        "technique_id": "T0869",
+        "name": "Standard Application Layer Protocol",
+        "supporting_evidence": [
+          "e6"
+        ]
+      },
+      {
+        "event_id": "e7",
+        "technique_id": "T0855",
+        "name": "Unauthorized Command Message",
+        "supporting_evidence": [
+          "e7"
+        ]
+      },
+      {
+        "event_id": "e8",
+        "technique_id": "T0814",
+        "name": "DoS: Network Flooding",
+        "supporting_evidence": [
+          "e8"
+        ]
+      },
+      {
+        "event_id": "e9",
+        "technique_id": "T0846",
+        "name": "Remote System Discovery",
+        "supporting_evidence": [
+          "e9"
+        ]
+      },
+      {
+        "event_id": "e10",
+        "technique_id": "T0869",
+        "name": "Standard Application Layer Protocol",
+        "supporting_evidence": [
+          "e10"
+        ]
+      },
+      {
+        "event_id": "e11",
+        "technique_id": "T0855",
+        "name": "Unauthorized Command Message",
+        "supporting_evidence": [
+          "e11"
+        ]
+      },
+      {
+        "event_id": "e12",
+        "technique_id": "T0814",
+        "name": "DoS: Network Flooding",
+        "supporting_evidence": [
+          "e12"
+        ]
+      }
+    ],
+    "attribution": {
+      "hypothesis": "H1",
+      "belief": 1.0,
+      "plausibility": 1.0,
+      "supporting": [
+        {
+          "source": "DC",
+          "value": 0.8975000000000001,
+          "reliability": 0.7
+        },
+        {
+          "source": "BSS",
+          "value": 0.9235,
+          "reliability": 0.8
+        },
+        {
+          "source": "ECS",
+          "value": 1,
+          "reliability": 0.85
+        },
+        {
+          "source": "EC",
+          "value": 0.84,
+          "reliability": 0.8
+        },
+        {
+          "source": "MAS",
+          "value": 1,
+          "reliability": 0.65
+        }
+      ],
+      "conflicting": [],
+      "unresolved": [],
+      "interval_width": 0.0
+    },
+    "xai": {
+      "feature_level": {
+        "question": "Why was the activity detected?",
+        "top_features": [
+          {
+            "feature": "f0",
+            "importance": 0.7560975551605225
+          },
+          {
+            "feature": "f1",
+            "importance": 0.24390241503715515
+          }
+        ]
+      },
+      "behavioral_level": {
+        "question": "Why were the events correlated?",
+        "factors": [
+          "temporal proximity",
+          "affected assets",
+          "protocol/communication",
+          "event ordering"
+        ]
+      },
+      "attack_stage_level": {
+        "question": "How did the attack progress?",
+        "events": [
+          "e1",
+          "e2",
+          "e3",
+          "e4",
+          "e5",
+          "e6",
+          "e7",
+          "e8",
+          "e9",
+          "e10",
+          "e11",
+          "e12"
+        ],
+        "context": [
+          {
+            "event_id": "e1",
+            "technique_id": "T0846",
+            "name": "Remote System Discovery",
+            "supporting_evidence": [
+              "e1"
+            ]
+          },
+          {
+            "event_id": "e2",
+            "technique_id": "T0869",
+            "name": "Standard Application Layer Protocol",
+            "supporting_evidence": [
+              "e2"
+            ]
+          },
+          {
+            "event_id": "e3",
+            "technique_id": "T0855",
+            "name": "Unauthorized Command Message",
+            "supporting_evidence": [
+              "e3"
+            ]
+          },
+          {
+            "event_id": "e4",
+            "technique_id": "T0814",
+            "name": "DoS: Network Flooding",
+            "supporting_evidence": [
+              "e4"
+            ]
+          },
+          {
+            "event_id": "e5",
+            "technique_id": "T0846",
+            "name": "Remote System Discovery",
+            "supporting_evidence": [
+              "e5"
+            ]
+          },
+          {
+            "event_id": "e6",
+            "technique_id": "T0869",
+            "name": "Standard Application Layer Protocol",
+            "supporting_evidence": [
+              "e6"
+            ]
+          },
+          {
+            "event_id": "e7",
+            "technique_id": "T0855",
+            "name": "Unauthorized Command Message",
+            "supporting_evidence": [
+              "e7"
+            ]
+          },
+          {
+            "event_id": "e8",
+            "technique_id": "T0814",
+            "name": "DoS: Network Flooding",
+            "supporting_evidence": [
+              "e8"
+            ]
+          },
+          {
+            "event_id": "e9",
+            "technique_id": "T0846",
+            "name": "Remote System Discovery",
+            "supporting_evidence": [
+              "e9"
+            ]
+          },
+          {
+            "event_id": "e10",
+            "technique_id": "T0869",
+            "name": "Standard Application Layer Protocol",
+            "supporting_evidence": [
+              "e10"
+            ]
+          },
+          {
+            "event_id": "e11",
+            "technique_id": "T0855",
+            "name": "Unauthorized Command Message",
+            "supporting_evidence": [
+              "e11"
+            ]
+          },
+          {
+            "event_id": "e12",
+            "technique_id": "T0814",
+            "name": "DoS: Network Flooding",
+            "supporting_evidence": [
+              "e12"
+            ]
+          }
+        ]
+      },
+      "risk_level": {
+        "question": "Why was the incident prioritized?",
+        "risk_score": 0.89425,
+        "factors": {
+          "severity": 0.8975000000000001,
+          "operational_impact": 1,
+          "criticality": 0.7,
+          "attribution": 1
+        }
+      }
+    },
+    "risk": {
+      "score": 0.89425,
+      "level": "CRITICAL",
+      "factors": {
+        "severity": 0.8975000000000001,
+        "operational_impact": 1,
+        "criticality": 0.7,
+        "attribution": 1
+      },
+      "weights": {
+        "severity": 0.3,
+        "operational_impact": 0.3,
+        "criticality": 0.25,
+        "attribution": 0.15
+      }
+    },
+    "provenance": [
+      "e1",
+      "e2",
+      "e3",
+      "e4",
+      "e5",
+      "e6",
+      "e7",
+      "e8",
+      "e9",
+      "e10",
+      "e11",
+      "e12"
+    ],
+    "human_validation_required": true,
+    "autonomous_ot_action": false
+  }
+]

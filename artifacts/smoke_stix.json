@@ -1,0 +1,230 @@
+{
+  "type": "bundle",
+  "id": "bundle--164a334b-e334-4de5-bb62-52053e0a5654",
+  "objects": [
+    {
+      "type": "identity",
+      "spec_version": "2.1",
+      "id": "identity--eb5a5c4c-86f9-4b70-a47d-7f9b61a9a381",
+      "created": "2026-09-10T07:28:56.858377Z",
+      "modified": "2026-09-10T07:28:56.858377Z",
+      "name": "XAITA-OT",
+      "identity_class": "system"
+    },
+    {
+      "type": "attack-pattern",
+      "spec_version": "2.1",
+      "id": "attack-pattern--069867e8-137f-44d0-b6fc-d011fa7c17dc",
+      "created": "2026-09-10T07:28:56.858377Z",
+      "modified": "2026-09-10T07:28:56.858377Z",
+      "name": "Remote System Discovery",
+      "description": "ATT&CK contextual evidence associated by XAITA-OT; not actor identity proof.",
+      "external_references": [
+        {
+          "source_name": "mitre-attack",
+          "external_id": "T0846",
+          "url": "https://attack.mitre.org/techniques/ics/T0846"
+        }
+      ]
+    },
+    {
+      "type": "attack-pattern",
+      "spec_version": "2.1",
+      "id": "attack-pattern--27e478e7-b1cc-4a84-af8d-5e766ac65235",
+      "created": "2026-09-10T07:28:56.858377Z",
+      "modified": "2026-09-10T07:28:56.858377Z",
+      "name": "Standard Application Layer Protocol",
+      "description": "ATT&CK contextual evidence associated by XAITA-OT; not actor identity proof.",
+      "external_references": [
+        {
+          "source_name": "mitre-attack",
+          "external_id": "T0869",
+          "url": "https://attack.mitre.org/techniques/ics/T0869"
+        }
+      ]
+    },
+    {
+      "type": "attack-pattern",
+      "spec_version": "2.1",
+      "id": "attack-pattern--4595847c-67b8-4c88-a06a-035563674189",
+      "created": "2026-09-10T07:28:56.858377Z",
+      "modified": "2026-09-10T07:28:56.858377Z",
+      "name": "Unauthorized Command Message",
+      "description": "ATT&CK contextual evidence associated by XAITA-OT; not actor identity proof.",
+      "external_references": [
+        {
+          "source_name": "mitre-attack",
+          "external_id": "T0855",
+          "url": "https://attack.mitre.org/techniques/ics/T0855"
+        }
+      ]
+    },
+    {
+      "type": "attack-pattern",
+      "spec_version": "2.1",
+      "id": "attack-pattern--2d13995b-606e-4a13-a83f-577c8fcb282c",
+      "created": "2026-09-10T07:28:56.858377Z",
+      "modified": "2026-09-10T07:28:56.858377Z",
+      "name": "DoS: Network Flooding",
+      "description": "ATT&CK contextual evidence associated by XAITA-OT; not actor identity proof.",
+      "external_references": [
+        {
+          "source_name": "mitre-attack",
+          "external_id": "T0814",
+          "url": "https://attack.mitre.org/techniques/ics/T0814"
+        }
+      ]
+    },
+    {
+      "type": "attack-pattern",
+      "spec_version": "2.1",
+      "id": "attack-pattern--1809d791-5105-47cc-bb9a-e2565db86963",
+      "created": "2026-09-10T07:28:56.858377Z",
+      "modified": "2026-09-10T07:28:56.858377Z",
+      "name": "Remote System Discovery",
+      "description": "ATT&CK contextual evidence associated by XAITA-OT; not actor identity proof.",
+      "external_references": [
+        {
+          "source_name": "mitre-attack",
+          "external_id": "T0846",
+          "url": "https://attack.mitre.org/techniques/ics/T0846"
+        }
+      ]
+    },
+    {
+      "type": "attack-pattern",
+      "spec_version": "2.1",
+      "id": "attack-pattern--cd631b96-f68b-4680-b37f-9d017a4a964d",
+      "created": "2026-09-10T07:28:56.858377Z",
+      "modified": "2026-09-10T07:28:56.858377Z",
+      "name": "Standard Application Layer Protocol",
+      "description": "ATT&CK contextual evidence associated by XAITA-OT; not actor identity proof.",
+      "external_references": [
+        {
+          "source_name": "mitre-attack",
+          "external_id": "T0869",
+          "url": "https://attack.mitre.org/techniques/ics/T0869"
+        }
+      ]
+    },
+    {
+      "type": "attack-pattern",
+      "spec_version": "2.1",
+      "id": "attack-pattern--207949ec-2bdf-4316-9abb-6e74aa04b4b9",
+      "created": "2026-09-10T07:28:56.858377Z",
+      "modified": "2026-09-10T07:28:56.858377Z",
+      "name": "Unauthorized Command Message",
+      "description": "ATT&CK contextual evidence associated by XAITA-OT; not actor identity proof.",
+      "external_references": [
+        {
+          "source_name": "mitre-attack",
+          "external_id": "T0855",
+          "url": "https://attack.mitre.org/techniques/ics/T0855"
+        }
+      ]
+    },
+    {
+      "type": "attack-pattern",
+      "spec_version": "2.1",
+      "id": "attack-pattern--c9cba004-0628-4218-874b-2b53369266d4",
+      "created": "2026-09-10T07:28:56.858377Z",
+      "modified": "2026-09-10T07:28:56.858377Z",
+      "name": "DoS: Network Flooding",
+      "description": "ATT&CK contextual evidence associated by XAITA-OT; not actor identity proof.",
+      "external_references": [
+        {
+          "source_name": "mitre-attack",
+          "external_id": "T0814",
+          "url": "https://attack.mitre.org/techniques/ics/T0814"
+        }
+      ]
+    },
+    {
+      "type": "attack-pattern",
+      "spec_version": "2.1",
+      "id": "attack-pattern--3d25cac7-3774-466a-ba6c-8bde9fb33f48",
+      "created": "2026-09-10T07:28:56.858377Z",
+      "modified": "2026-09-10T07:28:56.858377Z",
+      "name": "Remote System Discovery",
+      "description": "ATT&CK contextual evidence associated by XAITA-OT; not actor identity proof.",
+      "external_references": [
+        {
+          "source_name": "mitre-attack",
+          "external_id": "T0846",
+          "url": "https://attack.mitre.org/techniques/ics/T0846"
+        }
+      ]
+    },
+    {
+      "type": "attack-pattern",
+      "spec_version": "2.1",
+      "id": "attack-pattern--0b608f63-6301-4d23-a158-fb58da1bb741",
+      "created": "2026-09-10T07:28:56.858377Z",
+      "modified": "2026-09-10T07:28:56.858377Z",
+      "name": "Standard Application Layer Protocol",
+      "description": "ATT&CK contextual evidence associated by XAITA-OT; not actor identity proof.",
+      "external_references": [
+        {
+          "source_name": "mitre-attack",
+          "external_id": "T0869",
+          "url": "https://attack.mitre.org/techniques/ics/T0869"
+        }
+      ]
+    },
+    {
+      "type": "attack-pattern",
+      "spec_version": "2.1",
+      "id": "attack-pattern--66e9d572-7a90-4e27-a15e-4f92c7162757",
+      "created": "2026-09-10T07:28:56.858377Z",
+      "modified": "2026-09-10T07:28:56.858377Z",
+      "name": "Unauthorized Command Message",
+      "description": "ATT&CK contextual evidence associated by XAITA-OT; not actor identity proof.",
+      "external_references": [
+        {
+          "source_name": "mitre-attack",
+          "external_id": "T0855",
+          "url": "https://attack.mitre.org/techniques/ics/T0855"
+        }
+      ]
+    },
+    {
+      "type": "attack-pattern",
+      "spec_version": "2.1",
+      "id": "attack-pattern--ede01dfd-f2d2-4d30-9e92-0a76cf98f446",
+      "created": "2026-09-10T07:28:56.858377Z",
+      "modified": "2026-09-10T07:28:56.858377Z",
+      "name": "DoS: Network Flooding",
+      "description": "ATT&CK contextual evidence associated by XAITA-OT; not actor identity proof.",
+      "external_references": [
+        {
+          "source_name": "mitre-attack",
+          "external_id": "T0814",
+          "url": "https://attack.mitre.org/techniques/ics/T0814"
+        }
+      ]
+    },
+    {
+      "type": "note",
+      "spec_version": "2.1",
+      "id": "note--a2e62694-341c-419f-a62e-edb2416f791b",
+      "created": "2026-09-10T07:28:56.858377Z",
+      "modified": "2026-09-10T07:28:56.858377Z",
+      "content": "XAITA-OT incident EP-00001; risk=CRITICAL; attribution hypothesis=H1; belief=1.000; plausibility=1.000. Human validation required; no autonomous OT action.",
+      "created_by_ref": "identity--eb5a5c4c-86f9-4b70-a47d-7f9b61a9a381",
+      "object_refs": [
+        "attack-pattern--069867e8-137f-44d0-b6fc-d011fa7c17dc",
+        "attack-pattern--27e478e7-b1cc-4a84-af8d-5e766ac65235",
+        "attack-pattern--4595847c-67b8-4c88-a06a-035563674189",
+        "attack-pattern--2d13995b-606e-4a13-a83f-577c8fcb282c",
+        "attack-pattern--1809d791-5105-47cc-bb9a-e2565db86963",
+        "attack-pattern--cd631b96-f68b-4680-b37f-9d017a4a964d",
+        "attack-pattern--207949ec-2bdf-4316-9abb-6e74aa04b4b9",
+        "attack-pattern--c9cba004-0628-4218-874b-2b53369266d4",
+        "attack-pattern--3d25cac7-3774-466a-ba6c-8bde9fb33f48",
+        "attack-pattern--0b608f63-6301-4d23-a158-fb58da1bb741",
+        "attack-pattern--66e9d572-7a90-4e27-a15e-4f92c7162757",
+        "attack-pattern--ede01dfd-f2d2-4d30-9e92-0a76cf98f446"
+      ]
+    }
+  ]
+}
