@@ -14,6 +14,11 @@ model:
 correlation:
   temporal_window_seconds: 60
   threshold: 0.55
+  weights:
+    temporal: 0.35
+    asset: 0.25
+    protocol: 0.20
+    behavior: 0.20
 attribution:
   reliability:
     DC: 0.70
@@ -22,9 +27,25 @@ attribution:
     EC: 0.80
     MAS: 0.65
   ambiguity_margin: 0.08
+  support_threshold: 0.60
+  conflict_threshold: 0.35
+  methods:
+    - DC
+    - DC+BSS
+    - DC+BSS+ECS
+    - DC+BSS+ECS+MAS
+    - WEF
+    - ACFM
 risk:
   weights:
     severity: 0.30
     operational_impact: 0.30
     criticality: 0.25
     attribution: 0.15
+experiment:
+  seeds: [42, 43, 44, 45, 46]
+  train_fraction: 0.70
+  validation_fraction: 0.15
+  episode_aware: true
+  xai_background_samples: 16
+  xai_explanation_samples: 16
