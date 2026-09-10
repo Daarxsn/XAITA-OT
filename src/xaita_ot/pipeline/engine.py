@@ -60,7 +60,13 @@ class XAITAEngine:
             mas = self._mas(ep)
             base = {"DC": dc, "BSS": bss, "ECS": ecs, "EC": ec, "MAS": mas}
             evidence = self._hypothesis_evidence(base, hypotheses)
-            attrs = assess(hypotheses, evidence, self.config.attribution.reliability)
+            attrs = assess(
+                hypotheses,
+                evidence,
+                self.config.attribution.reliability,
+                self.config.attribution.support_threshold,
+                self.config.attribution.conflict_threshold,
+            )
             best = to_dict(attrs[0]) if attrs else None
             if best is not None:
                 best["evidence_vector"] = evidence.get(best["hypothesis"], {})
