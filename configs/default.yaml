@@ -15,9 +15,10 @@ correlation:
   temporal_window_seconds: 60
   threshold: 0.55
   weights:
-    temporal: 0.35
-    asset: 0.25
-    protocol: 0.20
+    temporal: 0.30
+    asset: 0.20
+    protocol: 0.15
+    communication: 0.15
     behavior: 0.20
 attribution:
   reliability:
