@@ -18,6 +18,7 @@ class AttackEpisode:
     events: list[DetectionEvent]
     correlation_strength: float
     stages: list[str] = field(default_factory=list)
+    correlation_edges: list[dict[str, Any]] = field(default_factory=list)
 
 @dataclass
 class AttributionAssessment:
