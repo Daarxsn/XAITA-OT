@@ -4,12 +4,16 @@ import json
 
 def generate_cti(incident_id, detection, episode, context, attribution, xai, risk):
     provenance = [e.event_id for e in episode.events]
+    observation_ids = [e.observation_id for e in episode.events if e.observation_id]
     event_trace = [
         {
             'event_id': e.event_id,
+            'observation_id': e.observation_id,
             'timestamp': e.timestamp.isoformat(),
             'asset': e.asset,
             'protocol': e.protocol,
+            'source': e.source,
+            'destination': e.destination,
             'label': e.label,
             'detection_confidence': e.detection_confidence,
             'attack_context': [c for c in context if c.get('event_id') == e.event_id],
@@ -34,6 +38,12 @@ def generate_cti(incident_id, detection, episode, context, attribution, xai, ris
       'xai': xai,
       'risk': risk,
       'provenance': provenance,
+      'provenance_links': {
+          'observations': observation_ids,
+          'detections': provenance,
+          'episodes': [episode.episode_id],
+          'attack_context': [c.get('technique_id') for c in context if c.get('technique_id')],
+      },
       'human_validation_required': True,
       'autonomous_ot_action': False,
     }
