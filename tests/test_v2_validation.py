@@ -10,16 +10,14 @@ from xaita_ot.pipeline.evaluation import chronological_split, expected_calibrati
 
 def _events():
     t = datetime.now(timezone.utc)
-    return [
-        DetectionEvent(f"e{i}", t + timedelta(seconds=i * 5), "PLC1", "modbus", "attack", 0.8)
-        for i in range(4)
-    ]
+    return [DetectionEvent(f"e{i}", t + timedelta(seconds=i * 5), "PLC1", "modbus", "attack", 0.8) for i in range(4)]
 
 
 def test_configurable_btae_weights_sum_to_one():
     cfg = AppConfig()
     assert abs(sum(cfg.correlation.weights.values()) - 1.0) < 1e-9
-    assert abs(event_relation(_events()[0], _events()[1], 60, cfg.correlation.weights) - 0.95) < 1e-6
+    expected = 0.35 * (1.0 - 5.0 / 60.0) + 0.25 + 0.20 + 0.20
+    assert abs(event_relation(_events()[0], _events()[1], 60, cfg.correlation.weights) - expected) < 1e-6
 
 
 def test_episode_preserves_correlation_edges():
@@ -33,7 +31,6 @@ def test_episode_aware_split_keeps_attack_runs_together():
     labels = [0] * 10 + [1] * 5 + [0] * 10 + [1] * 5 + [0] * 10
     df = pd.DataFrame({"timestamp": pd.date_range("2026-01-01", periods=len(labels), freq="s"), "label": labels})
     tr, va, te = chronological_split(df, .70, .15, "label", episode_aware=True)
-    # Every split boundary must be between attack/non-attack runs.
     for left, right in ((tr, va), (va, te)):
         if len(left) and len(right):
             assert not (int(left.iloc[-1].label) == 1 and int(right.iloc[0].label) == 1)
