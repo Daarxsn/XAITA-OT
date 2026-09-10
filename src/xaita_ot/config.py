@@ -18,14 +18,14 @@ class CorrelationConfig(BaseModel):
     temporal_window_seconds: float = 60.0
     threshold: float = 0.55
     weights: dict[str, float] = Field(default_factory=lambda: {
-        "temporal": 0.30, "asset": 0.20, "protocol": 0.15,
-        "communication": 0.15, "behavior": 0.20,
+        "temporal": 0.25, "asset": 0.15, "protocol": 0.10,
+        "communication": 0.10, "sequence": 0.20, "behavior": 0.20,
     })
 
     @field_validator("weights")
     @classmethod
     def weights_sum_to_one(cls, value):
-        required = {"temporal", "asset", "protocol", "communication", "behavior"}
+        required = {"temporal", "asset", "protocol", "communication", "sequence", "behavior"}
         if set(value) != required:
             raise ValueError(f"correlation weights must contain exactly {sorted(required)}")
         if any(v < 0 for v in value.values()):
