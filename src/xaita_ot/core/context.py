@@ -6,7 +6,7 @@ DEFAULT_TECHNIQUES = {
     "reconnaissance": {"technique_id": "T0846", "name": "Remote System Discovery"},
     "protocol": {"technique_id": "T0869", "name": "Standard Application Layer Protocol"},
     "unauthorized_command": {"technique_id": "T0855", "name": "Unauthorized Command Message"},
-    "process_deviation": {"technique_id": "T0814", "name": "DoS: Network Flooding"},
+    "process_deviation": {"technique_id": "T0831", "name": "Manipulation of Control"},
 }
 
 
