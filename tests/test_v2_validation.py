@@ -11,7 +11,7 @@ from xaita_ot.pipeline.experiments import attribution_configurations, experiment
 
 def _events():
     t = datetime.now(timezone.utc)
-    return [DetectionEvent(f"e{i}", t + timedelta(seconds=i * 5), "PLC1", "modbus", "HMI-01", "PLC1", "attack", 0.8) for i in range(4)]
+    return [DetectionEvent(f"e{i}", t + timedelta(seconds=i * 5), "PLC1", "modbus", "attack", 0.8, {}, "HMI-01", "PLC1") for i in range(4)]
 
 
 def test_configurable_btae_weights_sum_to_one():
