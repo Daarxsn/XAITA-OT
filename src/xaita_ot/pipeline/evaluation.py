@@ -78,8 +78,9 @@ def train_baselines(train_wd, val_wd, test_wd, cfg):
 
 
 def attribution_ablation(evidence, hypotheses, reliabilities, support_threshold=0.60, conflict_threshold=0.35):
-    """Run the planned evidence ladder. Results are raw assessments, never fabricated."""
+    """Run the planned evidence ladder plus WEF point-estimate baseline."""
     from ..core.attribution import assess
+    from ..core.attribution_baselines import weighted_evidence_fusion
     methods = {
         'DC': ['DC'], 'DC+BSS': ['DC', 'BSS'],
         'DC+BSS+ECS': ['DC', 'BSS', 'ECS'],
@@ -89,5 +90,10 @@ def attribution_ablation(evidence, hypotheses, reliabilities, support_threshold=
     results = {}
     for name, sources in methods.items():
         filtered = {h: {k: v for k, v in evidence.get(h, {}).items() if k in sources} for h in hypotheses}
-        results[name] = [assess(hypotheses, filtered, reliabilities, support_threshold, conflict_threshold)[0] for _ in [0]] if hypotheses else []
+        assessments = assess(hypotheses, filtered, reliabilities, support_threshold, conflict_threshold)
+        results[name] = assessments
+    results['WEF'] = [
+        {'hypothesis': h, **weighted_evidence_fusion(evidence.get(h, {}), reliabilities)}
+        for h in hypotheses
+    ]
     return results
