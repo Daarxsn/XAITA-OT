@@ -36,6 +36,25 @@ attribution:
     - DC+BSS+ECS+MAS
     - WEF
     - ACFM
+  hypothesis_profiles:
+    H1:
+      DC: 1.00
+      BSS: 1.00
+      ECS: 1.00
+      EC: 1.00
+      MAS: 1.00
+    H2:
+      DC: 0.95
+      BSS: 1.00
+      ECS: 0.80
+      EC: 0.90
+      MAS: 0.90
+    H3:
+      DC: 0.85
+      BSS: 0.80
+      ECS: 0.70
+      EC: 0.75
+      MAS: 0.80
 risk:
   weights:
     severity: 0.30
