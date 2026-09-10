@@ -22,5 +22,7 @@ jobs:
         run: python -m pip install --upgrade pip && pip install -e ".[dev]"
       - name: Run tests
         run: pytest -q
+      - name: Run V1 synthetic end-to-end smoke
+        run: python scripts/run_v1_swat.py --csv data/demo/swat_like.csv --out artifacts/ci_v1.json --model-out artifacts/ci_v1.pt
       - name: Compile package
         run: python -m compileall -q src
