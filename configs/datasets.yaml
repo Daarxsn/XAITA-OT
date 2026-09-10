@@ -1,0 +1,22 @@
+datasets:
+  SWaT:
+    role: OT/ICS water-treatment benchmark
+    timestamp_aliases: [Timestamp, timestamp, time, ts]
+    label_aliases: [Label, label, Normal/Attack, attack, Attack]
+    access: request/download from iTrust
+    license_note: Verify the dataset's current iTrust terms before redistribution or commercial use.
+    source: https://itrust.sutd.edu.sg/
+  BATADAL:
+    role: water-distribution cyber-attack detection benchmark
+    timestamp_aliases: [DATETIME, timestamp, time, ts]
+    label_aliases: [label, Label, attack, Attack, attack_label]
+    access: organizer-controlled dataset access
+    license_note: Obtain organizer authorization/credentials and retain the supplied usage terms with the experiment record.
+    source: https://www.batadal.net/
+  TON-IoT:
+    role: heterogeneous IoT/IIoT cybersecurity benchmark
+    timestamp_aliases: [ts, timestamp, time, Time]
+    label_aliases: [label, Label, attack, Attack, type]
+    access: UNSW Research download
+    license_note: UNSW states academic/public use is granted; commercial use requires permission from the author. Obtain and retain permission before company deployment or redistribution.
+    source: https://research.unsw.edu.au/projects/toniot-datasets
