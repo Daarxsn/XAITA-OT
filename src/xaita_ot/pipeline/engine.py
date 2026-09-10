@@ -29,6 +29,16 @@ class XAITAEngine:
         detection_consistency = float(np.mean([e.detection_confidence for e in episode.events]))
         return float(np.clip(0.30 * asset_consistency + 0.20 * protocol_consistency + 0.20 * behavior_consistency + 0.30 * detection_consistency, 0.0, 1.0))
 
+    def _hypothesis_evidence(self, base, hypotheses):
+        profiles = self.config.attribution.hypothesis_profiles
+        return {
+            h: {
+                source: float(np.clip(value * profiles.get(h, {}).get(source, 1.0), 0.0, 1.0))
+                for source, value in base.items()
+            }
+            for h in hypotheses
+        }
+
     def analyze_events(self, events, hypotheses=None):
         if not events:
             return []
@@ -39,7 +49,7 @@ class XAITAEngine:
             self.config.correlation.weights,
         )
         outputs = []
-        hypotheses = hypotheses or ["H1", "H2", "H3"]
+        hypotheses = hypotheses or list(self.config.attribution.hypothesis_profiles.keys()) or ["H1"]
         for ep in episodes:
             ctx = contextualize(ep, self.attack_mapping)
             dc = float(np.mean([e.detection_confidence for e in ep.events]))
@@ -49,7 +59,7 @@ class XAITAEngine:
             ec = float(ep.correlation_strength)
             mas = self._mas(ep)
             base = {"DC": dc, "BSS": bss, "ECS": ecs, "EC": ec, "MAS": mas}
-            evidence = {h: dict(base) for h in hypotheses}
+            evidence = self._hypothesis_evidence(base, hypotheses)
             attrs = assess(hypotheses, evidence, self.config.attribution.reliability)
             best = to_dict(attrs[0]) if attrs else None
             if best is not None:
@@ -75,6 +85,5 @@ class XAITAEngine:
                 fi = feature_importance_linearized(np.zeros((1, 1, 1), dtype=np.float32), ["unknown"])
             xai = build_explanation(ep.events[0], ep, ctx, risk, fi)
             detection = {"event_ids": [e.event_id for e in ep.events], "mean_detection_confidence": dc}
-            cti = generate_cti(ep.episode_id, detection, ep, ctx, best, xai, risk)
-            outputs.append(cti)
+            outputs.append(generate_cti(ep.episode_id, detection, ep, ctx, best, xai, risk))
         return outputs
