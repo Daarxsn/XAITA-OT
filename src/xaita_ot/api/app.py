@@ -41,6 +41,8 @@ class EventIn(BaseModel):
     timestamp: datetime
     asset: str = Field(default="unknown", min_length=1, max_length=128)
     protocol: str = Field(default="unknown", min_length=1, max_length=64)
+    source: str = Field(default="unknown", min_length=1, max_length=128)
+    destination: str = Field(default="unknown", min_length=1, max_length=128)
     label: str = Field(default="unknown", min_length=1, max_length=128)
     detection_confidence: float = Field(ge=0, le=1)
     features: dict[str, float] = Field(default_factory=dict)
