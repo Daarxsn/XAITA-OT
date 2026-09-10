@@ -1,13 +1,14 @@
-"""Execute the complete V1 SWaT path: load -> detect -> BTAE -> attribution -> XAI -> risk -> CTI."""
+"""Execute the complete V1 SWaT path: observation -> detection -> BTAE -> attribution -> XAI -> risk -> CTI."""
 import argparse
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
 
 from xaita_ot.config import load_config
 from xaita_ot.core.seed import set_seed
-from xaita_ot.core.schemas import DetectionEvent
+from xaita_ot.core.schemas import DetectionEvent, OTEvent
 from xaita_ot.io.telemetry import load_csv, semantic_harmonize
 from xaita_ot.io.adapters import adapt_swat, normalize_labels
 from xaita_ot.pipeline.preprocess import OTPreprocessor
@@ -52,16 +53,32 @@ def main():
 
     positive = np.flatnonzero(test_p >= detector.threshold)
     events = []
+    observations = []
     for idx in positive:
+        endpoint = min(idx + cfg.model.window_size - 1, len(test) - 1)
         features = {name: float(test_w.X[idx, -1, j]) for j, name in enumerate(test_w.feature_names)}
-        behavior_label = "anomaly"
-        if "behavior_label" in test.columns:
-            # The window endpoint aligns with the last raw row in the test split.
-            endpoint = min(idx + cfg.model.window_size - 1, len(test) - 1)
-            behavior_label = str(test.iloc[endpoint]["behavior_label"])
+        behavior_label = str(test.iloc[endpoint]["behavior_label"]) if "behavior_label" in test.columns else "anomaly"
+        timestamp = pd_timestamp = test_w.timestamps[idx]
+        if hasattr(pd_timestamp, "to_pydatetime"):
+            timestamp = pd_timestamp.to_pydatetime()
+        elif not isinstance(timestamp, datetime):
+            timestamp = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
+        observation_id = f"obs-{idx:06d}"
+        observations.append(OTEvent(
+            event_id=observation_id,
+            timestamp=timestamp,
+            asset=str(test_w.assets[idx]),
+            protocol=str(test_w.protocols[idx]),
+            source=str(test_w.sources[idx]),
+            destination=str(test_w.destinations[idx]),
+            features=features,
+            provenance=[f"swat-row:{endpoint}"],
+        ))
         events.append(DetectionEvent(
             event_id=f"det-{idx:06d}",
-            timestamp=np.datetime64(test_w.timestamps[idx]).astype("datetime64[us]").astype(object),
+            timestamp=timestamp,
             asset=str(test_w.assets[idx]),
             protocol=str(test_w.protocols[idx]),
             label=behavior_label,
@@ -69,6 +86,7 @@ def main():
             features=features,
             source=str(test_w.sources[idx]),
             destination=str(test_w.destinations[idx]),
+            observation_id=observation_id,
         ))
 
     engine = XAITAEngine(cfg)
@@ -79,8 +97,7 @@ def main():
         sample_n = min(cfg.experiment.xai_explanation_samples, len(test_w.X))
         bg_n = min(cfg.experiment.xai_background_samples, len(train_w.X))
         sample_idx = np.argsort(test_p)[-sample_n:]
-        background = train_w.X[:bg_n]
-        xai = shap_feature_importance(detector.model, background, test_w.X[sample_idx], test_w.feature_names)
+        xai = shap_feature_importance(detector.model, train_w.X[:bg_n], test_w.X[sample_idx], test_w.feature_names)
         for incident in incidents:
             incident["xai"]["feature_level"]["top_features"] = xai
             incident["xai"]["feature_level"]["method"] = "SHAP GradientExplainer"
@@ -94,6 +111,7 @@ def main():
             "episode_aware": cfg.experiment.episode_aware,
         },
         "detector": detector_metrics,
+        "observations": len(observations),
         "detected_event_count": len(events),
         "incident_count": len(incidents),
         "shap_feature_importance": xai,
