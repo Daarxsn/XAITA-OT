@@ -33,7 +33,9 @@ class XAITAEngine:
             dc = float(np.mean([e.detection_confidence for e in ep.events]))
             bss = min(1.0, 0.45 + 0.35 * ep.correlation_strength + 0.20 * dc)
             coverage = len(ctx) / max(1, len(ep.events))
-            ecs = min(0.85, 0.55 + 0.30 * coverage)
+            # ATT&CK context is bounded contextual evidence. Partial coverage
+            # remains unresolved rather than being promoted to support.
+            ecs = min(0.75, 0.45 + 0.30 * coverage)
             ec = ep.correlation_strength
             mas = 0.50 + 0.50 * bool(set(e.asset for e in ep.events))
             base = {"DC": dc, "BSS": bss, "ECS": ecs, "EC": ec, "MAS": mas}
