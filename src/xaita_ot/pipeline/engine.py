@@ -32,7 +32,10 @@ class XAITAEngine:
             ctx = contextualize(ep, self.attack_mapping)
             dc = float(np.mean([e.detection_confidence for e in ep.events]))
             bss = min(1.0, 0.45 + 0.35 * ep.correlation_strength + 0.20 * dc)
-            ecs = min(1.0, 0.55 + 0.45 * len(ctx) / max(1, len(ep.events)))
+            # Context coverage is evidence, not proof. Keep a bounded headroom
+            # so complete ATT&CK mapping does not become artificial certainty.
+            coverage = len(ctx) / max(1, len(ep.events))
+            ecs = min(0.85, 0.55 + 0.30 * coverage)
             ec = ep.correlation_strength
             mas = 0.50 + 0.50 * bool(set(e.asset for e in ep.events))
             base = {"DC": dc, "BSS": bss, "ECS": ecs, "EC": ec, "MAS": mas}
