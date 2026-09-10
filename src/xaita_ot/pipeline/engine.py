@@ -39,7 +39,7 @@ class XAITAEngine:
             for h in hypotheses
         }
 
-    def analyze_events(self, events, hypotheses=None):
+    def analyze_events(self, events, hypotheses=None, xai_feature_importance=None):
         if not events:
             return []
         episodes = reconstruct(
@@ -60,13 +60,7 @@ class XAITAEngine:
             mas = self._mas(ep)
             base = {"DC": dc, "BSS": bss, "ECS": ecs, "EC": ec, "MAS": mas}
             evidence = self._hypothesis_evidence(base, hypotheses)
-            attrs = assess(
-                hypotheses,
-                evidence,
-                self.config.attribution.reliability,
-                self.config.attribution.support_threshold,
-                self.config.attribution.conflict_threshold,
-            )
+            attrs = assess(hypotheses, evidence, self.config.attribution.reliability, self.config.attribution.support_threshold, self.config.attribution.conflict_threshold)
             best = to_dict(attrs[0]) if attrs else None
             if best is not None:
                 best["evidence_vector"] = evidence.get(best["hypothesis"], {})
@@ -86,9 +80,9 @@ class XAITAEngine:
             feature_names = sorted({k for e in ep.events for k in e.features})
             if feature_names:
                 matrix = np.array([[e.features.get(k, 0.0) for k in feature_names] for e in ep.events], dtype=np.float32)[None, :, :]
-                fi = feature_importance_linearized(matrix, feature_names)
+                fi = xai_feature_importance or feature_importance_linearized(matrix, feature_names)
             else:
-                fi = feature_importance_linearized(np.zeros((1, 1, 1), dtype=np.float32), ["unknown"])
+                fi = xai_feature_importance or feature_importance_linearized(np.zeros((1, 1, 1), dtype=np.float32), ["unknown"])
             xai = build_explanation(ep.events[0], ep, ctx, risk, fi)
             detection = {"event_ids": [e.event_id for e in ep.events], "mean_detection_confidence": dc}
             outputs.append(generate_cti(ep.episode_id, detection, ep, ctx, best, xai, risk))
