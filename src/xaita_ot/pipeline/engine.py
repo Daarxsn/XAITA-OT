@@ -16,33 +16,40 @@ class XAITAEngine:
         set_seed(config.seed)
         self.attack_mapping = load_attack_map()
 
+    @staticmethod
+    def _mas(episode):
+        if not episode.events:
+            return 0.0
+        assets = [e.asset for e in episode.events]
+        protocols = [e.protocol for e in episode.events]
+        labels = [e.label for e in episode.events]
+        asset_consistency = len(set(assets)) / len(assets)
+        protocol_consistency = len(set(protocols)) / len(protocols)
+        behavior_consistency = sum(1 for i in range(1, len(labels)) if labels[i] == labels[i - 1]) / max(1, len(labels) - 1)
+        detection_consistency = float(np.mean([e.detection_confidence for e in episode.events]))
+        return float(np.clip(0.30 * asset_consistency + 0.20 * protocol_consistency + 0.20 * behavior_consistency + 0.30 * detection_consistency, 0.0, 1.0))
+
     def analyze_events(self, events, hypotheses=None):
         if not events:
             return []
-
         episodes = reconstruct(
             events,
             self.config.correlation.threshold,
             self.config.correlation.temporal_window_seconds,
+            self.config.correlation.weights,
         )
         outputs = []
         hypotheses = hypotheses or ["H1", "H2", "H3"]
-
         for ep in episodes:
             ctx = contextualize(ep, self.attack_mapping)
             dc = float(np.mean([e.detection_confidence for e in ep.events]))
-            bss = min(1.0, 0.45 + 0.35 * ep.correlation_strength + 0.20 * dc)
+            bss = float(np.clip(0.45 + 0.35 * ep.correlation_strength + 0.20 * dc, 0.0, 1.0))
             coverage = len(ctx) / max(1, len(ep.events))
-            # ATT&CK context is bounded contextual evidence. Partial coverage
-            # remains unresolved rather than being promoted to support.
-            ecs = min(0.75, 0.45 + 0.30 * coverage)
-            ec = ep.correlation_strength
-            mas = 0.50 + 0.50 * bool(set(e.asset for e in ep.events))
+            ecs = float(np.clip(0.45 + 0.30 * coverage, 0.0, 0.75))
+            ec = float(ep.correlation_strength)
+            mas = self._mas(ep)
             base = {"DC": dc, "BSS": bss, "ECS": ecs, "EC": ec, "MAS": mas}
-            evidence = {
-                h: {k: max(0.0, min(1.0, v * (1.0 - 0.08 * i))) for k, v in base.items()}
-                for i, h in enumerate(hypotheses)
-            }
+            evidence = {h: dict(base) for h in hypotheses}
             attrs = assess(hypotheses, evidence, self.config.attribution.reliability)
             best = to_dict(attrs[0]) if attrs else None
             if best is not None:
@@ -53,32 +60,21 @@ class XAITAEngine:
                     else "moderate uncertainty" if best["interval_width"] <= 0.25
                     else "substantial uncertainty"
                 )
-
             risk = score_risk(
-                severity=max(0.0, dc),
+                severity=dc,
                 operational_impact=min(1.0, 0.4 + 0.1 * len(ep.events)),
                 criticality=0.7,
                 attribution_evidence=best["belief"] if best else 0.0,
                 weights=self.config.risk.weights,
             )
-
             feature_names = sorted({k for e in ep.events for k in e.features})
             if feature_names:
-                matrix = np.array(
-                    [[e.features.get(k, 0.0) for k in feature_names] for e in ep.events],
-                    dtype=np.float32,
-                )[None, :, :]
+                matrix = np.array([[e.features.get(k, 0.0) for k in feature_names] for e in ep.events], dtype=np.float32)[None, :, :]
                 fi = feature_importance_linearized(matrix, feature_names)
             else:
-                fi = feature_importance_linearized(
-                    np.zeros((1, 1, 1), dtype=np.float32), ["unknown"]
-                )
-
+                fi = feature_importance_linearized(np.zeros((1, 1, 1), dtype=np.float32), ["unknown"])
             xai = build_explanation(ep.events[0], ep, ctx, risk, fi)
-            detection = {
-                "event_ids": [e.event_id for e in ep.events],
-                "mean_detection_confidence": dc,
-            }
+            detection = {"event_ids": [e.event_id for e in ep.events], "mean_detection_confidence": dc}
             cti = generate_cti(ep.episode_id, detection, ep, ctx, best, xai, risk)
             outputs.append(cti)
         return outputs
