@@ -18,10 +18,7 @@ class CorrelationConfig(BaseModel):
     temporal_window_seconds: float = 60.0
     threshold: float = 0.55
     weights: dict[str, float] = Field(default_factory=lambda: {
-        "temporal": 0.35,
-        "asset": 0.25,
-        "protocol": 0.20,
-        "behavior": 0.20,
+        "temporal": 0.35, "asset": 0.25, "protocol": 0.20, "behavior": 0.20
     })
 
     @field_validator("weights")
@@ -42,14 +39,16 @@ class AttributionConfig(BaseModel):
     methods: list[str] = Field(default_factory=lambda: [
         "DC", "DC+BSS", "DC+BSS+ECS", "DC+BSS+ECS+MAS", "WEF", "ACFM"
     ])
+    hypothesis_profiles: dict[str, dict[str, float]] = Field(default_factory=lambda: {
+        "H1": {"DC": 1.00, "BSS": 1.00, "ECS": 1.00, "EC": 1.00, "MAS": 1.00},
+        "H2": {"DC": 0.95, "BSS": 1.00, "ECS": 0.80, "EC": 0.90, "MAS": 0.90},
+        "H3": {"DC": 0.85, "BSS": 0.80, "ECS": 0.70, "EC": 0.75, "MAS": 0.80},
+    })
 
 
 class RiskConfig(BaseModel):
     weights: dict[str, float] = Field(default_factory=lambda: {
-        "severity": 0.30,
-        "operational_impact": 0.30,
-        "criticality": 0.25,
-        "attribution": 0.15,
+        "severity": 0.30, "operational_impact": 0.30, "criticality": 0.25, "attribution": 0.15
     })
 
 
