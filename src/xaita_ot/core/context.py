@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import yaml
@@ -10,8 +11,12 @@ DEFAULT_TECHNIQUES = {
 }
 
 
-def load_attack_map(path="configs/attack_mapping.yaml"):
-    p = Path(path)
+def load_attack_map(path=None):
+    if path is None:
+        root = Path(os.environ.get("XAITA_OT_ROOT", Path.cwd()))
+        p = root / "configs" / "attack_mapping.yaml"
+    else:
+        p = Path(path)
     if not p.exists():
         return DEFAULT_TECHNIQUES
     loaded = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
@@ -22,7 +27,7 @@ def contextualize(episode, mapping=None):
     mapping = mapping or DEFAULT_TECHNIQUES
     out = []
     for event in episode.events:
-        key = event.label.lower().replace(" ", "_")
+        key = event.label.strip().lower().replace(" ", "_")
         item = mapping.get(key)
         if item:
             out.append(
