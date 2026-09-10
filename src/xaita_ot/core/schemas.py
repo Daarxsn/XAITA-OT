@@ -2,6 +2,20 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+
+@dataclass
+class OTEvent:
+    """Canonical raw OT observation used as the provenance root."""
+    event_id: str
+    timestamp: datetime
+    asset: str = "unknown"
+    protocol: str = "unknown"
+    source: str = "unknown"
+    destination: str = "unknown"
+    features: dict[str, float] = field(default_factory=dict)
+    provenance: list[str] = field(default_factory=list)
+
+
 @dataclass
 class DetectionEvent:
     event_id: str
@@ -11,6 +25,10 @@ class DetectionEvent:
     label: str
     detection_confidence: float
     features: dict[str, float] = field(default_factory=dict)
+    source: str = "unknown"
+    destination: str = "unknown"
+    observation_id: str | None = None
+
 
 @dataclass
 class AttackEpisode:
@@ -19,6 +37,17 @@ class AttackEpisode:
     correlation_strength: float
     stages: list[str] = field(default_factory=list)
     correlation_edges: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
+class AttributionHypothesis:
+    """Explicit attribution hypothesis definition and evidence requirements."""
+    hypothesis_id: str
+    name: str
+    description: str
+    evidence_requirements: dict[str, float] = field(default_factory=dict)
+    status: str = "candidate"
+
 
 @dataclass
 class AttributionAssessment:
@@ -32,6 +61,16 @@ class AttributionAssessment:
     @property
     def interval_width(self) -> float:
         return max(0.0, self.plausibility - self.belief)
+
+
+@dataclass
+class ProvenanceRecord:
+    evidence_id: str
+    source_type: str
+    source_ref: str
+    created_at: datetime
+    parent_ids: list[str] = field(default_factory=list)
+
 
 @dataclass
 class CTIProduct:
