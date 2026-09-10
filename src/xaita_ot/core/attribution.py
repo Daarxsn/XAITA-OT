@@ -1,26 +1,70 @@
 from dataclasses import asdict
 from .schemas import AttributionAssessment
 
+
+def _clamp(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
+
+
 def assess(hypotheses, evidence, reliabilities):
-    # evidence: {H: {DC,BSS,ECS,EC,MAS}} with values in [0,1].
-    assessments=[]
-    for h, vals in evidence.items():
-        support=0.0; conflict=0.0; unresolved=[]; supporting=[]; conflicting=[]
-        for k,v in vals.items():
-            r=float(reliabilities.get(k,0.5)); score=max(0,min(1,float(v)))
-            contribution=r*score
-            if score>=0.60:
-                support += contribution; supporting.append({'source':k,'value':score,'reliability':r})
-            elif score<=0.35:
-                conflict += r*(1-score); conflicting.append({'source':k,'value':score,'reliability':r})
+    """Fuse heterogeneous evidence into belief/plausibility intervals.
+
+    The result is an evidence interval, not a calibrated probability. Evidence
+    in the unresolved band contributes neither support nor conflict; it keeps
+    plausibility open. Belief and plausibility are normalized by total source
+    reliability so strong evidence cannot automatically saturate at 1.0.
+    """
+    assessments = []
+    for hypothesis in hypotheses:
+        vals = evidence.get(hypothesis, {})
+        supporting, conflicting, unresolved = [], [], []
+        support_mass = 0.0
+        conflict_mass = 0.0
+        total_reliability = 0.0
+
+        for source, raw_value in vals.items():
+            reliability = _clamp(reliabilities.get(source, 0.5))
+            score = _clamp(raw_value)
+            total_reliability += reliability
+
+            item = {
+                'source': source,
+                'value': score,
+                'reliability': reliability,
+            }
+            if score >= 0.60:
+                support_mass += reliability * score
+                supporting.append(item)
+            elif score <= 0.35:
+                conflict_mass += reliability * (1.0 - score)
+                conflicting.append(item)
             else:
-                unresolved.append({'source':k,'value':score,'reliability':r})
-        total=max(1.0,support+conflict)
-        belief=min(1.0,support/total)
-        plausibility=min(1.0,(support+sum(x['reliability']*x['value'] for x in unresolved))/max(1.0,support+conflict))
-        assessments.append(AttributionAssessment(h,belief,max(belief,plausibility),supporting,conflicting,unresolved))
-    assessments.sort(key=lambda a:(a.belief,a.plausibility),reverse=True)
+                unresolved.append(item)
+
+        denominator = max(total_reliability, 1e-12)
+        belief = min(1.0, support_mass / denominator)
+        plausibility = min(1.0, 1.0 - conflict_mass / denominator)
+
+        # With no unresolved/conflicting evidence, the interval collapses.
+        if not unresolved and not conflicting:
+            plausibility = belief
+
+        assessments.append(
+            AttributionAssessment(
+                hypothesis,
+                belief,
+                max(belief, plausibility),
+                supporting,
+                conflicting,
+                unresolved,
+            )
+        )
+
+    assessments.sort(key=lambda a: (a.belief, a.plausibility), reverse=True)
     return assessments
 
+
 def to_dict(a):
-    d=asdict(a); d['interval_width']=a.interval_width; return d
+    d = asdict(a)
+    d['interval_width'] = a.interval_width
+    return d
