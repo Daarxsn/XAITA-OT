@@ -32,8 +32,6 @@ class XAITAEngine:
             ctx = contextualize(ep, self.attack_mapping)
             dc = float(np.mean([e.detection_confidence for e in ep.events]))
             bss = min(1.0, 0.45 + 0.35 * ep.correlation_strength + 0.20 * dc)
-            # Context coverage is evidence, not proof. Keep a bounded headroom
-            # so complete ATT&CK mapping does not become artificial certainty.
             coverage = len(ctx) / max(1, len(ep.events))
             ecs = min(0.85, 0.55 + 0.30 * coverage)
             ec = ep.correlation_strength
@@ -45,6 +43,14 @@ class XAITAEngine:
             }
             attrs = assess(hypotheses, evidence, self.config.attribution.reliability)
             best = to_dict(attrs[0]) if attrs else None
+            if best is not None:
+                best["evidence_vector"] = evidence.get(best["hypothesis"], {})
+                best["alternatives"] = [to_dict(a) for a in attrs[1:]]
+                best["interpretation"] = (
+                    "narrow interval" if best["interval_width"] <= 0.10
+                    else "moderate uncertainty" if best["interval_width"] <= 0.25
+                    else "substantial uncertainty"
+                )
 
             risk = score_risk(
                 severity=max(0.0, dc),
