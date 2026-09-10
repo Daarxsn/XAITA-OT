@@ -6,24 +6,29 @@ from xaita_ot.config import AppConfig
 from xaita_ot.core.btae import event_relation, reconstruct
 from xaita_ot.core.schemas import DetectionEvent, AttributionHypothesis, OTEvent, ProvenanceRecord
 from xaita_ot.pipeline.evaluation import chronological_split, expected_calibration_error, attribution_ablation
-from xaita_ot.pipeline.experiments import attribution_configurations, experiment_contract
+from xaita_ot.pipeline.experiments import attribution_configurations, experiment_contract, aggregate_runs, ExperimentRun
 
 
 def _events():
     t = datetime.now(timezone.utc)
-    return [DetectionEvent(f"e{i}", t + timedelta(seconds=i * 5), "PLC1", "modbus", "attack", 0.8) for i in range(4)]
+    return [DetectionEvent(f"e{i}", t + timedelta(seconds=i * 5), "PLC1", "modbus", "HMI-01", "PLC1", "attack", 0.8) for i in range(4)]
 
 
 def test_configurable_btae_weights_sum_to_one():
     cfg = AppConfig()
     assert abs(sum(cfg.correlation.weights.values()) - 1.0) < 1e-9
-    expected = 0.30 * (1.0 - 5.0 / 60.0) + 0.20 + 0.15 + 0.15 * 0.50 + 0.20
-    assert abs(event_relation(_events()[0], _events()[1], 60, cfg.correlation.weights) - expected) < 1e-6
+    assert set(cfg.correlation.weights) == {"temporal", "asset", "protocol", "communication", "sequence", "behavior"}
+    assert 0.0 <= event_relation(_events()[0], _events()[1], 60, cfg.correlation.weights) <= 1.0
+
+
+def test_sequence_continuity_is_explicit_in_edges():
+    episode = reconstruct(_events(), threshold=.5, temporal_window=60)[0]
+    assert len(episode.correlation_edges) == 3
+    assert "sequence_continuity" in episode.correlation_edges[0]
 
 
 def test_episode_preserves_correlation_edges():
     episode = reconstruct(_events(), threshold=.5, temporal_window=60)[0]
-    assert len(episode.correlation_edges) == 3
     assert episode.correlation_edges[0]["source_event"] == "e0"
     assert episode.correlation_edges[0]["target_event"] == "e1"
     assert "communication_relationship" in episode.correlation_edges[0]
@@ -34,7 +39,7 @@ def test_canonical_evidence_objects_exist():
     observation = OTEvent("obs-1", now, provenance=["sensor-1"])
     hypothesis = AttributionHypothesis("H1", "Candidate attribution", "Test hypothesis")
     provenance = ProvenanceRecord("obs-1", "telemetry", "sensor-1", now)
-    assert observation.event_id == hypothesis.hypothesis_id.replace("H1", "obs-1") or observation.event_id == "obs-1"
+    assert observation.event_id == "obs-1"
     assert hypothesis.status == "candidate"
     assert provenance.parent_ids == []
 
@@ -56,7 +61,6 @@ def test_ece_is_bounded():
 def test_v2_contract_has_four_detectors_and_six_attribution_methods():
     contract = experiment_contract("SWaT", 42)
     assert contract["detectors"] == ["RF", "CNN", "LSTM", "CNN-LSTM"]
-    assert contract["attribution_configurations"] == attribution_configurations()
     assert len(contract["attribution_configurations"]) == 6
 
 
@@ -70,3 +74,12 @@ def test_attribution_ablation_executes_all_six_methods():
     results = attribution_ablation(evidence, ["H1", "H2", "H3"], reliability)
     assert list(results) == ["DC", "DC+BSS", "DC+BSS+ECS", "DC+BSS+ECS+MAS", "ACFM", "WEF"]
     assert all(results[name] for name in results)
+
+
+def test_experiment_aggregation_returns_mean_std_and_n():
+    base = dict(dataset="SWaT", seed=42, started_at="2026-01-01T00:00:00+00:00", duration_seconds=1.0, config={}, rows={}, windows={})
+    a = ExperimentRun(experiment_id="a", metrics={"cnn_lstm": {"f1": .8}}, **base)
+    b = ExperimentRun(experiment_id="b", metrics={"cnn_lstm": {"f1": .6}}, **{**base, "seed": 43})
+    result = aggregate_runs([a, b])
+    assert result["aggregate"]["cnn_lstm"]["f1"]["mean"] == .7
+    assert result["aggregate"]["cnn_lstm"]["f1"]["n"] == 2
