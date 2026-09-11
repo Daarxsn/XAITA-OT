@@ -45,5 +45,7 @@ jobs:
               assert out["label"].sum() == 32
           print("V2 adapter smoke: PASS")
           PY
+      - name: V3 Phase 1 leakage and reproducibility acceptance
+        run: python scripts/run_v3_phase1.py --csv data/demo/swat_like.csv --dataset SWaT --out artifacts/v3/phase1
       - name: Compile package
-        run: python -m compileall -q src
+        run: python -m compileall -q src scripts
