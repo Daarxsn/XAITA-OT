@@ -65,13 +65,31 @@ def _table5(paths, seed=42):
 
 
 def _table6(phase2):
+    """Build Table 6 from the Phase 2 persisted pair schema.
+
+    Each pair is a mapping containing source/target metadata and a ``runs``
+    list.  Older code treated the mapping itself as the run list, causing the
+    CI failure ``AttributeError: 'str' object has no attribute 'get'`` when it
+    iterated dictionary keys.  This implementation accepts the canonical
+    schema and skips malformed entries defensively.
+    """
     rows=[]
     if not phase2: return rows
-    for pair,runs in phase2.get("pairs",{}).items():
-        source,target=pair.split("->")
+    for pair_key, pair in phase2.get("pairs",{}).items():
+        if not isinstance(pair, dict):
+            continue
+        source = str(pair.get("source") or pair_key.split("->")[0])
+        target = str(pair.get("target") or pair_key.split("->")[-1])
         vals=[]
-        for run in runs:
-            if "cnn_lstm" in run.get("metrics",{}): vals.append(run["metrics"]["cnn_lstm"].get("f1"))
+        for run in pair.get("runs",[]):
+            if not isinstance(run, dict):
+                continue
+            metrics = run.get("metrics",{})
+            if not isinstance(metrics, dict):
+                continue
+            detector = metrics.get("cnn_lstm")
+            if isinstance(detector, dict):
+                vals.append(detector.get("f1"))
         f1=_nanmean(vals)
         rows.append({"Training Environment":source,"Test Environment":target,"Macro-F1":f1,"Degradation":"NA"})
     return rows
