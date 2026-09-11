@@ -38,10 +38,8 @@ jobs:
           for dataset, (ts, label) in fixtures.items():
               values = [0] * 32 + [1] * 32 + [0] * 32
               frame = pd.DataFrame({ts: pd.date_range("2026-01-01", periods=len(values), freq="s"), label: values})
-              if dataset == "SWaT":
-                  frame[label] = frame[label].map({0: "Normal", 1: "Attack"})
-              if dataset == "TON-IoT":
-                  frame[label] = frame[label].map({0: "normal", 1: "attack"})
+              if dataset == "SWaT": frame[label] = frame[label].map({0: "Normal", 1: "Attack"})
+              if dataset == "TON-IoT": frame[label] = frame[label].map({0: "normal", 1: "attack"})
               out = adapt_dataset(frame, dataset)
               assert out["label"].sum() == 32
           print("V2 adapter smoke: PASS")
@@ -108,6 +106,15 @@ jobs:
         with:
           name: v3-phase7-${{ matrix.python-version }}
           path: artifacts/v3/phase7
+          if-no-files-found: error
+      - name: V3 Phase 8 automated result generation acceptance
+        run: python scripts/run_v3_phase8.py --swat data/demo/swat_like.csv --batadal data/demo/batadal_like.csv --toniot data/demo/toniot_like.csv --artifact-root artifacts/v3 --out artifacts/v3/phase8 --seed 42
+      - name: Upload V3 Phase 8 result artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v3-phase8-${{ matrix.python-version }}
+          path: artifacts/v3/phase8
           if-no-files-found: error
       - name: Compile package
         run: python -m compileall -q src scripts
