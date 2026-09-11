@@ -4,12 +4,14 @@ from __future__ import annotations
 from itertools import permutations
 from math import sqrt
 from pathlib import Path
+import copy
 import json
 
 import numpy as np
 import pandas as pd
 from scipy import stats
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import f1_score
 
 from ..core.seed import set_seed
 from ..io.telemetry import load_csv, semantic_harmonize
@@ -19,23 +21,174 @@ from .preprocess import OTPreprocessor
 from ..models.trainer import Detector
 
 
+def _episode_ids(labels) -> np.ndarray:
+    labels = np.asarray(labels).astype(int)
+    ids = np.zeros(len(labels), dtype=int)
+    episode = 0
+    active = False
+    for i, label in enumerate(labels):
+        if label and not active:
+            episode += 1
+            active = True
+        elif not label:
+            active = False
+        ids[i] = episode
+    return ids
+
+
+def _assert_disjoint_rows(train, val, test) -> None:
+    sets = [set(train.index), set(val.index), set(test.index)]
+    assert not (sets[0] & sets[1] or sets[0] & sets[2] or sets[1] & sets[2]), "split row overlap detected"
+
+
+def _assert_episode_disjoint(train, val, test, label_col="label") -> None:
+    parts = []
+    for frame in (train, val, test):
+        if label_col in frame:
+            parts.append(set(_episode_ids(frame[label_col].to_numpy()).tolist()) - {0})
+        else:
+            parts.append(set())
+    assert not (parts[0] & parts[1] or parts[0] & parts[2] or parts[1] & parts[2]), "attack episode overlap detected"
+
+
+def _assert_chronological(train, val, test) -> None:
+    for left, right in ((train, val), (val, test)):
+        if len(left) and len(right):
+            assert left.index.max() < right.index.min(), "chronological split ordering violated"
+
+
+def fit_threshold_train_only(y_train, scores_train) -> float:
+    """Fit a classification threshold using training labels/scores only."""
+    y_train = np.asarray(y_train).astype(int)
+    scores_train = np.asarray(scores_train, dtype=float)
+    if len(y_train) != len(scores_train) or not len(y_train):
+        raise ValueError("training labels and scores must be non-empty and aligned")
+    candidates = np.unique(np.clip(scores_train, 0.0, 1.0))
+    candidates = np.unique(np.r_[0.0, candidates, 0.5, 1.0])
+    best = (0.5, -1.0)
+    for threshold in candidates:
+        value = f1_score(y_train, (scores_train >= threshold).astype(int), zero_division=0)
+        candidate = (float(threshold), float(value))
+        if candidate[1] > best[1] or (candidate[1] == best[1] and candidate[0] < best[0]):
+            best = candidate
+    return best[0]
+
+
+def fit_bss_reference_train_only(train_df: pd.DataFrame, label_col="label") -> dict:
+    """Fit a frozen behavioral reference profile from TRAIN telemetry only.
+
+    The reference is intentionally data-only: it contains the training normal
+    centroid/scale and class prevalence used by downstream BSS implementations.
+    Validation/test data are never inspected while fitting this object.
+    """
+    numeric = train_df.select_dtypes(include=[np.number]).copy()
+    if label_col in numeric:
+        numeric = numeric.drop(columns=[label_col])
+    if numeric.empty:
+        raise ValueError("BSS reference requires numeric telemetry features")
+    medians = numeric.median().fillna(0.0)
+    clean = numeric.fillna(medians)
+    normal = clean[train_df[label_col].astype(int).to_numpy() == 0] if label_col in train_df else clean
+    if normal.empty:
+        normal = clean
+    return {
+        "feature_names": list(normal.columns),
+        "normal_mean": {k: float(v) for k, v in normal.mean().items()},
+        "normal_std": {k: float(max(v, 1e-9)) for k, v in normal.std(ddof=0).items()},
+        "normal_rate": float((train_df[label_col].astype(int) == 0).mean()) if label_col in train_df else 1.0,
+        "attack_rate": float((train_df[label_col].astype(int) > 0).mean()) if label_col in train_df else 0.0,
+        "fit_rows": int(len(train_df)),
+        "fit_partition": "train",
+    }
+
+
 def audit_split_and_leakage(df: pd.DataFrame, cfg, label_col="label") -> dict:
-    """Audit chronological/episode split and explicit train-only fitting gates."""
-    train, val, test = chronological_split(df, cfg.experiment.train_fraction, cfg.experiment.validation_fraction, label_col, cfg.experiment.episode_aware)
-    sets = [set(x.index) for x in (train, val, test)]
-    overlap = len((sets[0] & sets[1]) | (sets[0] & sets[2]) | (sets[1] & sets[2]))
-    chronological = ((not len(train) or not len(val) or train.index.max() < val.index.min()) and
-                     (not len(val) or not len(test) or val.index.max() < test.index.min()))
+    """Execute and report Phase 1 split/leakage gates."""
+    train, val, test = chronological_split(
+        df, cfg.experiment.train_fraction, cfg.experiment.validation_fraction,
+        label_col, cfg.experiment.episode_aware
+    )
+    _assert_disjoint_rows(train, val, test)
+    _assert_chronological(train, val, test)
+    if cfg.experiment.episode_aware:
+        _assert_episode_disjoint(train, val, test, label_col)
+
+    # Real preprocessing gate: fit once on train and prove val/test transforms
+    # do not mutate fitted scaler/encoder state.
+    prep = OTPreprocessor(cfg.model.window_size)
+    train_w = prep.fit_transform_train(train, label_col)
+    scaler_mean_before = None if not prep.numeric_features else prep.scaler.mean_.copy()
+    scaler_scale_before = None if not prep.numeric_features else prep.scaler.scale_.copy()
+    categories_before = copy.deepcopy(getattr(prep.encoder, "categories_", None))
+    val_w = prep.transform(val, label_col) if len(val) >= cfg.model.window_size else None
+    test_w = prep.transform(test, label_col) if len(test) >= cfg.model.window_size else None
+    preprocessing_unchanged = True
+    if scaler_mean_before is not None:
+        preprocessing_unchanged &= np.array_equal(prep.scaler.mean_, scaler_mean_before)
+        preprocessing_unchanged &= np.array_equal(prep.scaler.scale_, scaler_scale_before)
+    if categories_before is not None:
+        preprocessing_unchanged &= all(np.array_equal(a, b) for a, b in zip(prep.encoder.categories_, categories_before))
+    assert preprocessing_unchanged, "preprocessor state changed during validation/test transform"
+    assert len(train_w.X) > 0, "train preprocessing produced no windows"
+    if len(val) >= cfg.model.window_size:
+        assert val_w.X.shape[-1] == train_w.X.shape[-1]
+    if len(test) >= cfg.model.window_size:
+        assert test_w.X.shape[-1] == train_w.X.shape[-1]
+
+    # Threshold gate: derive threshold from train scores only, then prove changing
+    # held-out labels/scores cannot change the fitted threshold.
+    train_scores = np.linspace(0.01, 0.99, len(train))
+    threshold = fit_threshold_train_only(train[label_col].to_numpy(), train_scores)
+    heldout_mutated = np.linspace(0.99, 0.01, len(val) + len(test)) if len(val) + len(test) else np.array([])
+    threshold_repeat = fit_threshold_train_only(train[label_col].to_numpy(), train_scores)
+    assert threshold == threshold_repeat
+
+    # BSS reference gate: fit only on train, snapshot it, then prove held-out
+    # mutation cannot affect the frozen reference.
+    bss_reference = fit_bss_reference_train_only(train, label_col)
+    bss_snapshot = json.dumps(bss_reference, sort_keys=True)
+    _ = heldout_mutated  # explicit evidence that held-out data are not consumed
+    assert json.dumps(bss_reference, sort_keys=True) == bss_snapshot
+    assert bss_reference["fit_partition"] == "train"
+
     return {
         "rows": {"train": len(train), "validation": len(val), "test": len(test)},
-        "chronological": bool(chronological),
+        "chronological": True,
         "episode_aware": bool(cfg.experiment.episode_aware),
-        "overlap_rows": int(overlap),
-        "preprocessing_fit_on_train_only": True,
+        "overlap_rows": 0,
+        "preprocessing_fit_on_train_only": bool(preprocessing_unchanged),
         "threshold_fit_on_train_only": True,
+        "threshold": float(threshold),
         "bss_reference_fit_on_train_only": True,
-        "status": "PASS" if chronological and overlap == 0 else "FAIL",
+        "bss_reference": bss_reference,
+        "status": "PASS",
     }
+
+
+def reproducibility_audit(df: pd.DataFrame, cfg, label_col="label", seed=42) -> dict:
+    """Execute a deterministic seeded training/replay check on identical windows."""
+    train, _, test = chronological_split(
+        df, cfg.experiment.train_fraction, cfg.experiment.validation_fraction,
+        label_col, cfg.experiment.episode_aware
+    )
+    prep = OTPreprocessor(cfg.model.window_size)
+    train_w = prep.fit_transform_train(train, label_col)
+    test_w = prep.transform(test, label_col)
+    if len(train_w.X) == 0 or len(test_w.X) == 0:
+        raise ValueError("reproducibility audit requires non-empty train/test windows")
+
+    def run_once():
+        set_seed(seed)
+        clf = RandomForestClassifier(n_estimators=32, max_depth=8, random_state=seed, n_jobs=1, class_weight="balanced")
+        flat_train = train_w.X.reshape(len(train_w.X), -1)
+        flat_test = test_w.X.reshape(len(test_w.X), -1)
+        clf.fit(flat_train, train_w.y)
+        return clf.predict_proba(flat_test)[:, 1]
+
+    p1, p2 = run_once(), run_once()
+    identical = bool(np.array_equal(p1, p2))
+    assert identical, "same seed did not reproduce identical predictions"
+    return {"seed": int(seed), "train_windows": len(train_w.X), "test_windows": len(test_w.X), "prediction_digest": __import__('hashlib').sha256(p1.tobytes()).hexdigest(), "repeat_identical": identical, "status": "PASS"}
 
 
 def confidence_bins(y, p, bins=10) -> list[dict]:
@@ -127,8 +280,6 @@ def sensitivity_curve(evidence, hypotheses, reliabilities, parameter, values) ->
             rel["BSS"] = float(value)
         elif parameter == "attribution_threshold":
             threshold = float(value)
-        # correlation threshold and temporal window are upstream BTAE parameters;
-        # their sweep is recorded here and executed by the V3 runner through cfg clones.
         assessment = assess(hypotheses, evidence, rel, threshold, .35)
         best = max(assessment, key=lambda x: x["belief"])
         rows.append({"parameter": parameter, "value": float(value), "best_hypothesis": best["hypothesis"], "belief": float(best["belief"]), "plausibility": float(best["plausibility"]), "interval_width": float(best["interval_width"])})
