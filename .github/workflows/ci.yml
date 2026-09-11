@@ -47,7 +47,7 @@ jobs:
       - name: V3 Phase 1 leakage and reproducibility acceptance
         run: python scripts/run_v3_phase1.py --csv data/demo/swat_like.csv --dataset SWaT --out artifacts/v3/phase1
       - name: Upload V3 Phase 1 acceptance artifacts
-        if: always()
+        if: ${{ always() && hashFiles('artifacts/v3/phase1/**') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: v3-phase1-${{ matrix.python-version }}
@@ -56,7 +56,7 @@ jobs:
       - name: V3 Phase 2 cross-environment acceptance
         run: python scripts/run_v3_phase2.py --swat data/demo/swat_like.csv --batadal data/demo/batadal_like.csv --toniot data/demo/toniot_like.csv --out artifacts/v3/phase2 --seed 42 --window-size 4 --epochs 1
       - name: Upload V3 Phase 2 acceptance artifacts
-        if: always()
+        if: ${{ always() && hashFiles('artifacts/v3/phase2/**') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: v3-phase2-${{ matrix.python-version }}
@@ -65,7 +65,7 @@ jobs:
       - name: V3 Phase 3 calibration acceptance
         run: python scripts/run_v3_phase3.py --swat data/demo/swat_like.csv --batadal data/demo/batadal_like.csv --toniot data/demo/toniot_like.csv --out artifacts/v3/phase3 --seed 42 --bins 10 --window-size 4
       - name: Upload V3 Phase 3 acceptance artifacts
-        if: always()
+        if: ${{ always() && hashFiles('artifacts/v3/phase3/**') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: v3-phase3-${{ matrix.python-version }}
@@ -74,7 +74,7 @@ jobs:
       - name: V3 Phase 4 ablation acceptance
         run: python scripts/run_v3_phase4.py --swat data/demo/swat_like.csv --batadal data/demo/batadal_like.csv --toniot data/demo/toniot_like.csv --out artifacts/v3/phase4 --seed 42 --window-size 4
       - name: Upload V3 Phase 4 acceptance artifacts
-        if: always()
+        if: ${{ always() && hashFiles('artifacts/v3/phase4/**') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: v3-phase4-${{ matrix.python-version }}
@@ -83,7 +83,7 @@ jobs:
       - name: V3 Phase 5 sensitivity acceptance
         run: python scripts/run_v3_phase5.py --swat data/demo/swat_like.csv --batadal data/demo/batadal_like.csv --toniot data/demo/toniot_like.csv --out artifacts/v3/phase5 --seed 42 --window-size 4
       - name: Upload V3 Phase 5 acceptance artifacts
-        if: always()
+        if: ${{ always() && hashFiles('artifacts/v3/phase5/**') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: v3-phase5-${{ matrix.python-version }}
@@ -92,7 +92,7 @@ jobs:
       - name: V3 Phase 6 statistical acceptance
         run: python scripts/run_v3_phase6.py --swat data/demo/swat_like.csv --batadal data/demo/batadal_like.csv --toniot data/demo/toniot_like.csv --out artifacts/v3/phase6 --seed 42 --seed 43 --seed 44 --window-size 4 --confidence 0.95
       - name: Upload V3 Phase 6 acceptance artifacts
-        if: always()
+        if: ${{ always() && hashFiles('artifacts/v3/phase6/**') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: v3-phase6-${{ matrix.python-version }}
@@ -101,7 +101,7 @@ jobs:
       - name: V3 Phase 7 case-study acceptance
         run: python scripts/run_v3_phase7.py --swat data/demo/swat_like.csv --batadal data/demo/batadal_like.csv --toniot data/demo/toniot_like.csv --out artifacts/v3/phase7 --seed 42 --window-size 4 --top-n 1
       - name: Upload V3 Phase 7 acceptance artifacts
-        if: always()
+        if: ${{ always() && hashFiles('artifacts/v3/phase7/**') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: v3-phase7-${{ matrix.python-version }}
@@ -110,7 +110,7 @@ jobs:
       - name: V3 Phase 8 automated result generation acceptance
         run: python scripts/run_v3_phase8.py --swat data/demo/swat_like.csv --batadal data/demo/batadal_like.csv --toniot data/demo/toniot_like.csv --artifact-root artifacts/v3 --out artifacts/v3/phase8 --seed 42
       - name: Upload V3 Phase 8 result artifacts
-        if: always()
+        if: ${{ always() && hashFiles('artifacts/v3/phase8/**') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: v3-phase8-${{ matrix.python-version }}
