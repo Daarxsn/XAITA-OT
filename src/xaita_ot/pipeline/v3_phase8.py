@@ -22,7 +22,7 @@ TABLE_SCHEMAS = {
     9: ["Explanation Level", "Evaluation Metric", "Result"],
     10: ["Dimension", "Metric", "Result"],
     17: ["Configuration", "Modification", "Primary Purpose"],
-    18: ["Configuration", "Detection F1", "Behavioral F1", "Attribution F1", "ECE ↓", "Traceability", "Configuration"],
+    18: ["Configuration", "Detection F1", "Behavioral F1", "Attribution F1", "ECE ↓", "Traceability"],
 }
 
 DATASET_INFO = [
@@ -43,7 +43,6 @@ def _nanmean(values):
 
 
 def _table5(paths, seed=42):
-    """Run the four detector hierarchy models on each environment."""
     from .v3_evaluation import _train_predict
     from .evaluation import chronological_split, binary_metrics
     from .preprocess import OTPreprocessor
@@ -79,16 +78,12 @@ def _table6(phase2):
 
 
 def _table7(phase7, paths):
-    """Compute episode/correlation measures from case-study event sequences."""
     rows=[]
     for dataset in paths:
         obj=phase7.get(dataset) if phase7 else None
         cases=(obj or {}).get("cases",[])
         if not cases:
             rows.append({"Dataset":dataset,"Correlation Precision":"NA","Correlation Recall":"NA","Correlation F1":"NA","Episode Accuracy":"NA","Stage Accuracy":"NA"}); continue
-        # Case-study artifacts do not contain ground-truth pair/stage annotations.
-        # Preserve observed BTAE correlation as episode-level evidence, but do not
-        # fabricate supervised precision/recall/stage labels.
         cor=[c.get("btae_reconstruction",{}).get("correlation_strength") for c in cases]
         rows.append({"Dataset":dataset,"Correlation Precision":"NA","Correlation Recall":"NA","Correlation F1":_nanmean(cor),"Episode Accuracy":"NA","Stage Accuracy":"NA"})
     return rows
@@ -96,14 +91,12 @@ def _table7(phase7, paths):
 
 def _table8(phase3):
     rows=[]
-    # Aggregate across datasets/seeds for the three configurations available in Phase 3.
     if not phase3: return rows
     mapping=[("Detection Confidence Only","detector"),("Weighted Evidence Fusion","WEF"),("ACFM","ACFM")]
     for label,key in mapping:
         runs=[]
         for r in phase3.get("runs",[]):
-            if key=="detector": s=r.get("detector",{})
-            else: s=r.get("fusion",{}).get(key,{})
+            s=r.get("detector",{}) if key=="detector" else r.get("fusion",{}).get(key,{})
             runs.append(s)
         rows.append({"Configuration":label,"Attribution Metric":key,"ECE ↓":_nanmean([x.get("ece") for x in runs]),"Mean Belief":_nanmean([x.get("belief_mean") for x in runs]),"Mean Plausibility":_nanmean([x.get("plausibility_mean") for x in runs]),"Interval Width":_nanmean([x.get("interval_width") for x in runs])})
     return rows
@@ -114,9 +107,6 @@ def _table9(phase7):
     cases=[]
     for obj in (phase7 or {}).values(): cases.extend(obj.get("cases",[]))
     if not cases: return rows
-    feature_counts=[len(c.get("xai",{}).get("features",[])) for c in cases]
-    # The XAI implementation exposes feature importance but not a validated
-    # fidelity/stability benchmark. Do not convert feature count into fidelity.
     rows.extend([
         {"Explanation Level":"Feature","Evaluation Metric":"Fidelity","Result":"NA"},
         {"Explanation Level":"Behavioral","Evaluation Metric":"Evidence Consistency","Result":"NA"},
@@ -131,13 +121,6 @@ def _table10(phase7):
     cases=[]
     for obj in (phase7 or {}).values(): cases.extend(obj.get("cases",[]))
     if not cases: return []
-    def avg(path):
-        vals=[]
-        for c in cases:
-            x=c
-            for k in path: x=x.get(k,{}) if isinstance(x,dict) else {}
-            if isinstance(x,(int,float)): vals.append(x)
-        return _nanmean(vals)
     return [
         {"Dimension":"Risk prioritization","Metric":"Priority Accuracy","Result":"NA"},
         {"Dimension":"Context representation","Metric":"Context Completeness","Result":"NA"},
@@ -160,15 +143,13 @@ def _table17():
 
 def _table18(phase4, phase3, phase7):
     rows=[]
-    # Phase 4 supplies measured detection/fusion F1; behavioral and traceability
-    # are only populated when a preceding artifact actually defines them.
     if not phase4: return rows
     all_cases=[]
     for obj in (phase7 or {}).values(): all_cases.extend(obj.get("cases",[]))
     trace=_nanmean([1.0 if c.get("provenance") else None for c in all_cases])
     for run in phase4.get("runs",[]):
         for cfg,metrics in run.get("variants",{}).items():
-            rows.append({"Configuration":cfg,"Detection F1":metrics.get("f1"),"Behavioral F1":"NA","Attribution F1":metrics.get("f1"),"ECE ↓":"NA","Traceability":trace if trace is not None else "NA","Configuration":cfg})
+            rows.append({"Configuration":cfg,"Detection F1":metrics.get("f1"),"Behavioral F1":"NA","Attribution F1":metrics.get("f1"),"ECE ↓":"NA","Traceability":trace if trace is not None else "NA"})
     return rows
 
 
