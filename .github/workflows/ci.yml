@@ -91,5 +91,14 @@ jobs:
           name: v3-phase5-${{ matrix.python-version }}
           path: artifacts/v3/phase5
           if-no-files-found: error
+      - name: V3 Phase 6 statistical acceptance
+        run: python scripts/run_v3_phase6.py --swat data/demo/swat_like.csv --batadal data/demo/batadal_like.csv --toniot data/demo/toniot_like.csv --out artifacts/v3/phase6 --seed 42 --seed 43 --seed 44 --window-size 4 --confidence 0.95
+      - name: Upload V3 Phase 6 acceptance artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v3-phase6-${{ matrix.python-version }}
+          path: artifacts/v3/phase6
+          if-no-files-found: error
       - name: Compile package
         run: python -m compileall -q src scripts
