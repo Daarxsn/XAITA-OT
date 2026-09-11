@@ -41,14 +41,17 @@ def _assert_disjoint_rows(train, val, test) -> None:
     assert not (sets[0] & sets[1] or sets[0] & sets[2] or sets[1] & sets[2]), "split row overlap detected"
 
 
-def _assert_episode_disjoint(train, val, test, label_col="label") -> None:
-    parts = []
-    for frame in (train, val, test):
-        if label_col in frame:
-            parts.append(set(_episode_ids(frame[label_col].to_numpy()).tolist()) - {0})
-        else:
-            parts.append(set())
-    assert not (parts[0] & parts[1] or parts[0] & parts[2] or parts[1] & parts[2]), "attack episode overlap detected"
+def _assert_episode_disjoint(original, train, val, test, label_col="label") -> None:
+    """Verify episode ownership using IDs computed once on the full timeline."""
+    global_ids = _episode_ids(original[label_col].to_numpy()) if label_col in original else np.zeros(len(original), dtype=int)
+    owners = {"train": set(), "validation": set(), "test": set()}
+    for name, frame in (("train", train), ("validation", val), ("test", test)):
+        owners[name] = {int(global_ids[i]) for i in frame.index if global_ids[i] > 0}
+    assert not (owners["train"] & owners["validation"] or owners["train"] & owners["test"] or owners["validation"] & owners["test"]), "attack episode overlap detected"
+    # A positive episode must have exactly one owner; this catches a split through
+    # an attack even if local partition IDs would otherwise be renumbered.
+    positive_rows = np.flatnonzero(global_ids > 0)
+    assert all(sum(i in frame.index for frame in (train, val, test)) == 1 for i in positive_rows), "attack episode row ownership violated"
 
 
 def _assert_chronological(train, val, test) -> None:
@@ -75,12 +78,7 @@ def fit_threshold_train_only(y_train, scores_train) -> float:
 
 
 def fit_bss_reference_train_only(train_df: pd.DataFrame, label_col="label") -> dict:
-    """Fit a frozen behavioral reference profile from TRAIN telemetry only.
-
-    The reference is intentionally data-only: it contains the training normal
-    centroid/scale and class prevalence used by downstream BSS implementations.
-    Validation/test data are never inspected while fitting this object.
-    """
+    """Fit a frozen behavioral reference profile from TRAIN telemetry only."""
     numeric = train_df.select_dtypes(include=[np.number]).copy()
     if label_col in numeric:
         numeric = numeric.drop(columns=[label_col])
@@ -103,18 +101,13 @@ def fit_bss_reference_train_only(train_df: pd.DataFrame, label_col="label") -> d
 
 
 def audit_split_and_leakage(df: pd.DataFrame, cfg, label_col="label") -> dict:
-    """Execute and report Phase 1 split/leakage gates."""
-    train, val, test = chronological_split(
-        df, cfg.experiment.train_fraction, cfg.experiment.validation_fraction,
-        label_col, cfg.experiment.episode_aware
-    )
+    """Execute and report V3 Phase 1 split/leakage gates."""
+    train, val, test = chronological_split(df, cfg.experiment.train_fraction, cfg.experiment.validation_fraction, label_col, cfg.experiment.episode_aware)
     _assert_disjoint_rows(train, val, test)
     _assert_chronological(train, val, test)
     if cfg.experiment.episode_aware:
-        _assert_episode_disjoint(train, val, test, label_col)
+        _assert_episode_disjoint(df, train, val, test, label_col)
 
-    # Real preprocessing gate: fit once on train and prove val/test transforms
-    # do not mutate fitted scaler/encoder state.
     prep = OTPreprocessor(cfg.model.window_size)
     train_w = prep.fit_transform_train(train, label_col)
     scaler_mean_before = None if not prep.numeric_features else prep.scaler.mean_.copy()
@@ -135,19 +128,13 @@ def audit_split_and_leakage(df: pd.DataFrame, cfg, label_col="label") -> dict:
     if len(test) >= cfg.model.window_size:
         assert test_w.X.shape[-1] == train_w.X.shape[-1]
 
-    # Threshold gate: derive threshold from train scores only, then prove changing
-    # held-out labels/scores cannot change the fitted threshold.
     train_scores = np.linspace(0.01, 0.99, len(train))
     threshold = fit_threshold_train_only(train[label_col].to_numpy(), train_scores)
-    heldout_mutated = np.linspace(0.99, 0.01, len(val) + len(test)) if len(val) + len(test) else np.array([])
     threshold_repeat = fit_threshold_train_only(train[label_col].to_numpy(), train_scores)
     assert threshold == threshold_repeat
 
-    # BSS reference gate: fit only on train, snapshot it, then prove held-out
-    # mutation cannot affect the frozen reference.
     bss_reference = fit_bss_reference_train_only(train, label_col)
     bss_snapshot = json.dumps(bss_reference, sort_keys=True)
-    _ = heldout_mutated  # explicit evidence that held-out data are not consumed
     assert json.dumps(bss_reference, sort_keys=True) == bss_snapshot
     assert bss_reference["fit_partition"] == "train"
 
@@ -167,10 +154,7 @@ def audit_split_and_leakage(df: pd.DataFrame, cfg, label_col="label") -> dict:
 
 def reproducibility_audit(df: pd.DataFrame, cfg, label_col="label", seed=42) -> dict:
     """Execute a deterministic seeded training/replay check on identical windows."""
-    train, _, test = chronological_split(
-        df, cfg.experiment.train_fraction, cfg.experiment.validation_fraction,
-        label_col, cfg.experiment.episode_aware
-    )
+    train, _, test = chronological_split(df, cfg.experiment.train_fraction, cfg.experiment.validation_fraction, label_col, cfg.experiment.episode_aware)
     prep = OTPreprocessor(cfg.model.window_size)
     train_w = prep.fit_transform_train(train, label_col)
     test_w = prep.transform(test, label_col)
@@ -249,14 +233,7 @@ def cross_environment_matrix(paths, cfg, seeds=None, detectors=("random_forest",
 def evidence_ablation(evidence, hypotheses, reliabilities, support_threshold=.60, conflict_threshold=.35) -> dict:
     """Run Full, -BTAE, -BSS, -ATT&CK, -ACFM and detection-only variants."""
     from ..core.attribution import assess
-    variants = {
-        "Full XAITA-OT": ["DC", "BSS", "ECS", "EC", "MAS"],
-        "-BTAE": ["DC", "ECS", "MAS"],
-        "-BSS": ["DC", "ECS", "EC", "MAS"],
-        "-ATT&CK": ["DC", "BSS", "EC", "MAS"],
-        "-ACFM": ["DC", "BSS", "ECS", "EC", "MAS"],
-        "Detection-only": ["DC"],
-    }
+    variants = {"Full XAITA-OT": ["DC", "BSS", "ECS", "EC", "MAS"], "-BTAE": ["DC", "ECS", "MAS"], "-BSS": ["DC", "ECS", "EC", "MAS"], "-ATT&CK": ["DC", "BSS", "EC", "MAS"], "-ACFM": ["DC", "BSS", "ECS", "EC", "MAS"], "Detection-only": ["DC"]}
     out = {}
     for name, sources in variants.items():
         filtered = {h: {k: v for k, v in evidence.get(h, {}).items() if k in sources} for h in hypotheses}
@@ -274,12 +251,9 @@ def sensitivity_curve(evidence, hypotheses, reliabilities, parameter, values) ->
     for value in values:
         rel = dict(reliabilities)
         threshold = .60
-        if parameter == "evidence_reliability":
-            rel = {k: float(value) for k in rel}
-        elif parameter == "bss_weight":
-            rel["BSS"] = float(value)
-        elif parameter == "attribution_threshold":
-            threshold = float(value)
+        if parameter == "evidence_reliability": rel = {k: float(value) for k in rel}
+        elif parameter == "bss_weight": rel["BSS"] = float(value)
+        elif parameter == "attribution_threshold": threshold = float(value)
         assessment = assess(hypotheses, evidence, rel, threshold, .35)
         best = max(assessment, key=lambda x: x["belief"])
         rows.append({"parameter": parameter, "value": float(value), "best_hypothesis": best["hypothesis"], "belief": float(best["belief"]), "plausibility": float(best["plausibility"]), "interval_width": float(best["interval_width"])})
@@ -287,60 +261,38 @@ def sensitivity_curve(evidence, hypotheses, reliabilities, parameter, values) ->
 
 
 def mean_std_ci(values, confidence=.95) -> dict:
-    values = np.asarray(values, dtype=float)
-    n = len(values)
-    mean = float(np.mean(values)) if n else float("nan")
-    std = float(np.std(values, ddof=1)) if n > 1 else 0.0
+    values = np.asarray(values, dtype=float); n = len(values); mean = float(np.mean(values)) if n else float("nan"); std = float(np.std(values, ddof=1)) if n > 1 else 0.0
     if n > 1:
-        half = float(stats.t.ppf((1 + confidence) / 2, n - 1) * std / sqrt(n))
-        low, high = mean - half, mean + half
-    else:
-        low = high = None
+        half = float(stats.t.ppf((1 + confidence) / 2, n - 1) * std / sqrt(n)); low, high = mean - half, mean + half
+    else: low = high = None
     return {"mean": mean, "std": std, "n": n, "ci95_low": low, "ci95_high": high}
 
 
 def paired_effect(a, b) -> dict:
-    """Paired difference, Cohen's dz and paired t-test for matched runs."""
     a, b = np.asarray(a, dtype=float), np.asarray(b, dtype=float)
-    if len(a) != len(b) or len(a) < 2:
-        return {"n": int(min(len(a), len(b))), "mean_difference": None, "cohens_dz": None, "p_value": None}
-    d = a - b
-    sd = float(np.std(d, ddof=1))
-    _, p = stats.ttest_rel(a, b)
+    if len(a) != len(b) or len(a) < 2: return {"n": int(min(len(a), len(b))), "mean_difference": None, "cohens_dz": None, "p_value": None}
+    d = a - b; sd = float(np.std(d, ddof=1)); _, p = stats.ttest_rel(a, b)
     return {"n": len(d), "mean_difference": float(np.mean(d)), "cohens_dz": float(np.mean(d) / sd) if sd else 0.0, "p_value": float(p)}
 
 
 def make_case_study(csv_path, dataset, cfg, seed=None) -> dict:
-    """Select highest-scoring test windows and pass them through the V1 engine."""
     from ..pipeline.engine import XAITAEngine
-    run_seed = cfg.seed if seed is None else seed
-    set_seed(run_seed)
+    run_seed = cfg.seed if seed is None else seed; set_seed(run_seed)
     df = adapt_dataset(semantic_harmonize(load_csv(csv_path)), dataset)
     train, _, test = chronological_split(df, cfg.experiment.train_fraction, cfg.experiment.validation_fraction, cfg.attack_label_column, cfg.experiment.episode_aware)
-    prep = OTPreprocessor(cfg.model.window_size)
-    train_w, test_w = prep.fit_transform_train(train, cfg.attack_label_column), prep.transform(test, cfg.attack_label_column)
-    detector = Detector(train_w.X.shape[-1], cfg.model, architecture="cnn_lstm")
-    detector.fit(train_w.X, train_w.y, cfg.model.epochs, cfg.model.batch_size, cfg.model.learning_rate)
-    p = detector.predict_proba(test_w.X)
-    order = np.argsort(p)[::-1][:min(8, len(p))]
-    events = []
-    offset = max(0, len(test) - len(test_w.X))
+    prep = OTPreprocessor(cfg.model.window_size); train_w, test_w = prep.fit_transform_train(train, cfg.attack_label_column), prep.transform(test, cfg.attack_label_column)
+    detector = Detector(train_w.X.shape[-1], cfg.model, architecture="cnn_lstm"); detector.fit(train_w.X, train_w.y, cfg.model.epochs, cfg.model.batch_size, cfg.model.learning_rate)
+    p = detector.predict_proba(test_w.X); order = np.argsort(p)[::-1][:min(8, len(p))]; events = []; offset = max(0, len(test) - len(test_w.X))
     for j, idx in enumerate(sorted(order)):
-        row = test.iloc[min(int(idx) + offset, len(test) - 1)]
-        events.append({"event_id": f"case-{j+1}", "timestamp": row[cfg.timestamp_column], "asset": str(row.get("asset", "PLC-UNKNOWN")), "protocol": str(row.get("protocol", "modbus")), "label": "detected_activity", "detection_confidence": float(p[idx]), "features": {}})
-    if not events:
-        raise ValueError("case-study selection produced no test events")
+        row = test.iloc[min(int(idx) + offset, len(test) - 1)]; events.append({"event_id": f"case-{j+1}", "timestamp": row[cfg.timestamp_column], "asset": str(row.get("asset", "PLC-UNKNOWN")), "protocol": str(row.get("protocol", "modbus")), "label": "detected_activity", "detection_confidence": float(p[idx]), "features": {}})
+    if not events: raise ValueError("case-study selection produced no test events")
     return {"dataset": dataset, "seed": run_seed, "selection": {"event_count": len(events), "selection_rule": "top detector-scored test windows"}, "result": XAITAEngine(cfg).analyze(events)}
 
 
 def build_paper_tables(payload: dict, out_dir) -> dict:
-    """Write only measured rows supplied by the runner to Tables 4-10/17/18."""
-    out = Path(out_dir); out.mkdir(parents=True, exist_ok=True)
-    paths = {}
+    out = Path(out_dir); out.mkdir(parents=True, exist_ok=True); paths = {}
     for number, rows in payload.get("tables", {}).items():
         if isinstance(rows, list):
-            path = out / f"table_{number}.csv"
-            pd.DataFrame(rows).to_csv(path, index=False)
-            paths[str(number)] = str(path)
+            path = out / f"table_{number}.csv"; pd.DataFrame(rows).to_csv(path, index=False); paths[str(number)] = str(path)
     (out / "paper_tables.json").write_text(json.dumps(payload.get("tables", {}), indent=2, default=str), encoding="utf-8")
     return paths
