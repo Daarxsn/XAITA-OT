@@ -44,6 +44,9 @@ def test_phase3_runs_all_datasets_and_compares_wef_acfm():
     assert set(result["ece_summary"]) == {"detector", "WEF", "ACFM"}
     for run in result["runs"]:
         assert "ece" in run["detector"]
+        assert "brier" in run["detector"]
         assert "ece" in run["fusion"]["WEF"]
+        assert "brier" in run["fusion"]["WEF"]
         assert "ece" in run["fusion"]["ACFM"]
-        assert run["fusion"]["ACFM"]["acfm_point_estimate"] if False else True
+        assert "brier" in run["fusion"]["ACFM"]
+        assert run["fusion"]["acfm_point_estimate"].startswith("midpoint")
