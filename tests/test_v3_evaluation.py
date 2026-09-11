@@ -13,11 +13,21 @@ from xaita_ot.pipeline.v3_evaluation import (
 
 def _df():
     labels = [0] * 20 + [1] * 5 + [0] * 20 + [1] * 5 + [0] * 20
-    return pd.DataFrame({"timestamp": pd.date_range("2026-01-01", periods=len(labels), freq="s"), "label": labels})
+    n = len(labels)
+    return pd.DataFrame({
+        "timestamp": pd.date_range("2026-01-01", periods=n, freq="s"),
+        "sensor_a": np.linspace(0, 1, n),
+        "sensor_b": np.sin(np.arange(n) / 10),
+        "asset": ["PLC-1"] * n,
+        "protocol": ["modbus"] * n,
+        "label": labels,
+    })
 
 
 def test_v3_leakage_audit_passes():
-    audit = audit_split_and_leakage(_df(), AppConfig())
+    cfg = AppConfig()
+    cfg.model.window_size = 16
+    audit = audit_split_and_leakage(_df(), cfg)
     assert audit["status"] == "PASS"
     assert audit["chronological"] is True
     assert audit["overlap_rows"] == 0
