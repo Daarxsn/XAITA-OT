@@ -5,6 +5,7 @@ from itertools import permutations
 from math import sqrt
 from pathlib import Path
 import copy
+import hashlib
 import json
 
 import numpy as np
@@ -48,8 +49,6 @@ def _assert_episode_disjoint(original, train, val, test, label_col="label") -> N
     for name, frame in (("train", train), ("validation", val), ("test", test)):
         owners[name] = {int(global_ids[i]) for i in frame.index if global_ids[i] > 0}
     assert not (owners["train"] & owners["validation"] or owners["train"] & owners["test"] or owners["validation"] & owners["test"]), "attack episode overlap detected"
-    # A positive episode must have exactly one owner; this catches a split through
-    # an attack even if local partition IDs would otherwise be renumbered.
     positive_rows = np.flatnonzero(global_ids > 0)
     assert all(sum(i in frame.index for frame in (train, val, test)) == 1 for i in positive_rows), "attack episode row ownership violated"
 
@@ -167,12 +166,17 @@ def reproducibility_audit(df: pd.DataFrame, cfg, label_col="label", seed=42) -> 
         flat_train = train_w.X.reshape(len(train_w.X), -1)
         flat_test = test_w.X.reshape(len(test_w.X), -1)
         clf.fit(flat_train, train_w.y)
-        return clf.predict_proba(flat_test)[:, 1]
+        if len(clf.classes_) == 2:
+            return clf.predict_proba(flat_test)[:, 1]
+        # A single-class training partition is valid for a leakage/reproducibility
+        # audit; represent its positive-class probability explicitly as 0 or 1.
+        constant = float(clf.classes_[0])
+        return np.full(len(flat_test), constant, dtype=float)
 
     p1, p2 = run_once(), run_once()
     identical = bool(np.array_equal(p1, p2))
     assert identical, "same seed did not reproduce identical predictions"
-    return {"seed": int(seed), "train_windows": len(train_w.X), "test_windows": len(test_w.X), "prediction_digest": __import__('hashlib').sha256(p1.tobytes()).hexdigest(), "repeat_identical": identical, "status": "PASS"}
+    return {"seed": int(seed), "train_windows": len(train_w.X), "test_windows": len(test_w.X), "prediction_digest": hashlib.sha256(p1.tobytes()).hexdigest(), "repeat_identical": identical, "status": "PASS"}
 
 
 def confidence_bins(y, p, bins=10) -> list[dict]:
@@ -261,38 +265,60 @@ def sensitivity_curve(evidence, hypotheses, reliabilities, parameter, values) ->
 
 
 def mean_std_ci(values, confidence=.95) -> dict:
-    values = np.asarray(values, dtype=float); n = len(values); mean = float(np.mean(values)) if n else float("nan"); std = float(np.std(values, ddof=1)) if n > 1 else 0.0
+    values = np.asarray(values, dtype=float)
+    n = len(values)
+    mean = float(np.mean(values)) if n else float("nan")
+    std = float(np.std(values, ddof=1)) if n > 1 else 0.0
     if n > 1:
-        half = float(stats.t.ppf((1 + confidence) / 2, n - 1) * std / sqrt(n)); low, high = mean - half, mean + half
-    else: low = high = None
+        half = float(stats.t.ppf((1 + confidence) / 2, n - 1) * std / sqrt(n))
+        low, high = mean - half, mean + half
+    else:
+        low = high = None
     return {"mean": mean, "std": std, "n": n, "ci95_low": low, "ci95_high": high}
 
 
 def paired_effect(a, b) -> dict:
+    """Paired difference, Cohen's dz and paired t-test for matched runs."""
     a, b = np.asarray(a, dtype=float), np.asarray(b, dtype=float)
-    if len(a) != len(b) or len(a) < 2: return {"n": int(min(len(a), len(b))), "mean_difference": None, "cohens_dz": None, "p_value": None}
-    d = a - b; sd = float(np.std(d, ddof=1)); _, p = stats.ttest_rel(a, b)
+    if len(a) != len(b) or len(a) < 2:
+        return {"n": int(min(len(a), len(b))), "mean_difference": None, "cohens_dz": None, "p_value": None}
+    d = a - b
+    sd = float(np.std(d, ddof=1))
+    _, p = stats.ttest_rel(a, b)
     return {"n": len(d), "mean_difference": float(np.mean(d)), "cohens_dz": float(np.mean(d) / sd) if sd else 0.0, "p_value": float(p)}
 
 
 def make_case_study(csv_path, dataset, cfg, seed=None) -> dict:
+    """Select highest-scoring test windows and pass them through the V1 engine."""
     from ..pipeline.engine import XAITAEngine
-    run_seed = cfg.seed if seed is None else seed; set_seed(run_seed)
+    run_seed = cfg.seed if seed is None else seed
+    set_seed(run_seed)
     df = adapt_dataset(semantic_harmonize(load_csv(csv_path)), dataset)
     train, _, test = chronological_split(df, cfg.experiment.train_fraction, cfg.experiment.validation_fraction, cfg.attack_label_column, cfg.experiment.episode_aware)
-    prep = OTPreprocessor(cfg.model.window_size); train_w, test_w = prep.fit_transform_train(train, cfg.attack_label_column), prep.transform(test, cfg.attack_label_column)
-    detector = Detector(train_w.X.shape[-1], cfg.model, architecture="cnn_lstm"); detector.fit(train_w.X, train_w.y, cfg.model.epochs, cfg.model.batch_size, cfg.model.learning_rate)
-    p = detector.predict_proba(test_w.X); order = np.argsort(p)[::-1][:min(8, len(p))]; events = []; offset = max(0, len(test) - len(test_w.X))
+    prep = OTPreprocessor(cfg.model.window_size)
+    train_w, test_w = prep.fit_transform_train(train, cfg.attack_label_column), prep.transform(test, cfg.attack_label_column)
+    detector = Detector(train_w.X.shape[-1], cfg.model, architecture="cnn_lstm")
+    detector.fit(train_w.X, train_w.y, cfg.model.epochs, cfg.model.batch_size, cfg.model.learning_rate)
+    p = detector.predict_proba(test_w.X)
+    order = np.argsort(p)[::-1][:min(8, len(p))]
+    events = []
+    offset = max(0, len(test) - len(test_w.X))
     for j, idx in enumerate(sorted(order)):
-        row = test.iloc[min(int(idx) + offset, len(test) - 1)]; events.append({"event_id": f"case-{j+1}", "timestamp": row[cfg.timestamp_column], "asset": str(row.get("asset", "PLC-UNKNOWN")), "protocol": str(row.get("protocol", "modbus")), "label": "detected_activity", "detection_confidence": float(p[idx]), "features": {}})
-    if not events: raise ValueError("case-study selection produced no test events")
+        row = test.iloc[min(int(idx) + offset, len(test) - 1)]
+        events.append({"event_id": f"case-{j+1}", "timestamp": row[cfg.timestamp_column], "asset": str(row.get("asset", "PLC-UNKNOWN")), "protocol": str(row.get("protocol", "modbus")), "label": "detected_activity", "detection_confidence": float(p[idx]), "features": {}})
+    if not events:
+        raise ValueError("case-study selection produced no test events")
     return {"dataset": dataset, "seed": run_seed, "selection": {"event_count": len(events), "selection_rule": "top detector-scored test windows"}, "result": XAITAEngine(cfg).analyze(events)}
 
 
 def build_paper_tables(payload: dict, out_dir) -> dict:
-    out = Path(out_dir); out.mkdir(parents=True, exist_ok=True); paths = {}
+    """Write only measured rows supplied by the runner to Tables 4-10/17/18."""
+    out = Path(out_dir); out.mkdir(parents=True, exist_ok=True)
+    paths = {}
     for number, rows in payload.get("tables", {}).items():
         if isinstance(rows, list):
-            path = out / f"table_{number}.csv"; pd.DataFrame(rows).to_csv(path, index=False); paths[str(number)] = str(path)
+            path = out / f"table_{number}.csv"
+            pd.DataFrame(rows).to_csv(path, index=False)
+            paths[str(number)] = str(path)
     (out / "paper_tables.json").write_text(json.dumps(payload.get("tables", {}), indent=2, default=str), encoding="utf-8")
     return paths
