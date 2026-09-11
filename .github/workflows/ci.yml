@@ -10,6 +10,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
     steps:
@@ -47,5 +48,12 @@ jobs:
           PY
       - name: V3 Phase 1 leakage and reproducibility acceptance
         run: python scripts/run_v3_phase1.py --csv data/demo/swat_like.csv --dataset SWaT --out artifacts/v3/phase1
+      - name: Upload V3 Phase 1 acceptance artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v3-phase1-${{ matrix.python-version }}
+          path: artifacts/v3/phase1
+          if-no-files-found: error
       - name: Compile package
         run: python -m compileall -q src scripts
