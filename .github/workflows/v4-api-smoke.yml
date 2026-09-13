@@ -25,5 +25,7 @@ jobs:
           pip install -e ".[dev]"
       - name: API import and endpoint smoke
         run: pytest -q tests/test_api.py
+      - name: Start real API and verify runtime
+        run: python scripts/api_startup_smoke.py
       - name: Compile API package
-        run: python -m compileall -q src/xaita_ot/api run_api.py
+        run: python -m compileall -q src/xaita_ot/api run_api.py scripts/api_startup_smoke.py
