@@ -48,9 +48,9 @@ See [`docs/V1_V2_ACCEPTANCE.md`](docs/V1_V2_ACCEPTANCE.md) for the detailed acce
 
 ## Verification boundary
 
-The audited implementation passed **22 automated tests** in the local acceptance run. V1 was executed successfully against the deterministic **SWaT-like demo fixture**. V2 controlled execution was completed across the three deterministic dataset fixtures, including the four detector configurations, six attribution configurations, and the final XAI/fidelity/provenance path.
+The implementation is covered by automated unit, integration, smoke, and acceptance tests executed in CI. V1 was executed successfully against the deterministic **SWaT-like demo fixture**. V2 controlled execution was completed across the three deterministic dataset fixtures, including the four detector configurations, six attribution configurations, and the final XAI/fidelity/provenance path.
 
-These fixtures validate implementation and integration only. They are **not real SWaT, BATADAL or TON-IoT benchmark datasets**, and their outputs must not be reported as benchmark performance. Real benchmark validation is the next V3 research gate.
+These fixtures validate implementation and integration only. They are **not real SWaT, BATADAL or TON- IoT benchmark datasets**, and their outputs must not be reported as benchmark performance. Real benchmark validation is the next V3 research gate.
 
 ## Important deployment boundary
 
