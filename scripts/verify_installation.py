@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -29,12 +30,16 @@ def main() -> int:
     version = run(sys.executable, "-c", "from xaita_ot import __version__; print(__version__)")
     print(f"Package version: {version}")
 
-    cli_help = run(sys.executable, "-m", "xaita_ot.cli", "--help")
-    if "synthetic-data" not in cli_help or "demo" not in cli_help:
-        raise RuntimeError("CLI help does not expose the documented commands")
-    print("CLI commands: OK")
+    cli = shutil.which("xaita")
+    if cli is None:
+        raise RuntimeError("Installed xaita console command was not found on PATH")
 
-    output = run(sys.executable, "-m", "xaita_ot.cli", "demo", "--out", "artifacts/v4_verification_cti.json")
+    cli_help = run(cli, "--help")
+    if "synthetic-data" not in cli_help or "demo" not in cli_help:
+        raise RuntimeError("Installed CLI help does not expose the documented commands")
+    print(f"CLI commands: OK ({cli})")
+
+    output = run(cli, "demo", "--out", "artifacts/v4_verification_cti.json")
     output_path = ROOT / output
     if not output_path.exists():
         raise RuntimeError(f"Demo output was not created: {output_path}")
