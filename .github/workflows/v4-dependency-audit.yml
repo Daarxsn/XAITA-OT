@@ -1,0 +1,43 @@
+name: XAITA-OT V4.4 Dependency Audit
+
+on:
+  push:
+    branches: [v4.4-development]
+  pull_request:
+    branches: [v4.4-development, main]
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+
+      - name: Install pip-audit
+        run: python -m pip install pip-audit
+
+      - name: Audit installed dependencies
+        run: |
+          mkdir -p artifacts
+          python -m pip_audit --format json --output artifacts/dependency-audit.json
+
+      - name: Upload dependency audit report
+        if: ${{ always() && hashFiles('artifacts/dependency-audit.json') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: xaita-ot-v4.4-dependency-audit
+          path: artifacts/dependency-audit.json
+          if-no-files-found: error
