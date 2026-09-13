@@ -1,10 +1,10 @@
-name: XAITA-OT V4.1 Installation
+name: XAITA-OT V4 Installation
 
 on:
   push:
-    branches: [v4-development]
+    branches: [v4.3-development]
   pull_request:
-    branches: [v4-development, main]
+    branches: [v4.3-development, main]
 
 jobs:
   clean-install:
