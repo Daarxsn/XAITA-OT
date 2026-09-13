@@ -14,7 +14,8 @@ from ..pipeline.engine import XAITAEngine
 from ..pipeline.experiments import run_detection
 
 VERSION = __version__
-ROOT = Path(os.environ.get("XAITA_OT_ROOT", Path.cwd()))
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(os.environ.get("XAITA_OT_ROOT", _PROJECT_ROOT))
 MAX_EVENTS = int(os.environ.get("XAITA_MAX_EVENTS", "5000"))
 API_KEY = os.environ.get("XAITA_API_KEY")
 DATASET_PATHS = {"SWaT": os.environ.get("XAITA_SWAT_PATH"), "BATADAL": os.environ.get("XAITA_BATADAL_PATH"), "TON-IoT": os.environ.get("XAITA_TONIOT_PATH")}
