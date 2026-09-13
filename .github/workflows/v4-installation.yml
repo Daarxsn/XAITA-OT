@@ -1,10 +1,10 @@
-name: XAITA-OT V4.1 Installation
+name: XAITA-OT V4.5 Installation
 
 on:
   push:
-    branches: [v4-development]
+    branches: [v4.5-development]
   pull_request:
-    branches: [v4-development, main]
+    branches: [v4.5-development, main]
 
 jobs:
   clean-install:
@@ -36,6 +36,7 @@ jobs:
       - name: Run demo workflow
         run: |
           . .verify-venv/bin/activate
+          mkdir -p artifacts
           xaita demo --out artifacts/v4_clean_install_cti.json
           test -s artifacts/v4_clean_install_cti.json
       - name: Run installation verification inside clean environment
