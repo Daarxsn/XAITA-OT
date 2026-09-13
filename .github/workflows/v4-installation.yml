@@ -1,0 +1,49 @@
+name: XAITA-OT V4.1 Installation
+
+on:
+  push:
+    branches: [v4-development]
+  pull_request:
+    branches: [v4-development, main]
+
+jobs:
+  clean-install:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Build distribution artifacts
+        run: |
+          python -m pip install --upgrade pip setuptools wheel build
+          python -m build
+      - name: Create clean virtual environment
+        run: python -m venv .verify-venv
+      - name: Install built wheel
+        run: |
+          . .verify-venv/bin/activate
+          python -m pip install dist/*.whl
+      - name: Verify installed package and CLI
+        run: |
+          . .verify-venv/bin/activate
+          python -c "from xaita_ot import __version__; print(__version__)"
+          xaita --help
+      - name: Run demo workflow
+        run: |
+          . .verify-venv/bin/activate
+          xaita demo --out artifacts/v4_clean_install_cti.json
+          test -s artifacts/v4_clean_install_cti.json
+      - name: Run verification script with development checkout
+        run: python scripts/verify_installation.py
+      - name: Upload verification artifact
+        if: ${{ always() && hashFiles('artifacts/v4_clean_install_cti.json') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4-clean-install-${{ matrix.python-version }}
+          path: artifacts/v4_clean_install_cti.json
+          if-no-files-found: error
