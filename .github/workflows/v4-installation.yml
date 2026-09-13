@@ -38,8 +38,10 @@ jobs:
           . .verify-venv/bin/activate
           xaita demo --out artifacts/v4_clean_install_cti.json
           test -s artifacts/v4_clean_install_cti.json
-      - name: Run verification script with development checkout
-        run: python scripts/verify_installation.py
+      - name: Run installation verification inside clean environment
+        run: |
+          . .verify-venv/bin/activate
+          python scripts/verify_installation.py
       - name: Upload verification artifact
         if: ${{ always() && hashFiles('artifacts/v4_clean_install_cti.json') != '' }}
         uses: actions/upload-artifact@v4
