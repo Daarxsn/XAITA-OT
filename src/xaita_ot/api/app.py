@@ -7,12 +7,13 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from .. import __version__
 from ..config import load_config
 from ..core.schemas import DetectionEvent
 from ..pipeline.engine import XAITAEngine
 from ..pipeline.experiments import run_detection
 
-VERSION = "0.4.0"
+VERSION = __version__
 ROOT = Path(os.environ.get("XAITA_OT_ROOT", Path.cwd()))
 MAX_EVENTS = int(os.environ.get("XAITA_MAX_EVENTS", "5000"))
 API_KEY = os.environ.get("XAITA_API_KEY")
