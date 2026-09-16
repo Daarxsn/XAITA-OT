@@ -26,13 +26,27 @@ engine = XAITAEngine(load_config())
 
 
 def _dashboard_candidates() -> list[Path]:
-    """Return dashboard locations in deterministic, deployment-safe priority order."""
-    candidates = [
-        ROOT / "web" / "index.html",
-        Path.cwd() / "web" / "index.html",
-        Path("/app/web/index.html"),
-        _PROJECT_ROOT / "web" / "index.html",
-    ]
+    """Return dashboard locations while respecting explicit test/deployment roots."""
+    candidates = [ROOT / "web" / "index.html"]
+    root_is_default = ROOT.resolve() == _PROJECT_ROOT.resolve()
+    cwd_is_project = Path.cwd().resolve() == _PROJECT_ROOT.resolve()
+
+    # An explicit XAITA_OT_ROOT (or a monkeypatched ROOT in tests) is authoritative.
+    # Do not silently fall back to the checkout, otherwise missing-asset checks can
+    # incorrectly succeed against a developer workspace.
+    if root_is_default:
+        candidates.extend(
+            [
+                Path.cwd() / "web" / "index.html",
+                Path("/app/web/index.html"),
+                _PROJECT_ROOT / "web" / "index.html",
+            ]
+        )
+    elif not cwd_is_project:
+        # Permit Render/process working-directory deployments, but never fall back
+        # to the repository checkout when an explicit root was supplied.
+        candidates.append(Path.cwd() / "web" / "index.html")
+
     return list(dict.fromkeys(path.resolve() for path in candidates))
 
 
@@ -85,23 +99,13 @@ def health():
 @app.get("/ready")
 def ready():
     dashboard_path = _dashboard_path()
-    return {
-        "status": "ready",
-        "dashboard": bool(dashboard_path and dashboard_path.is_file()),
-        "max_events": MAX_EVENTS,
-    }
+    return {"status": "ready", "dashboard": bool(dashboard_path and dashboard_path.is_file()), "max_events": MAX_EVENTS}
 
 
 @app.get("/v2/datasets")
 def dataset_status(xaita_api_key: str | None = Header(default=None)):
     _check_api_key(xaita_api_key)
-    return {
-        "schema_version": "XAITA-OT-V2-DATASET-STATUS-1.0",
-        "datasets": {
-            n: {"configured": bool(p), "exists": bool(p and Path(p).exists())}
-            for n, p in DATASET_PATHS.items()
-        },
-    }
+    return {"schema_version": "XAITA-OT-V2-DATASET-STATUS-1.0", "datasets": {n: {"configured": bool(p), "exists": bool(p and Path(p).exists())} for n, p in DATASET_PATHS.items()}}
 
 
 @app.post("/v2/experiment")
@@ -118,19 +122,7 @@ def run_v2_experiment(payload: ExperimentIn, xaita_api_key: str | None = Header(
     run = run_detection(path, payload.dataset, cfg, seed=payload.seed)
     if payload.detector not in run.metrics:
         raise HTTPException(status_code=400, detail=f"Unknown detector: {payload.detector}")
-    return {
-        "schema_version": "XAITA-OT-V2-RUN-1.0",
-        "experiment_id": run.experiment_id,
-        "dataset": run.dataset,
-        "detector": payload.detector,
-        "seed": run.seed,
-        "started_at": run.started_at,
-        "duration_seconds": run.duration_seconds,
-        "rows": run.rows,
-        "windows": run.windows,
-        "metrics": run.metrics[payload.detector],
-        "all_model_metrics": run.metrics,
-    }
+    return {"schema_version": "XAITA-OT-V2-RUN-1.0", "experiment_id": run.experiment_id, "dataset": run.dataset, "detector": payload.detector, "seed": run.seed, "started_at": run.started_at, "duration_seconds": run.duration_seconds, "rows": run.rows, "windows": run.windows, "metrics": run.metrics[payload.detector], "all_model_metrics": run.metrics}
 
 
 @app.get("/")
