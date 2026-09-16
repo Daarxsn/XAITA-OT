@@ -16,6 +16,7 @@ from ..pipeline.experiments import run_detection
 VERSION = __version__
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _CONFIGURED_ROOT = os.environ.get("XAITA_OT_ROOT")
+ROOT = Path(_CONFIGURED_ROOT) if _CONFIGURED_ROOT else _PROJECT_ROOT
 MAX_EVENTS = int(os.environ.get("XAITA_MAX_EVENTS", "5000"))
 API_KEY = os.environ.get("XAITA_API_KEY")
 DATASET_PATHS = {"SWaT": os.environ.get("XAITA_SWAT_PATH"), "BATADAL": os.environ.get("XAITA_BATADAL_PATH"), "TON-IoT": os.environ.get("XAITA_TONIOT_PATH")}
@@ -25,18 +26,13 @@ engine = XAITAEngine(load_config())
 
 
 def _dashboard_candidates() -> list[Path]:
-    """Return deployment-safe dashboard locations in deterministic priority order."""
-    candidates: list[Path] = []
-    if _CONFIGURED_ROOT:
-        candidates.append(Path(_CONFIGURED_ROOT) / "web" / "index.html")
-    candidates.extend(
-        [
-            Path.cwd() / "web" / "index.html",
-            Path("/app/web/index.html"),
-            _PROJECT_ROOT / "web" / "index.html",
-        ]
-    )
-    # Preserve order while removing duplicates.
+    """Return dashboard locations in deterministic, deployment-safe priority order."""
+    candidates = [
+        ROOT / "web" / "index.html",
+        Path.cwd() / "web" / "index.html",
+        Path("/app/web/index.html"),
+        _PROJECT_ROOT / "web" / "index.html",
+    ]
     return list(dict.fromkeys(path.resolve() for path in candidates))
 
 
@@ -89,7 +85,11 @@ def health():
 @app.get("/ready")
 def ready():
     dashboard_path = _dashboard_path()
-    return {"status": "ready", "dashboard": dashboard_path is not None, "max_events": MAX_EVENTS}
+    return {
+        "status": "ready",
+        "dashboard": bool(dashboard_path and dashboard_path.is_file()),
+        "max_events": MAX_EVENTS,
+    }
 
 
 @app.get("/v2/datasets")
