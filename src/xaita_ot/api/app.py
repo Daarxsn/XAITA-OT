@@ -17,6 +17,7 @@ VERSION = __version__
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _CONFIGURED_ROOT = os.environ.get("XAITA_OT_ROOT")
 ROOT = Path(_CONFIGURED_ROOT) if _CONFIGURED_ROOT else _PROJECT_ROOT
+_DEFAULT_ROOT = ROOT
 MAX_EVENTS = int(os.environ.get("XAITA_MAX_EVENTS", "5000"))
 API_KEY = os.environ.get("XAITA_API_KEY")
 DATASET_PATHS = {"SWaT": os.environ.get("XAITA_SWAT_PATH"), "BATADAL": os.environ.get("XAITA_BATADAL_PATH"), "TON-IoT": os.environ.get("XAITA_TONIOT_PATH")}
@@ -26,13 +27,14 @@ engine = XAITAEngine(load_config())
 
 
 def _dashboard_candidates() -> list[Path]:
-    """Return dashboard locations with runtime ROOT overrides taking precedence."""
-    # ROOT is intentionally read at call time because tests and embedding
-    # applications may override it after module import.
-    if ROOT.resolve() != _PROJECT_ROOT.resolve():
-        candidates = [ROOT / "web" / "index.html"]
-    elif _CONFIGURED_ROOT:
+    """Return dashboard locations using explicit overrides before safe fallbacks."""
+    # ROOT may be changed by tests or embedding applications after import.
+    # Compare against the immutable import-time default rather than
+    # _PROJECT_ROOT, which tests may patch independently.
+    if _CONFIGURED_ROOT:
         candidates = [Path(_CONFIGURED_ROOT) / "web" / "index.html"]
+    elif ROOT.resolve() != _DEFAULT_ROOT.resolve():
+        candidates = [ROOT / "web" / "index.html"]
     else:
         candidates = [
             Path.cwd() / "web" / "index.html",
