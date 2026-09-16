@@ -26,27 +26,16 @@ engine = XAITAEngine(load_config())
 
 
 def _dashboard_candidates() -> list[Path]:
-    """Return dashboard locations while respecting explicit test/deployment roots."""
-    candidates = [ROOT / "web" / "index.html"]
-    root_is_default = ROOT.resolve() == _PROJECT_ROOT.resolve()
-    cwd_is_project = Path.cwd().resolve() == _PROJECT_ROOT.resolve()
-
-    # An explicit XAITA_OT_ROOT (or a monkeypatched ROOT in tests) is authoritative.
-    # Do not silently fall back to the checkout, otherwise missing-asset checks can
-    # incorrectly succeed against a developer workspace.
-    if root_is_default:
-        candidates.extend(
-            [
-                Path.cwd() / "web" / "index.html",
-                Path("/app/web/index.html"),
-                _PROJECT_ROOT / "web" / "index.html",
-            ]
-        )
-    elif not cwd_is_project:
-        # Permit Render/process working-directory deployments, but never fall back
-        # to the repository checkout when an explicit root was supplied.
-        candidates.append(Path.cwd() / "web" / "index.html")
-
+    """Return dashboard locations with explicit overrides taking precedence."""
+    if _CONFIGURED_ROOT:
+        candidates = [Path(_CONFIGURED_ROOT) / "web" / "index.html"]
+    else:
+        candidates = [
+            Path.cwd() / "web" / "index.html",
+            Path("/app/web/index.html"),
+            ROOT / "web" / "index.html",
+            _PROJECT_ROOT / "web" / "index.html",
+        ]
     return list(dict.fromkeys(path.resolve() for path in candidates))
 
 
