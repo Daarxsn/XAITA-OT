@@ -1,8 +1,4 @@
-"""BATADAL dataset loading and validation.
-
-This module deliberately keeps raw files immutable and performs normalization
-in memory. It supports the public BATADAL CSV layouts used by XAITA-OT.
-"""
+"""BATADAL dataset loading and validation."""
 
 from __future__ import annotations
 
@@ -80,7 +76,8 @@ class BATADALDatasetAdapter:
             frame.columns, BATADALDatasetAdapter.LABEL_ALIASES, required=False
         )
 
-        timestamps = pd.to_datetime(frame[timestamp_column], errors="coerce")
+        # BATADAL publishes dates as dd/mm/yy HH; day-first parsing is required.
+        timestamps = pd.to_datetime(frame[timestamp_column], errors="coerce", dayfirst=True)
         if timestamps.isna().any():
             count = int(timestamps.isna().sum())
             raise BATADALValidationError(f"{subset}: {count} invalid timestamps")
@@ -119,7 +116,6 @@ class BATADALDatasetAdapter:
         return BATADALFrame(subset, source, frame, timestamp_column, label_column)
 
     def load_attack_metadata(self, subset: str) -> list[BATADALAttackInterval]:
-        """Load the reviewed attack metadata for a BATADAL subset."""
         metadata_files = {
             "train_2": self.root / "attack_lists" / "training_dataset_2_attacks.csv",
             "test": self.root / "attack_lists" / "test_dataset_attacks.csv",
@@ -133,23 +129,15 @@ class BATADALDatasetAdapter:
         return load_attack_intervals(metadata_path)
 
     def load_aligned(self, subset: str) -> BATADALFrame:
-        """Load a subset and append interval-derived labels without overwriting native labels."""
         item = self.load(subset)
         intervals = self.load_attack_metadata(subset)
         aligned = apply_attack_intervals(item.frame, intervals, item.timestamp_column)
-        return BATADALFrame(
-            subset=item.subset,
-            path=item.path,
-            frame=aligned,
-            timestamp_column=item.timestamp_column,
-            label_column=item.label_column,
-        )
+        return BATADALFrame(item.subset, item.path, aligned, item.timestamp_column, item.label_column)
 
     def load_all(self) -> dict[str, BATADALFrame]:
         return {subset: self.load(subset) for subset in ("train_1", "train_2", "test")}
 
     def manifest(self) -> dict[str, Any]:
-        """Create a deterministic manifest without modifying raw files."""
         records: list[dict[str, Any]] = []
         for subset in ("train_1", "train_2", "test"):
             item = self.load(subset)
@@ -171,8 +159,9 @@ class BATADALDatasetAdapter:
                 "sampling_frequency": "hourly" if timestamps.diff().dropna().eq(pd.Timedelta(hours=1)).all() else "non-hourly",
             }
             if labels is not None:
-                record["label_values"] = sorted({float(value) for value in labels.unique()})
-                record["unknown_label_values"] = sorted({float(value) for value in labels.unique() if float(value) < 0})
+                values = {float(value) for value in labels.unique()}
+                record["label_values"] = sorted(values)
+                record["unknown_label_values"] = sorted(value for value in values if value < 0)
             records.append(record)
         return {"dataset": "BATADAL", "files": records}
 
