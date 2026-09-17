@@ -1,0 +1,37 @@
+name: BATADAL Metadata Validation
+
+on:
+  push:
+    paths:
+      - "data/raw/batadal/attack_lists/**"
+      - "src/xaita_ot/datasets/batadal_attacks.py"
+      - "scripts/validate_batadal_attack_metadata.py"
+      - ".github/workflows/batadal-metadata.yml"
+  pull_request:
+    paths:
+      - "data/raw/batadal/attack_lists/**"
+      - "src/xaita_ot/datasets/batadal_attacks.py"
+      - "scripts/validate_batadal_attack_metadata.py"
+      - ".github/workflows/batadal-metadata.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install metadata dependencies
+        run: python -m pip install --upgrade pip pandas
+
+      - name: Validate BATADAL attack metadata
+        run: python scripts/validate_batadal_attack_metadata.py
