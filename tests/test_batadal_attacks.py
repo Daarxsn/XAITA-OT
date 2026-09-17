@@ -36,7 +36,9 @@ def test_interval_alignment_is_inclusive_at_both_boundaries():
     )
     aligned = apply_attack_intervals(frame, intervals, "DATETIME")
     assert aligned["interval_attack_label"].tolist() == [0, 1, 1, 0]
-    assert aligned["interval_attack_id"].tolist() == [pd.NA, 1, 1, pd.NA]
+    assert aligned["interval_attack_id"].isna().tolist() == [True, False, False, True]
+    assert aligned.loc[1, "interval_attack_id"] == 1
+    assert aligned.loc[2, "interval_attack_id"] == 1
     assert aligned["ATT_FLAG"].tolist() == [0, -999, -999, 0]
 
 
