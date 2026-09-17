@@ -6,3 +6,14 @@ artifacts/*.pt
 artifacts/*.joblib
 logs/*.log
 .DS_Store
+
+# Local research datasets: never commit raw or extracted dataset files.
+data/raw/**
+!data/raw/**/
+!data/raw/**/.gitkeep
+
+# Local experiment outputs; commit only approved aggregate reports.
+experiments/runs/**
+results/predictions/**
+results/metrics/**
+results/figures/**
