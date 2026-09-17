@@ -20,7 +20,30 @@ ROOT = Path(_CONFIGURED_ROOT) if _CONFIGURED_ROOT else _PROJECT_ROOT
 _DEFAULT_ROOT = ROOT
 MAX_EVENTS = int(os.environ.get("XAITA_MAX_EVENTS", "5000"))
 API_KEY = os.environ.get("XAITA_API_KEY")
-DATASET_PATHS = {"SWaT": os.environ.get("XAITA_SWAT_PATH"), "BATADAL": os.environ.get("XAITA_BATADAL_PATH"), "TON-IoT": os.environ.get("XAITA_TONIOT_PATH")}
+
+
+def _dataset_path(env_name: str, default_relative: str) -> str | None:
+    """Resolve an explicit deployment path, then a conventional mounted path."""
+    configured = os.environ.get(env_name)
+    if configured:
+        return configured
+    candidates = [
+        ROOT / default_relative,
+        Path("/app") / default_relative,
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    # Keep the conventional path visible in status responses so a mounted
+    # deployment can become ready without changing application code.
+    return str(candidates[0])
+
+
+DATASET_PATHS = {
+    "SWaT": _dataset_path("XAITA_SWAT_PATH", "data/raw/swat"),
+    "BATADAL": _dataset_path("XAITA_BATADAL_PATH", "data/raw/batadal"),
+    "TON-IoT": _dataset_path("XAITA_TONIOT_PATH", "data/raw/ton_iot"),
+}
 
 app = FastAPI(title="XAITA-OT API", version=VERSION, description="Evidence-continuous OT/ICS security analytics API")
 engine = XAITAEngine(load_config())
@@ -28,9 +51,6 @@ engine = XAITAEngine(load_config())
 
 def _dashboard_candidates() -> list[Path]:
     """Return dashboard locations using explicit overrides before safe fallbacks."""
-    # ROOT may be changed by tests or embedding applications after import.
-    # Compare against the immutable import-time default rather than
-    # _PROJECT_ROOT, which tests may patch independently.
     if _CONFIGURED_ROOT:
         candidates = [Path(_CONFIGURED_ROOT) / "web" / "index.html"]
     elif ROOT.resolve() != _DEFAULT_ROOT.resolve():
@@ -99,7 +119,13 @@ def ready():
 @app.get("/v2/datasets")
 def dataset_status(xaita_api_key: str | None = Header(default=None)):
     _check_api_key(xaita_api_key)
-    return {"schema_version": "XAITA-OT-V2-DATASET-STATUS-1.0", "datasets": {n: {"configured": bool(p), "exists": bool(p and Path(p).exists())} for n, p in DATASET_PATHS.items()}}
+    return {
+        "schema_version": "XAITA-OT-V2-DATASET-STATUS-1.0",
+        "datasets": {
+            name: {"configured": bool(path), "exists": bool(path and Path(path).exists()), "path": path}
+            for name, path in DATASET_PATHS.items()
+        },
+    }
 
 
 @app.post("/v2/experiment")
