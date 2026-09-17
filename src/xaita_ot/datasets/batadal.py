@@ -15,6 +15,8 @@ import json
 
 import pandas as pd
 
+from .batadal_attacks import BATADALAttackInterval, apply_attack_intervals, load_attack_intervals
+
 
 class BATADALValidationError(ValueError):
     """Raised when a BATADAL input violates an ingestion invariant."""
@@ -65,11 +67,12 @@ class BATADALDatasetAdapter:
     def _validate_frame(frame: pd.DataFrame, path: Path, subset: str) -> tuple[str, str | None]:
         if frame.empty:
             raise BATADALValidationError(f"{subset}: {path} is empty")
+
+        frame.columns = [str(column).strip() for column in frame.columns]
         if frame.columns.duplicated().any():
             duplicates = frame.columns[frame.columns.duplicated()].tolist()
             raise BATADALValidationError(f"{subset}: duplicate columns: {duplicates}")
 
-        frame.columns = [str(column).strip() for column in frame.columns]
         timestamp_column = BATADALDatasetAdapter._resolve_column(
             frame.columns, BATADALDatasetAdapter.TIMESTAMP_ALIASES, required=True
         )
@@ -89,10 +92,6 @@ class BATADALDatasetAdapter:
         if frame.isna().any().any():
             missing = int(frame.isna().sum().sum())
             raise BATADALValidationError(f"{subset}: {missing} missing cells")
-
-        numeric = frame.drop(columns=[timestamp_column], errors="ignore").select_dtypes(include="number")
-        if not numeric.empty and (~numeric.map(pd.api.types.is_number).all()).any():
-            raise BATADALValidationError(f"{subset}: non-numeric values found in numeric fields")
 
         frame[timestamp_column] = timestamps
         if label_column is not None:
@@ -118,6 +117,33 @@ class BATADALDatasetAdapter:
         frame = pd.read_csv(source)
         timestamp_column, label_column = self._validate_frame(frame, source, subset)
         return BATADALFrame(subset, source, frame, timestamp_column, label_column)
+
+    def load_attack_metadata(self, subset: str) -> list[BATADALAttackInterval]:
+        """Load the reviewed attack metadata for a BATADAL subset."""
+        metadata_files = {
+            "train_2": self.root / "attack_lists" / "training_dataset_2_attacks.csv",
+            "test": self.root / "attack_lists" / "test_dataset_attacks.csv",
+        }
+        try:
+            metadata_path = metadata_files[subset]
+        except KeyError as exc:
+            raise BATADALValidationError(
+                f"Attack interval metadata is not defined for subset: {subset}"
+            ) from exc
+        return load_attack_intervals(metadata_path)
+
+    def load_aligned(self, subset: str) -> BATADALFrame:
+        """Load a subset and append interval-derived labels without overwriting native labels."""
+        item = self.load(subset)
+        intervals = self.load_attack_metadata(subset)
+        aligned = apply_attack_intervals(item.frame, intervals, item.timestamp_column)
+        return BATADALFrame(
+            subset=item.subset,
+            path=item.path,
+            frame=aligned,
+            timestamp_column=item.timestamp_column,
+            label_column=item.label_column,
+        )
 
     def load_all(self) -> dict[str, BATADALFrame]:
         return {subset: self.load(subset) for subset in ("train_1", "train_2", "test")}
