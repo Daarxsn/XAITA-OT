@@ -49,13 +49,14 @@ def adapt_toniot(df):
         )
     elif 'timestamp' not in out.columns:
         # TON-IoT network CSV has no wall-clock timestamp. Preserve source row
-        # order with a deterministic synthetic event time so the common
-        # chronological pipeline can operate without inventing real time.
+        # order with a deterministic synthetic event time. Downstream
+        # experiments must therefore use a stratified, not temporal, split.
         out['timestamp'] = pd.date_range(
             start='1970-01-01',
             periods=len(out),
             freq='s',
         )
+        out.attrs['timestamp_semantics'] = 'synthetic_event_order'
     return out
 
 
