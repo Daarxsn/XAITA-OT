@@ -7,6 +7,7 @@ from pathlib import Path
 import time
 
 import numpy as np
+import pandas as pd
 
 from ..config import AppConfig
 from ..core.seed import set_seed
@@ -33,7 +34,11 @@ def run_detection(csv_path: str | Path, dataset: str, config: AppConfig, seed: i
     started = time.perf_counter()
     run_seed = config.seed if seed is None else seed
     set_seed(run_seed)
-    df = adapt_dataset(semantic_harmonize(load_csv(csv_path)), dataset)
+    df = adapt_dataset(semantic_harmonize(load_csv(csv_path, require_timestamp=False)), dataset)
+    if "timestamp" not in df.columns:
+        raise ValueError("Missing required columns: ['timestamp']")
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
+    df = df.dropna(subset=["timestamp"]).drop_duplicates().sort_values("timestamp").reset_index(drop=True)
     train, val, test = chronological_split(
         df, train=config.experiment.train_fraction, val=config.experiment.validation_fraction,
         label_col=config.attack_label_column, episode_aware=config.experiment.episode_aware,
