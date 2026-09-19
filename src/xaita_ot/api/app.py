@@ -1,6 +1,7 @@
 from datetime import datetime
 import hmac
 import os
+import json
 from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -188,6 +189,19 @@ def dataset_status(xaita_api_key: str | None = Header(default=None)):
             for name, path in DATASET_PATHS.items()
         },
     }
+
+
+@app.get("/v2/benchmark")
+def benchmark_summary(xaita_api_key: str | None = Header(default=None)):
+    """Return committed, reproducible benchmark summaries for dashboard display."""
+    _check_api_key(xaita_api_key)
+    path = ROOT / "artifacts" / "toniOT_network_5seed_summary.json"
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Benchmark summary artifact unavailable")
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=500, detail="Benchmark summary artifact is invalid") from exc
 
 
 @app.post("/v2/experiment")
