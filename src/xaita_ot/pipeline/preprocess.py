@@ -77,7 +77,10 @@ class OTPreprocessor:
         Xw = np.stack([X[i-self.window_size+1:i+1] for i in indices])
         yw = np.array([int(np.max(y[i-self.window_size+1:i+1]) > 0) for i in indices])
         start = self.window_size - 1
-        timestamps = df["timestamp"].to_numpy()[start:]
+        if "timestamp" in df.columns:
+            timestamps = df["timestamp"].to_numpy()[start:]
+        else:
+            timestamps = np.arange(start, len(df))
 
         def column(name):
             if name in df:
