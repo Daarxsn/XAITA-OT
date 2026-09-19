@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import numpy as np
 from sklearn.metrics import precision_recall_fscore_support, roc_auc_score
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
 from .preprocess import OTPreprocessor
 from ..models.trainer import Detector
 from ..core.seed import set_seed
@@ -27,6 +28,38 @@ def _binary_episode_ids(labels):
             active = False
         ids[i] = episode
     return ids
+
+
+def stratified_split(df, train=0.70, val=0.15, label_col="label", seed=42):
+    """Stratified row split for datasets without genuine temporal timestamps.
+
+    The split preserves class proportions in train/validation/test. Rows are
+    returned in source order within each partition. This is intentionally not
+    described as temporal generalization; it is appropriate for flow datasets
+    whose released benchmark CSV does not contain event timestamps.
+    """
+    if len(df) == 0:
+        return df.copy(), df.copy(), df.copy()
+    if label_col not in df.columns:
+        raise ValueError(f"Cannot stratify without label column '{label_col}'")
+    if train <= 0 or val <= 0 or train + val >= 1:
+        raise ValueError("train/validation fractions must be positive and sum to less than 1")
+    labels = df[label_col].astype(int)
+    if labels.nunique() < 2:
+        raise ValueError("Stratified split requires at least two classes")
+    train_df, remainder = train_test_split(
+        df, train_size=train, random_state=seed, stratify=labels
+    )
+    remainder_fraction = 1.0 - train
+    val_share = val / remainder_fraction
+    val_df, test_df = train_test_split(
+        remainder, train_size=val_share, random_state=seed, stratify=remainder[label_col].astype(int)
+    )
+    return (
+        train_df.sort_index().copy(),
+        val_df.sort_index().copy(),
+        test_df.sort_index().copy(),
+    )
 
 
 def chronological_split(df, train=0.70, val=0.15, label_col="label", episode_aware=True):
