@@ -39,6 +39,68 @@ def _dataset_path(env_name: str, default_relative: str) -> str | None:
     return str(candidates[0])
 
 
+def _dataset_status(path: str | None) -> dict:
+    """Return dataset presence without requiring benchmark data in the repo."""
+    return {
+        "configured": bool(path),
+        "exists": bool(path and Path(path).exists()),
+        "path": path,
+    }
+
+
+def _experiment_detector_name(name: str) -> str:
+    """Normalize UI/API detector labels to the internal metric keys."""
+    aliases = {
+        "rf": "random_forest",
+        "random forest": "random_forest",
+        "random_forest": "random_forest",
+        "cnn": "cnn",
+        "lstm": "lstm",
+        "cnn-lstm": "cnn_lstm",
+        "cnn_lstm": "cnn_lstm",
+    }
+    key = name.strip().lower()
+    return aliases.get(key, name.strip())
+
+
+def _find_dataset_csv(path: str | Path, dataset: str) -> Path:
+    """Resolve a benchmark CSV from either a direct file or a dataset directory."""
+    root = Path(path)
+    if root.is_file():
+        return root
+    if not root.is_dir():
+        raise HTTPException(status_code=409, detail=f"{dataset} dataset path is configured but unavailable")
+
+    patterns = {
+        "TON-IoT": [
+            "**/train_test_network.csv",
+            "**/Train_Test_IoT_*.csv",
+            "**/*.csv",
+        ],
+        "SWaT": ["**/*.csv", "**/*.CSV"],
+        "BATADAL": ["**/*.csv", "**/*.CSV"],
+    }.get(dataset, ["**/*.csv"])
+
+    candidates = []
+    for pattern in patterns:
+        candidates.extend(p for p in root.glob(pattern) if p.is_file())
+        if candidates:
+            break
+
+    if not candidates:
+        raise HTTPException(status_code=409, detail=f"No CSV benchmark file found under {dataset} dataset path")
+
+    if dataset == "TON-IoT":
+        network = [p for p in candidates if p.name.lower() == "train_test_network.csv"]
+        if network:
+            return network[0]
+        iot = [p for p in candidates if "train_test_iot_modbus" in p.name.lower()]
+        if iot:
+            return iot[0]
+
+    return sorted(candidates)[0]
+
+
 DATASET_PATHS = {
     "SWaT": _dataset_path("XAITA_SWAT_PATH", "data/raw/swat"),
     "BATADAL": _dataset_path("XAITA_BATADAL_PATH", "data/raw/batadal"),
@@ -120,9 +182,9 @@ def ready():
 def dataset_status(xaita_api_key: str | None = Header(default=None)):
     _check_api_key(xaita_api_key)
     return {
-        "schema_version": "XAITA-OT-V2-DATASET-STATUS-1.0",
+        "schema_version": "XAITA-OT-V2-DATASET-STATUS-1.1",
         "datasets": {
-            name: {"configured": bool(path), "exists": bool(path and Path(path).exists()), "path": path}
+            name: _dataset_status(path)
             for name, path in DATASET_PATHS.items()
         },
     }
@@ -138,11 +200,45 @@ def run_v2_experiment(payload: ExperimentIn, xaita_api_key: str | None = Header(
         raise HTTPException(status_code=409, detail=f"{payload.dataset} dataset is not configured on this deployment")
     if not Path(path).exists():
         raise HTTPException(status_code=409, detail=f"{payload.dataset} dataset path is configured but unavailable")
-    cfg = load_config()
-    run = run_detection(path, payload.dataset, cfg, seed=payload.seed)
-    if payload.detector not in run.metrics:
-        raise HTTPException(status_code=400, detail=f"Unknown detector: {payload.detector}")
-    return {"schema_version": "XAITA-OT-V2-RUN-1.0", "experiment_id": run.experiment_id, "dataset": run.dataset, "detector": payload.detector, "seed": run.seed, "started_at": run.started_at, "duration_seconds": run.duration_seconds, "rows": run.rows, "windows": run.windows, "metrics": run.metrics[payload.detector], "all_model_metrics": run.metrics}
+
+    detector_key = _experiment_detector_name(payload.detector)
+    try:
+        csv_path = _find_dataset_csv(path, payload.dataset)
+        cfg = load_config()
+        run = run_detection(csv_path, payload.dataset, cfg, seed=payload.seed)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": f"{payload.dataset} experiment could not be executed",
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            },
+        ) from exc
+
+    if detector_key not in run.metrics:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown detector '{payload.detector}'. Available: {', '.join(sorted(run.metrics))}",
+        )
+
+    return {
+        "schema_version": "XAITA-OT-V2-RUN-1.1",
+        "experiment_id": run.experiment_id,
+        "dataset": run.dataset,
+        "detector": payload.detector,
+        "detector_key": detector_key,
+        "seed": run.seed,
+        "started_at": run.started_at,
+        "duration_seconds": run.duration_seconds,
+        "rows": run.rows,
+        "windows": run.windows,
+        "metrics": run.metrics[detector_key],
+        "all_model_metrics": run.metrics,
+        "dataset_file": str(csv_path),
+    }
 
 
 @app.get("/")

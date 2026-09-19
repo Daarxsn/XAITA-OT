@@ -40,7 +40,14 @@ def adapt_batadal(df):
 
 
 def adapt_toniot(df):
-    return _adapt(df, ('ts',), ('label','Label','attack','Attack','type'), 'TON-IoT', 'iiot')
+    out = _adapt(df, ('ts',), ('label','Label','attack','Attack','type'), 'TON-IoT', 'iiot')
+    if {'date', 'time'}.issubset(out.columns):
+        out['timestamp'] = pd.to_datetime(
+            out['date'].astype(str).str.strip() + ' ' + out['time'].astype(str).str.strip(),
+            format='%d-%b-%y %H:%M:%S',
+            errors='coerce',
+        )
+    return out
 
 
 def adapt_dataset(df, dataset: str):
