@@ -63,8 +63,19 @@ class ExperimentConfig(BaseModel):
     train_fraction: float = 0.70
     validation_fraction: float = 0.15
     episode_aware: bool = True
+    threshold_metric: str = "f1"
+    max_rf_train_windows: int = 50000
+    max_neural_train_windows: int = 100000
+    rf_n_jobs: int = 2
     xai_background_samples: int = 16
     xai_explanation_samples: int = 16
+
+    @field_validator("threshold_metric")
+    @classmethod
+    def threshold_metric_allowed(cls, value):
+        if value not in {"f1", "balanced_accuracy"}:
+            raise ValueError("threshold_metric must be 'f1' or 'balanced_accuracy'")
+        return value
 
 
 class AppConfig(BaseModel):

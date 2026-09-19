@@ -63,7 +63,7 @@ class Detector:
     def predict_proba(self, X):
         self.model.eval(); logits = []
         for i in range(0, len(X), 1024):
-            xb = torch.from_numpy(X[i:i + 1024]).to(self.device)
+            xb = torch.from_numpy(np.asarray(X[i:i + 1024]).copy()).to(self.device)
             logits.append(torch.sigmoid(self.model(xb)).cpu().numpy())
         return np.concatenate(logits) if logits else np.array([])
 

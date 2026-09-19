@@ -13,7 +13,7 @@ from ..config import AppConfig
 from ..core.seed import set_seed
 from ..io.telemetry import load_csv, semantic_harmonize
 from ..io.adapters import adapt_dataset
-from .evaluation import chronological_split, stratified_split, train_baselines
+from .evaluation import chronological_split, group_stratified_split, stratified_split, train_baselines
 from .preprocess import OTPreprocessor
 
 
@@ -40,7 +40,7 @@ def run_detection(csv_path: str | Path, dataset: str, config: AppConfig, seed: i
     df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
     df = df.dropna(subset=["timestamp"]).drop_duplicates().sort_values("timestamp").reset_index(drop=True)
     if df.attrs.get("timestamp_semantics") == "synthetic_event_order":
-        train, val, test = stratified_split(
+        train, val, test = group_stratified_split(
             df, train=config.experiment.train_fraction, val=config.experiment.validation_fraction,
             label_col=config.attack_label_column, seed=run_seed,
         )
