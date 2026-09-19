@@ -73,9 +73,18 @@ class OTPreprocessor:
     def _window(self, X, y, df) -> WindowedData:
         if len(X) < self.window_size:
             raise ValueError(f"Need at least {self.window_size} rows, got {len(X)}")
-        indices = range(self.window_size - 1, len(X))
-        Xw = np.stack([X[i-self.window_size+1:i+1] for i in indices])
-        yw = np.array([int(np.max(y[i-self.window_size+1:i+1]) > 0) for i in indices])
+        if len(X) < self.window_size:
+            raise ValueError(f"Need at least {self.window_size} rows, got {len(X)}")
+
+        # Use a strided view instead of np.stack: full TON-IoT Network contains
+        # 211k rows, and materializing every overlapping 32-row window can
+        # consume multiple GB of RAM. The view is read-only and becomes a
+        # compact copy only when a sampled training subset is selected.
+        from numpy.lib.stride_tricks import sliding_window_view
+
+        Xw = sliding_window_view(X, self.window_size, axis=0).transpose(0, 2, 1)
+        yw = np.convolve(y.astype(np.int8), np.ones(self.window_size, dtype=np.int8), mode="valid")
+        yw = (yw > 0).astype(np.int8)
         start = self.window_size - 1
         if "timestamp" in df.columns:
             timestamps = df["timestamp"].to_numpy()[start:]
