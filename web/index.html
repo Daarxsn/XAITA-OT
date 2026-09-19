@@ -57,14 +57,15 @@ button,input,select{font:inherit}.app{min-height:100vh;display:grid;grid-templat
   <div class="brand"><div class="brand-name">XAITA-OT</div><div class="brand-sub">OT / ICS THREAT ATTRIBUTION &amp; EVIDENCE INTELLIGENCE</div></div>
   <div class="env"><div class="env-top"><span><i class="dot"></i> SYSTEM ONLINE</span><span>V5.1</span></div><small>Analyst-support mode · human validation required</small></div>
   <nav class="nav">
-    <button class="active" onclick="showView('command',this)"><span class="num">01</span><div><b>Command Center</b><span>Operational posture</span></div></button>
-    <button onclick="showView('incidents',this)"><span class="num">02</span><div><b>Incidents</b><span>Triage &amp; response</span></div></button>
-    <button onclick="showView('monitoring',this)"><span class="num">03</span><div><b>Live Monitoring</b><span>Telemetry &amp; detections</span></div></button>
-    <button onclick="showView('investigation',this)"><span class="num">04</span><div><b>Investigation</b><span>Episode reconstruction</span></div></button>
-    <button onclick="showView('attribution',this)"><span class="num">05</span><div><b>Attribution</b><span>Evidence &amp; hypotheses</span></div></button>
-    <button onclick="showView('intel',this)"><span class="num">06</span><div><b>Threat Intelligence</b><span>CTI &amp; provenance</span></div></button>
-    <button onclick="showView('research',this)"><span class="num">07</span><div><b>Research Lab</b><span>Benchmarks &amp; validation</span></div></button>
-    <button onclick="showView('system',this)"><span class="num">08</span><div><b>System &amp; Audit</b><span>Health &amp; governance</span></div></button>
+    <button class="active" onclick="showView('command',this)"><span class="num">01</span><div><b>Overview</b><span>What needs attention now</span></div></button>
+    <button onclick="showView('incidents',this)"><span class="num">02</span><div><b>Incident Queue</b><span>Triage &amp; analyst workflow</span></div></button>
+    <button onclick="showView('monitoring',this)"><span class="num">03</span><div><b>Detection Monitor</b><span>OT telemetry &amp; model signals</span></div></button>
+    <button onclick="showView('investigation',this)"><span class="num">04</span><div><b>Investigation</b><span>Reconstruct &amp; validate evidence</span></div></button>
+    <button onclick="showView('attribution',this)"><span class="num">05</span><div><b>Attribution</b><span>Hypotheses &amp; uncertainty</span></div></button>
+    <button onclick="showView('intel',this)"><span class="num">06</span><div><b>Threat Intelligence</b><span>CTI &amp; ATT&amp;CK for ICS</span></div></button>
+    <button onclick="showView('assets',this)"><span class="num">07</span><div><b>Asset Context</b><span>PLC / HMI / RTU posture</span></div></button>
+    <button onclick="showView('research',this)"><span class="num">08</span><div><b>Models &amp; Research</b><span>Validation &amp; reproducibility</span></div></button>
+    <button onclick="showView('system',this)"><span class="num">09</span><div><b>Platform &amp; Audit</b><span>Health, access &amp; governance</span></div></button>
   </nav>
   <div class="sidebar-foot">No autonomous PLC / RTU / SCADA control action.<br>Attribution intervals are evidence bounds, not calibrated actor probabilities.</div>
 </aside>
@@ -74,29 +75,46 @@ button,input,select{font:inherit}.app{min-height:100vh;display:grid;grid-templat
 <div class="wrap">
 
 <section id="command" class="view active">
-  <div class="hero"><div><div class="eyebrow">OT security operations</div><h1>Command Center</h1><p>Evidence continuity, detection posture, attribution uncertainty and research readiness in one operational view.</p></div><div class="actions"><button class="btn primary" onclick="showView('incidents')">Open incident queue</button><button class="btn" onclick="showView('research')">Research status</button></div></div>
+  <div class="hero"><div><div class="eyebrow">OT security operations center</div><h1>Good morning, analyst.</h1><p>Start with what requires attention, then drill into the evidence. XAITA-OT is designed for OT/ICS security analysts, incident responders and plant security teams.</p></div><div class="actions"><button class="btn primary" onclick="showView('incidents')">Review incidents</button><button class="btn" onclick="showView('assets')">View assets</button></div></div>
+
   <div class="grid4">
-    <div class="card kpi"><div class="kpi-label">Active episodes</div><div class="kpi-value">1</div><div class="kpi-meta">1 requires analyst review</div></div>
-    <div class="card kpi"><div class="kpi-label">Detection confidence</div><div class="kpi-value green">93.0%</div><div class="kpi-meta">EP-00001 · PLC-02</div></div>
-    <div class="card kpi"><div class="kpi-label">Attribution interval</div><div class="kpi-value">69.3–100%</div><div class="kpi-meta">belief → plausibility</div></div>
-    <div class="card kpi"><div class="kpi-label">Evidence continuity</div><div class="kpi-value green">100%</div><div class="kpi-meta">observation → CTI trace</div></div>
+    <div class="card kpi"><div class="kpi-label">Critical / High</div><div class="kpi-value red">1</div><div class="kpi-meta">requires analyst action</div></div>
+    <div class="card kpi"><div class="kpi-label">Open episodes</div><div class="kpi-value">1</div><div class="kpi-meta">correlated security episodes</div></div>
+    <div class="card kpi"><div class="kpi-label">Assets at risk</div><div class="kpi-value amber">1</div><div class="kpi-meta">PLC-02 · high analytical risk</div></div>
+    <div class="card kpi"><div class="kpi-label">Evidence coverage</div><div class="kpi-value green">100%</div><div class="kpi-meta">known observation → CTI path</div></div>
   </div>
+
   <div class="grid2 section">
-    <section class="card"><div class="card-head"><div><div class="card-title">Priority incidents</div><div class="card-sub">Current analytical triage queue</div></div><span class="badge red">1 HIGH</span></div>
-      <div class="table-wrap"><table class="table"><thead><tr><th>EPISODE</th><th>ASSET</th><th>DETECTION</th><th>ATTRIBUTION</th><th>RISK</th><th>STATE</th></tr></thead><tbody><tr class="incident-row" onclick="showView('investigation')"><td class="id">EP-00001</td><td>PLC-02</td><td>93.0%</td><td>69.3–100%</td><td class="risk-high">HIGH</td><td><span class="badge amber">INVESTIGATING</span></td></tr></tbody></table></div>
+    <section class="card">
+      <div class="card-head"><div><div class="card-title">Action required</div><div class="card-sub">The analyst's next decision, not an automated OT command</div></div><span class="badge red">HIGH</span></div>
+      <div class="notice">EP-00001 on <b>PLC-02</b> shows a 93.0% detection confidence. Attribution remains an evidence interval (69.3–100%). Review the episode before escalation.</div>
+      <div class="row"><span>Recommended workflow</span><b>Investigate → validate evidence → enrich with CTI</b></div>
+      <div class="row"><span>Operational action</span><b class="amber">Human authorization required</b></div>
+      <div class="actions" style="margin-top:10px"><button class="btn primary" onclick="showView('investigation')">Open investigation</button><button class="btn" onclick="showView('intel')">Open CTI</button></div>
     </section>
-    <section class="card"><div class="card-head"><div><div class="card-title">Decision posture</div><div class="card-sub">Human-in-the-loop guardrails</div></div><span class="badge green">CONTROLLED</span></div>
-      <div class="notice info">XAITA-OT provides analytical evidence. It does not issue OT control commands or autonomous safety actions.</div>
-      <div class="row"><span>Pipeline</span><b>Detect → Episode → Context → Attribute → Explain → Risk → CTI</b></div>
-      <div class="row"><span>Research</span><b class="green">Real TON-IoT benchmark recorded</b></div>
+    <section class="card">
+      <div class="card-head"><div><div class="card-title">Plant security posture</div><div class="card-sub">Analytical view across OT asset classes</div></div><span class="badge green">MONITORED</span></div>
+      <div class="row"><span>PLCs</span><b>8 assets · 1 high attention</b></div>
+      <div class="row"><span>HMIs</span><b>4 assets · no critical alerts</b></div>
+      <div class="row"><span>RTUs</span><b>7 assets · normal</b></div>
+      <div class="row"><span>Historians</span><b>2 assets · normal</b></div>
+      <div class="row"><span>Engineering workstations</span><b>3 assets · monitored</b></div>
     </section>
   </div>
-  <section class="card section"><div class="card-head"><div><div class="card-title">Evidence continuity</div><div class="card-sub">Traceable analytical chain for the active episode</div></div><span class="badge green">TRACEABLE</span></div><div id="ccChain" class="chain"></div></section>
+
+  <section class="card section">
+    <div class="card-head"><div><div class="card-title">Priority incident queue</div><div class="card-sub">Sorted for an OT security analyst: risk first, then evidence readiness.</div></div><span class="badge">1 OPEN</span></div>
+    <div class="table-wrap"><table class="table"><thead><tr><th>EPISODE</th><th>ASSET</th><th>DETECTION</th><th>ATTRIBUTION</th><th>RISK</th><th>STATE</th><th>NEXT STEP</th></tr></thead>
+    <tbody><tr class="incident-row" onclick="showView('investigation')"><td class="id">EP-00001</td><td><b>PLC-02</b></td><td>93.0%</td><td>69.3–100%</td><td class="risk-high">HIGH</td><td><span class="badge amber">INVESTIGATING</span></td><td><button class="btn" onclick="event.stopPropagation();showView('investigation')">Investigate</button></td></tr></tbody></table></div>
+  </section>
+
   <div class="grid3 section">
-    <section class="card"><div class="card-head"><div><div class="card-title">Detection posture</div><div class="card-sub">Current analytical signals</div></div></div><div class="row"><span>Model ensemble</span><b>CNN-LSTM</b></div><div class="row"><span>High-confidence events</span><b>7 / 8</b></div><div class="row"><span>False-positive watch</span><b class="green">Within gate</b></div></section>
-    <section class="card"><div class="card-head"><div><div class="card-title">Attribution posture</div><div class="card-sub">Uncertainty retained</div></div></div><div class="row"><span>Primary hypothesis</span><b>H1</b></div><div class="row"><span>Belief</span><b>69.3%</b></div><div class="row"><span>Unresolved evidence</span><b class="amber">3 items</b></div></section>
-    <section class="card"><div class="card-head"><div><div class="card-title">Research posture</div><div class="card-sub">Reproducibility status</div></div></div><div class="row"><span>Dataset</span><b class="green">TON-IoT available</b></div><div class="row"><span>Seeds</span><b>42–46</b></div><div class="row"><span>Artifact</span><b class="green">Committed</b></div></section>
+    <section class="card"><div class="card-head"><div><div class="card-title">Detection health</div><div class="card-sub">Are models producing usable signals?</div></div></div><div class="row"><span>Active detector</span><b>CNN-LSTM</b></div><div class="row"><span>Current confidence</span><b class="green">93.0%</b></div><div class="row"><span>False-positive watch</span><b class="green">Within gate</b></div></section>
+    <section class="card"><div class="card-head"><div><div class="card-title">Evidence readiness</div><div class="card-sub">Can an analyst defend the finding?</div></div></div><div class="row"><span>Observation trace</span><b class="green">Available</b></div><div class="row"><span>Episode reconstruction</span><b class="green">Available</b></div><div class="row"><span>CTI provenance</span><b class="green">Available</b></div></section>
+    <section class="card"><div class="card-head"><div><div class="card-title">Model / research status</div><div class="card-sub">Separate research evidence from operations</div></div></div><div class="row"><span>TON-IoT benchmark</span><b class="green">5 seeds complete</b></div><div class="row"><span>Timestamp basis</span><b>Synthetic event order</b></div><div class="row"><span>Production validation</span><b class="amber">Not established</b></div></section>
   </div>
+
+  <section class="card section"><div class="card-head"><div><div class="card-title">Evidence chain</div><div class="card-sub">Every analytical conclusion should remain traceable.</div></div><span class="badge green">TRACEABLE</span></div><div id="ccChain" class="chain"></div></section>
 </section>
 
 <section id="incidents" class="view">
@@ -106,7 +124,7 @@ button,input,select{font:inherit}.app{min-height:100vh;display:grid;grid-templat
 </section>
 
 <section id="monitoring" class="view">
-  <div class="hero"><div><div class="eyebrow">Telemetry &amp; detection</div><h1>Live Monitoring</h1><p>Operational signals, model activity and asset context. Demo telemetry is clearly separated from benchmark evidence.</p></div><div class="actions"><span class="badge amber">DEMO TELEMETRY</span><button class="btn" onclick="refreshMonitoring()">Refresh stream</button></div></div>
+  <div class="hero"><div><div class="eyebrow">Telemetry &amp; detection</div><h1>Detection Monitor</h1><p>Model signals and OT telemetry context for the analyst. Demo telemetry is clearly separated from benchmark evidence.</p></div><div class="actions"><span class="badge amber">DEMO TELEMETRY</span><button class="btn" onclick="refreshMonitoring()">Refresh stream</button></div></div>
   <div class="grid4"><div class="card kpi"><div class="kpi-label">Events / min</div><div class="kpi-value">1,284</div><div class="kpi-meta">current demo stream</div></div><div class="card kpi"><div class="kpi-label">Anomalous</div><div class="kpi-value amber">17</div><div class="kpi-meta">1.3% of events</div></div><div class="card kpi"><div class="kpi-label">Assets observed</div><div class="kpi-value">24</div><div class="kpi-meta">PLC / RTU / HMI / historian</div></div><div class="card kpi"><div class="kpi-label">Pipeline latency</div><div class="kpi-value green">84 ms</div><div class="kpi-meta">analytical path</div></div></div>
   <div class="grid2 section"><section class="card"><div class="card-head"><div><div class="card-title">Detection activity</div><div class="card-sub">Recent model scores · illustrative operational telemetry</div></div></div><div id="bars" class="chart"></div><div class="chart-labels"><span>−60m</span><span>−30m</span><span>now</span></div></section>
   <section class="card"><div class="card-head"><div><div class="card-title">Asset posture</div><div class="card-sub">Highest analytical attention</div></div></div><div class="row"><span>PLC-02</span><b class="red">HIGH · 93%</b></div><div class="row"><span>HMI-01</span><b class="amber">MEDIUM · 61%</b></div><div class="row"><span>RTU-04</span><b class="green">LOW · 18%</b></div><div class="row"><span>Historian-01</span><b class="green">LOW · 11%</b></div></section></div>
@@ -136,8 +154,27 @@ button,input,select{font:inherit}.app{min-height:100vh;display:grid;grid-templat
   <section class="card section"><div class="card-head"><div><div class="card-title">CTI record</div><div class="card-sub">Analyst-facing structured intelligence object</div></div></div><pre id="intelJson" class="json"></pre></section>
 </section>
 
+<section id="assets" class="view">
+  <div class="hero"><div><div class="eyebrow">OT asset context</div><h1>Asset Context</h1><p>Give the analyst plant context before they make a security decision. XAITA-OT is not a CMMS or PLC controller; this view is analytical context.</p></div><div class="actions"><span class="badge blue">ANALYTICAL VIEW</span></div></div>
+  <div class="grid4">
+    <div class="card kpi"><div class="kpi-label">Monitored assets</div><div class="kpi-value">24</div><div class="kpi-meta">demo operational inventory</div></div>
+    <div class="card kpi"><div class="kpi-label">High attention</div><div class="kpi-value red">1</div><div class="kpi-meta">PLC-02</div></div>
+    <div class="card kpi"><div class="kpi-label">Medium attention</div><div class="kpi-value amber">1</div><div class="kpi-meta">HMI-01</div></div>
+    <div class="card kpi"><div class="kpi-label">Normal</div><div class="kpi-value green">22</div><div class="kpi-meta">no active analytical escalation</div></div>
+  </div>
+  <section class="card section"><div class="card-head"><div><div class="card-title">OT asset inventory</div><div class="card-sub">Use asset context to understand blast radius and evidence scope.</div></div><span class="badge amber">DEMO INVENTORY</span></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>ASSET</th><th>TYPE</th><th>ZONE</th><th>PROTOCOL</th><th>STATUS</th><th>ANALYTICAL RISK</th><th>OPEN EPISODES</th></tr></thead><tbody>
+  <tr><td><b>PLC-02</b></td><td>PLC</td><td>Cell / Line 2</td><td>Modbus</td><td class="green">ONLINE</td><td class="risk-high">HIGH · 93%</td><td>1</td></tr>
+  <tr><td>HMI-01</td><td>HMI</td><td>Control Room</td><td>Ethernet/IP</td><td class="green">ONLINE</td><td class="risk-med">MEDIUM · 61%</td><td>0</td></tr>
+  <tr><td>RTU-04</td><td>RTU</td><td>Remote Zone</td><td>Modbus</td><td class="green">ONLINE</td><td class="green">LOW · 18%</td><td>0</td></tr>
+  <tr><td>HIST-01</td><td>Historian</td><td>DMZ</td><td>OPC UA</td><td class="green">ONLINE</td><td class="green">LOW · 11%</td><td>0</td></tr>
+  </tbody></table></div></section>
+  <div class="grid2 section"><section class="card"><div class="card-head"><div><div class="card-title">PLC-02 context</div><div class="card-sub">Primary asset in the current episode</div></div><span class="badge red">HIGH ATTENTION</span></div><div class="row"><span>Role</span><b>Process controller</b></div><div class="row"><span>Observed protocol</span><b>Modbus</b></div><div class="row"><span>Current episode</span><b>EP-00001</b></div><div class="row"><span>Detection confidence</span><b class="green">93.0%</b></div><div class="row"><span>Attribution</span><b>69.3–100% evidence interval</b></div></section>
+  <section class="card"><div class="card-head"><div><div class="card-title">Analyst guardrail</div><div class="card-sub">Context is not command authority</div></div></div><div class="notice info">Asset context helps determine scope and priority. Any containment, shutdown, setpoint change or other operational action must be performed through authorized OT procedures outside XAITA-OT.</div></section></div>
+</section>
+
 <section id="research" class="view">
-  <div class="hero"><div><div class="eyebrow">V5.1 · Research &amp; validation</div><h1>Research Lab</h1><p>Benchmark evidence, reproducibility controls, dataset readiness and explicit acceptance gates.</p></div><div class="actions"><button class="btn primary" onclick="document.getElementById('benchmark').scrollIntoView({behavior:'smooth'})">View benchmark</button><button class="btn" onclick="runExperiment()">Run single validation</button></div></div>
+  <div class="hero"><div><div class="eyebrow">V5.1 · Models &amp; research</div><h1>Models &amp; Research</h1><p>Benchmark evidence, reproducibility controls, dataset readiness and explicit acceptance gates.</p></div><div class="actions"><button class="btn primary" onclick="document.getElementById('benchmark').scrollIntoView({behavior:'smooth'})">View benchmark</button><button class="btn" onclick="runExperiment()">Run single validation</button></div></div>
   <section class="research-banner" id="benchmark"><div class="card-head"><div><h2>TON-IoT Network · 5-seed benchmark</h2><p>Committed reproducible artifact · seeds 42–46 · grouped stratified split · 32-event windows</p></div><div><span class="badge green">ARTIFACT COMMITTED</span> <span class="badge blue">REAL DATASET</span></div></div><div id="benchmarkBody" class="empty">Loading measured benchmark evidence…</div></section>
   <div class="grid4 section"><div class="card kpi"><div class="kpi-label">Seeds</div><div class="kpi-value">5</div><div class="kpi-meta">42–46</div></div><div class="card kpi"><div class="kpi-label">Held-out test</div><div class="kpi-value">15%</div><div class="kpi-meta">after train / validation selection</div></div><div class="card kpi"><div class="kpi-label">Window</div><div class="kpi-value">32</div><div class="kpi-meta">events</div></div><div class="card kpi"><div class="kpi-label">Timestamp</div><div class="kpi-value">Synthetic</div><div class="kpi-meta">source row-order semantics</div></div></div>
   <section class="card section"><div class="card-head"><div><div class="card-title">Release progression</div><div class="card-sub">Engineering → research → deployment lifecycle</div></div></div><div class="stagegrid"><div class="stage"><b>V1</b><span>Pipeline</span></div><div class="stage"><b>V2</b><span>Adapters</span></div><div class="stage"><b>V3</b><span>Real validation</span></div><div class="stage"><b>V4</b><span>Deployment</span></div><div class="stage"><b>V5</b><span>XAI / governance</span></div><div class="stage"><b>V5.1</b><span>Research lab</span></div><div class="stage"><b>Next</b><span>Controlled ops</span></div></div></section>
@@ -162,7 +199,7 @@ button,input,select{font:inherit}.app{min-height:100vh;display:grid;grid-templat
 </div>
 <div id="toast" class="toast"></div>
 <script>
-const labels={command:'Command Center / Operational Posture',incidents:'Incidents / Triage & Response',monitoring:'Live Monitoring / Telemetry',investigation:'Investigation / Episode Reconstruction',attribution:'Attribution / Evidence & Hypotheses',intel:'Threat Intelligence / CTI & Provenance',research:'Research Lab / Validation',system:'System & Audit / Governance'};
+const labels={command:'Overview / What Needs Attention Now',incidents:'Incident Queue / Triage & Response',monitoring:'Detection Monitor / OT Telemetry',investigation:'Investigation / Episode Reconstruction',attribution:'Attribution / Evidence & Hypotheses',intel:'Threat Intelligence / CTI & Provenance',assets:'Asset Context / OT Inventory',research:'Models & Research / Validation',system:'Platform & Audit / Governance'};
 const scenarios={
  high:()=>({events:[
  {event_id:'E1',timestamp:'2025-01-01T10:00:00Z',asset:'PLC-02',protocol:'Modbus',source:'10.0.0.21',destination:'10.0.0.5',label:'write',detection_confidence:.96,features:{command_rate:.9,sequence_deviation:.8}},
@@ -176,7 +213,7 @@ const scenarios={
 };
 function showView(id,btn){
  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));document.getElementById(id).classList.add('active');
- document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));if(btn)btn.classList.add('active');else{const bs=[...document.querySelectorAll('.nav button')];const i=['command','incidents','monitoring','investigation','attribution','intel','research','system'].indexOf(id);if(i>=0)bs[i].classList.add('active')}
+ document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));if(btn)btn.classList.add('active');else{const bs=[...document.querySelectorAll('.nav button')];const i=['command','incidents','monitoring','investigation','attribution','intel','assets','research','system'].indexOf(id);if(i>=0)bs[i].classList.add('active')}
  document.getElementById('crumb').textContent=labels[id]||id;window.scrollTo({top:0,behavior:'smooth'});
  if(id==='research')loadBenchmark();if(id==='system')refreshHealth();if(id==='monitoring')refreshMonitoring();
 }
