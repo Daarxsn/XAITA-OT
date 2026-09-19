@@ -1,0 +1,115 @@
+{
+  "schema_version": "XAITA-OT-BENCHMARK-1.0",
+  "dataset": "TON-IoT Network",
+  "benchmark_title": "TON-IoT Network — 5-seed benchmark",
+  "seeds": [
+    42,
+    43,
+    44,
+    45,
+    46
+  ],
+  "protocol": {
+    "split": "grouped stratified non-temporal split",
+    "train_fraction": 0.7,
+    "validation_fraction": 0.15,
+    "test_fraction": 0.15,
+    "window_size": 32,
+    "duplicate_grouping": "identical model-feature patterns are kept within a single partition",
+    "timestamp_semantics": "synthetic_event_order",
+    "timestamp_note": "The TON-IoT Network CSV has no native wall-clock timestamp; timestamps preserve source row order only."
+  },
+  "metrics": {
+    "random_forest": {
+      "precision": {
+        "mean": 0.999743,
+        "std": 0.000408
+      },
+      "recall": {
+        "mean": 0.998963,
+        "std": 0.000103
+      },
+      "f1": {
+        "mean": 0.999353,
+        "std": 0.000164
+      },
+      "fpr": {
+        "mean": 0.000973,
+        "std": 0.001545
+      },
+      "auroc": {
+        "mean": 0.999952,
+        "std": 0.000026
+      }
+    },
+    "cnn": {
+      "precision": {
+        "mean": 0.997219,
+        "std": 0.005592
+      },
+      "recall": {
+        "mean": 0.99971,
+        "std": 0.000089
+      },
+      "f1": {
+        "mean": 0.998456,
+        "std": 0.00279
+      },
+      "fpr": {
+        "mean": 0.007295,
+        "std": 0.013983
+      },
+      "auroc": {
+        "mean": 0.999972,
+        "std": 0.000024
+      }
+    },
+    "lstm": {
+      "precision": {
+        "mean": 1,
+        "std": 0
+      },
+      "recall": {
+        "mean": 0.999892,
+        "std": 0.000023
+      },
+      "f1": {
+        "mean": 0.999946,
+        "std": 0.000011
+      },
+      "fpr": {
+        "mean": 0,
+        "std": 0
+      },
+      "auroc": {
+        "mean": 0.999984,
+        "std": 0.000025
+      }
+    },
+    "cnn_lstm": {
+      "precision": {
+        "mean": 0.999967,
+        "std": 0.000046
+      },
+      "recall": {
+        "mean": 0.999917,
+        "std": 0.000041
+      },
+      "f1": {
+        "mean": 0.999942,
+        "std": 0.000031
+      },
+      "fpr": {
+        "mean": 0.000104,
+        "std": 0.000147
+      },
+      "auroc": {
+        "mean": 0.999992,
+        "std": 0.000008
+      }
+    }
+  },
+  "source_artifact": "artifacts/toniOT_network_5seed_summary.json",
+  "generated_from_seeds": "42–46",
+  "research_note": "These results are benchmark evidence for this defined protocol. They do not establish temporal generalization, cross-site generalization, or state-of-the-art performance."
+}
