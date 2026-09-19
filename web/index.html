@@ -72,7 +72,7 @@
 <section class="card">
 <h2>Local experiment control plane <span>AUTHORIZED EXECUTION</span></h2>
 <div class="notice blue">Run an authorized benchmark evaluation against a dataset mounted on this machine. Raw benchmark files remain outside source control.</div>
-<div class="research-control" style="margin-top:12px"><div class="actions"><select id="expDataset" class="btn"><option>TON-IoT</option><option>BATADAL</option><option>SWaT</option></select><select id="expDetector" class="btn"><option>Random Forest</option><option>CNN</option><option>LSTM</option><option>CNN-LSTM</option></select><button class="btn primary" onclick="runExperiment()">Run local experiment</button></div></div>
+<div class="research-control" style="margin-top:12px"><div class="actions"><select id="expDataset" class="btn"><option>TON-IoT</option><option>BATADAL</option><option>SWaT</option></select><select id="expDetector" class="btn"><option>Random Forest</option><option>CNN</option><option>LSTM</option><option>CNN-LSTM</option></select><select id="expSeed" class="btn" aria-label="Benchmark seed"><option value="42">Seed 42</option><option value="43">Seed 43</option><option value="44">Seed 44</option><option value="45">Seed 45</option><option value="46">Seed 46</option></select><button class="btn primary" onclick="runExperiment()">Run local experiment</button></div><div class="small" style="margin-top:8px">Select the exact benchmark seed to reproduce a single-seed run. The committed research summary covers seeds 42–46.</div></div>
 <pre id="experimentResult" class="json">No experiment requested.</pre>
 </section>
 </div>
@@ -92,11 +92,12 @@ function metricCell(m){return '<td><span class="metric-main">'+fmtMetric(m.mean)
 async function loadBenchmark(){const el=document.getElementById('benchmarkBody');try{const r=await fetch('/v2/benchmark');if(!r.ok)throw Error('HTTP '+r.status);const j=await r.json();const rows=[['Random Forest',j.metrics.random_forest],['CNN',j.metrics.cnn],['LSTM',j.metrics.lstm],['CNN-LSTM',j.metrics.cnn_lstm]];el.innerHTML='<table class="table bench-table"><tr><th>DETECTOR</th><th>PRECISION</th><th>RECALL</th><th>F1</th><th>FPR</th><th>AUROC</th></tr>'+rows.map(([n,m])=>'<tr><td>'+n+'</td>'+metricCell(m.precision)+metricCell(m.recall)+metricCell(m.f1)+metricCell(m.fpr)+metricCell(m.auroc)+'</tr>').join('')+'</table><div class="bench-foot"><div class="bench-note"><strong>Protocol.</strong> Train/validation/test partitions are created before windowing; identical model-feature patterns are grouped to prevent exact duplicate leakage across partitions.</div><div class="bench-note"><strong>Timestamp caveat.</strong> TON-IoT Network has no native wall-clock timestamp. Synthetic event-order semantics preserve source row order and do not establish temporal generalization.</div></div>'}catch(e){el.innerHTML='<div class="notice">Benchmark summary unavailable: '+e.message+'</div>'}}
 async function runExperiment(){
  const out=document.getElementById('experimentResult');
- out.textContent='Running…';
+ const dataset=document.getElementById('expDataset').value;
+ const detector=document.getElementById('expDetector').value;
+ const seed=Number(document.getElementById('expSeed').value);
+ out.textContent='Running…\\n\\nDataset: '+dataset+'\\nDetector: '+detector+'\\nSeed: '+seed+'\\n\\nThe server is executing the selected single-seed evaluation.';
  try{
-  const dataset=document.getElementById('expDataset').value;
-  const detector=document.getElementById('expDetector').value;
-  const r=await fetch('/v2/experiment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataset,detector,seed:42})});
+  const r=await fetch('/v2/experiment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataset,detector,seed})});
   const j=await r.json();
   if(!r.ok) throw Error(typeof j.detail==='string'?j.detail:JSON.stringify(j.detail));
   out.textContent=JSON.stringify(j,null,2);
