@@ -30,7 +30,9 @@ def test_health_and_security_headers():
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["X-Frame-Options"] == "DENY"
     assert response.headers["Referrer-Policy"] == "no-referrer"
+    assert response.headers["Permissions-Policy"] == "camera=(), microphone=(), geolocation=()"
     assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers.get("X-Request-ID")
 
 
 def test_ready_reports_dashboard(tmp_path, monkeypatch):
@@ -39,11 +41,7 @@ def test_ready_reports_dashboard(tmp_path, monkeypatch):
     monkeypatch.setattr(api, "ROOT", tmp_path)
     response = client.get("/ready")
     assert response.status_code == 200
-    assert response.json() == {
-        "status": "ready",
-        "dashboard": True,
-        "max_events": api.MAX_EVENTS,
-    }
+    assert response.json() == {"status": "ready", "dashboard": True, "max_events": api.MAX_EVENTS}
 
 
 def test_dashboard_serves_index(tmp_path, monkeypatch):
@@ -85,29 +83,45 @@ def test_analyze_returns_engine_result(monkeypatch):
 
 def test_analyze_enforces_event_limit(monkeypatch):
     monkeypatch.setattr(api, "MAX_EVENTS", 1)
-    response = client.post(
-        "/v1/analyze",
-        json=[event_payload("evt-1"), event_payload("evt-2")],
-    )
+    response = client.post("/v1/analyze", json=[event_payload("evt-1"), event_payload("evt-2")])
     assert response.status_code == 413
     assert response.json()["detail"] == "Maximum 1 events per request"
 
 
 def test_api_key_protection(monkeypatch):
     monkeypatch.setattr(api, "API_KEY", "secret")
+    monkeypatch.setattr(api, "API_KEY_ROLE", "admin")
     missing = client.get("/v2/datasets")
     invalid = client.get("/v2/datasets", headers={"xaita-api-key": "wrong"})
     valid = client.get("/v2/datasets", headers={"xaita-api-key": "secret"})
+    bearer = client.get("/v2/datasets", headers={"Authorization": "Bearer secret"})
     assert missing.status_code == 401
     assert invalid.status_code == 403
     assert valid.status_code == 200
+    assert bearer.status_code == 200
+
+
+def test_rbac_blocks_viewer_from_experiment(monkeypatch):
+    monkeypatch.setattr(api, "API_KEY", "viewer-secret")
+    monkeypatch.setattr(api, "API_KEY_ROLE", "viewer")
+    response = client.post("/v2/experiment", json={"dataset": "unknown", "detector": "CNN-LSTM", "seed": 42}, headers={"X-XAITA-API-Key": "viewer-secret"})
+    assert response.status_code == 403
+
+
+def test_system_status_reports_security(monkeypatch):
+    monkeypatch.setattr(api, "API_KEY", "secret")
+    monkeypatch.setattr(api, "API_KEY_ROLE", "admin")
+    response = client.get("/v2/system", headers={"X-XAITA-API-Key": "secret", "X-Request-ID": "test-request"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["schema_version"] == "XAITA-OT-V5-SYSTEM-1.0"
+    assert body["role"] == "admin"
+    assert body["security"]["authentication_configured"] is True
+    assert response.headers["X-Request-ID"] == "test-request"
 
 
 def test_experiment_rejects_unknown_dataset(monkeypatch):
     monkeypatch.setattr(api, "API_KEY", None)
-    response = client.post(
-        "/v2/experiment",
-        json={"dataset": "unknown", "detector": "CNN-LSTM", "seed": 42},
-    )
+    response = client.post("/v2/experiment", json={"dataset": "unknown", "detector": "CNN-LSTM", "seed": 42})
     assert response.status_code == 400
     assert response.json()["detail"] == "Unsupported dataset"
