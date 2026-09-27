@@ -21,6 +21,15 @@ def test_all_v2_adapters_harmonize_native_timestamp_and_labels(tmp_path):
             assert field in out.columns
 
 
+def test_swat_attack_state_boolean_and_numeric_values_are_attacks():
+    df = pd.DataFrame({
+        "Timestamp": ["2026-01-01T00:00:00Z"] * 5,
+        "Attack State": ["False", "True", "5.0", "7.0", ""],
+    })
+    out = adapt_dataset(df, "SWaT")
+    assert out["label"].tolist() == [0, 1, 1, 1, 0]
+
+
 def test_unknown_dataset_rejected():
     try:
         adapt_dataset(pd.DataFrame({"timestamp": []}), "unknown")
