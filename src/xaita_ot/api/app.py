@@ -46,7 +46,6 @@ _rate_buckets: dict[str, list[float]] = {}
 
 
 def _dataset_path(env_name: str, default_relative: str) -> str | None:
-    """Resolve an explicit deployment path, then a conventional mounted path."""
     configured = os.environ.get(env_name)
     if configured:
         return configured
@@ -58,7 +57,6 @@ def _dataset_path(env_name: str, default_relative: str) -> str | None:
 
 
 def _dataset_status(path: str | None) -> dict:
-    """Return dataset presence and basic readiness without requiring benchmark data in git."""
     exists = bool(path and Path(path).exists())
     csv_count = 0
     sample = None
@@ -71,58 +69,28 @@ def _dataset_status(path: str | None) -> dict:
             csvs = list(root.rglob("*.csv")) + list(root.rglob("*.CSV"))
             csv_count = len(csvs)
             sample = sorted(csvs)[0].name if csvs else None
-    return {
-        "configured": bool(path),
-        "exists": exists,
-        "ready": exists and csv_count > 0,
-        "csv_count": csv_count,
-        "sample_file": sample,
-        "path": path,
-    }
+    return {"configured": bool(path), "exists": exists, "ready": exists and csv_count > 0, "csv_count": csv_count, "sample_file": sample, "path": path}
 
 
 def _experiment_detector_name(name: str) -> str:
-    """Normalize UI/API detector labels to the internal metric keys."""
-    aliases = {
-        "rf": "random_forest",
-        "random forest": "random_forest",
-        "random_forest": "random_forest",
-        "cnn": "cnn",
-        "lstm": "lstm",
-        "cnn-lstm": "cnn_lstm",
-        "cnn_lstm": "cnn_lstm",
-    }
-    key = name.strip().lower()
-    return aliases.get(key, name.strip())
+    aliases = {"rf": "random_forest", "random forest": "random_forest", "random_forest": "random_forest", "cnn": "cnn", "lstm": "lstm", "cnn-lstm": "cnn_lstm", "cnn_lstm": "cnn_lstm"}
+    return aliases.get(name.strip().lower(), name.strip())
 
 
 def _find_dataset_csv(path: str | Path, dataset: str) -> Path:
-    """Resolve a benchmark CSV from either a direct file or a dataset directory."""
     root = Path(path)
     if root.is_file():
         return root
     if not root.is_dir():
         raise HTTPException(status_code=409, detail=f"{dataset} dataset path is configured but unavailable")
-
-    patterns = {
-        "TON-IoT": [
-            "**/train_test_network.csv",
-            "**/Train_Test_IoT_*.csv",
-            "**/*.csv",
-        ],
-        "SWaT": ["**/*.csv", "**/*.CSV"],
-        "BATADAL": ["**/*.csv", "**/*.CSV"],
-    }.get(dataset, ["**/*.csv"])
-
+    patterns = {"TON-IoT": ["**/train_test_network.csv", "**/Train_Test_IoT_*.csv", "**/*.csv"], "SWaT": ["**/*.csv", "**/*.CSV"], "BATADAL": ["**/*.csv", "**/*.CSV"]}.get(dataset, ["**/*.csv"])
     candidates = []
     for pattern in patterns:
         candidates.extend(p for p in root.glob(pattern) if p.is_file())
         if candidates:
             break
-
     if not candidates:
         raise HTTPException(status_code=409, detail=f"No CSV benchmark file found under {dataset} dataset path")
-
     if dataset == "TON-IoT":
         network = [p for p in candidates if p.name.lower() == "train_test_network.csv"]
         if network:
@@ -130,54 +98,29 @@ def _find_dataset_csv(path: str | Path, dataset: str) -> Path:
         iot = [p for p in candidates if "train_test_iot_modbus" in p.name.lower()]
         if iot:
             return iot[0]
-
     return sorted(candidates)[0]
 
 
-DATASET_PATHS = {
-    "SWaT": _dataset_path("XAITA_SWAT_PATH", "data/raw/swat"),
-    "BATADAL": _dataset_path("XAITA_BATADAL_PATH", "data/raw/batadal"),
-    "TON-IoT": _dataset_path("XAITA_TONIOT_PATH", "data/raw/ton_iot"),
-}
+DATASET_PATHS = {"SWaT": _dataset_path("XAITA_SWAT_PATH", "data/raw/swat"), "BATADAL": _dataset_path("XAITA_BATADAL_PATH", "data/raw/batadal"), "TON-IoT": _dataset_path("XAITA_TONIOT_PATH", "data/raw/ton_iot")}
 
-app = FastAPI(
-    title="XAITA-OT API",
-    version=VERSION,
-    description="Evidence-continuous OT/ICS security analytics API",
-    docs_url="/docs" if ENABLE_DOCS else None,
-    redoc_url="/redoc" if ENABLE_DOCS else None,
-    openapi_url="/openapi.json" if ENABLE_DOCS else None,
-)
-
+app = FastAPI(title="XAITA-OT API", version=VERSION, description="Evidence-continuous OT/ICS security analytics API", docs_url="/docs" if ENABLE_DOCS else None, redoc_url="/redoc" if ENABLE_DOCS else None, openapi_url="/openapi.json" if ENABLE_DOCS else None)
 if ALLOWED_HOSTS:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
 if FORCE_HTTPS:
     app.add_middleware(HTTPSRedirectMiddleware)
 if CORS_ORIGINS:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=CORS_ORIGINS,
-        allow_credentials=False,
-        allow_methods=["GET", "POST"],
-        allow_headers=["Authorization", "Content-Type", "X-XAITA-API-Key", "X-Request-ID"],
-    )
+    app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_credentials=False, allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type", "X-XAITA-API-Key", "xaita-api-key", "X-Request-ID"])
 app.add_middleware(GZipMiddleware, minimum_size=1000)
-
 engine = XAITAEngine(load_config())
 
 
 def _dashboard_candidates() -> list[Path]:
-    """Return dashboard locations using explicit overrides before safe fallbacks."""
     if _CONFIGURED_ROOT:
         candidates = [Path(_CONFIGURED_ROOT) / "web" / "index.html"]
     elif ROOT.resolve() != _DEFAULT_ROOT.resolve():
         candidates = [ROOT / "web" / "index.html"]
     else:
-        candidates = [
-            Path.cwd() / "web" / "index.html",
-            Path("/app/web/index.html"),
-            ROOT / "web" / "index.html",
-        ]
+        candidates = [Path.cwd() / "web" / "index.html", Path("/app/web/index.html"), ROOT / "web" / "index.html"]
     return list(dict.fromkeys(path.resolve() for path in candidates))
 
 
@@ -186,7 +129,6 @@ def _dashboard_path() -> Path | None:
 
 
 def _configured_api_keys() -> dict[str, str]:
-    """Return role -> secret mappings. Legacy XAITA_API_KEY remains an admin key."""
     keys: dict[str, str] = {}
     raw = os.environ.get("XAITA_API_KEYS_JSON", "").strip()
     if raw:
@@ -215,28 +157,21 @@ def _role_allows(actual: str, required: str) -> bool:
     return rank.get(actual, 0) >= rank.get(required, 99)
 
 
-def _check_api_key(header_key: str | None, authorization: str | None = None, required_role: str = "viewer") -> str:
-    """Authenticate a request and enforce a small, explicit RBAC hierarchy."""
+def _check_api_key(header_key: str | None, authorization: str | None = None, legacy_key: str | None = None, required_role: str = "viewer") -> str:
     keys = _configured_api_keys()
     auth_required = REQUIRE_AUTH or bool(keys)
     if not auth_required:
         return "anonymous"
     if not keys:
         raise HTTPException(status_code=503, detail="API authentication is required but not configured")
-
-    candidate = header_key
+    candidate = header_key or legacy_key
     if not candidate and authorization:
         scheme, _, token = authorization.partition(" ")
         if scheme.lower() == "bearer" and token:
             candidate = token.strip()
     if not candidate:
         raise HTTPException(status_code=401, detail="API authentication required")
-
-    matched_role = None
-    for role, secret in keys.items():
-        if hmac.compare_digest(candidate, secret):
-            matched_role = role
-            break
+    matched_role = next((role for role, secret in keys.items() if hmac.compare_digest(candidate, secret)), None)
     if matched_role is None:
         raise HTTPException(status_code=403, detail="Invalid API credentials")
     if not _role_allows(matched_role, required_role):
@@ -245,11 +180,6 @@ def _check_api_key(header_key: str | None, authorization: str | None = None, req
 
 
 def _enforce_rate_limit(request: Request, role: str, scope: str) -> None:
-    """Apply a lightweight local guard to expensive endpoints.
-
-    This is intentionally process-local. Distributed deployments should also rate-limit
-    at the ingress/API-gateway layer so limits remain consistent across replicas.
-    """
     identity = request.client.host if request.client else "unknown"
     key = f"{identity}:{role}:{scope}"
     now = time.monotonic()
@@ -259,11 +189,7 @@ def _enforce_rate_limit(request: Request, role: str, scope: str) -> None:
         if len(bucket) >= RATE_LIMIT_PER_MINUTE:
             retry_after = max(1, int(RATE_LIMIT_WINDOW_SECONDS - (now - bucket[0])))
             _rate_buckets[key] = bucket
-            raise HTTPException(
-                status_code=429,
-                detail="Rate limit exceeded for this operation",
-                headers={"Retry-After": str(retry_after)},
-            )
+            raise HTTPException(status_code=429, detail="Rate limit exceeded for this operation", headers={"Retry-After": str(retry_after)})
         bucket.append(now)
         _rate_buckets[key] = bucket
         if len(_rate_buckets) > 2000:
@@ -290,15 +216,7 @@ async def security_headers(request: Request, call_next):
     response.headers["Cache-Control"] = "no-store"
     if FORCE_HTTPS:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    logger.info(json.dumps({
-        "event": "http_request",
-        "request_id": request_id,
-        "method": request.method,
-        "path": request.url.path,
-        "status": response.status_code,
-        "duration_ms": duration_ms,
-        "client": request.client.host if request.client else None,
-    }, separators=(",", ":")))
+    logger.info(json.dumps({"event": "http_request", "request_id": request_id, "method": request.method, "path": request.url.path, "status": response.status_code, "duration_ms": duration_ms, "client": request.client.host if request.client else None}, separators=(",", ":")))
     return response
 
 
@@ -330,65 +248,25 @@ def health():
 @app.get("/ready")
 def ready():
     dashboard_path = _dashboard_path()
-    datasets = {name: _dataset_status(path) for name, path in DATASET_PATHS.items()}
-    return {
-        "status": "ready",
-        "dashboard": bool(dashboard_path and dashboard_path.is_file()),
-        "max_events": MAX_EVENTS,
-        "environment": ENVIRONMENT,
-        "authentication_required": REQUIRE_AUTH or bool(_configured_api_keys()),
-        "authentication_configured": _auth_ready() if (REQUIRE_AUTH or os.environ.get("XAITA_API_KEY") or os.environ.get("XAITA_API_KEYS_JSON")) else False,
-        "datasets_ready": all(item["ready"] for item in datasets.values()),
-    }
+    return {"status": "ready", "dashboard": bool(dashboard_path and dashboard_path.is_file()), "max_events": MAX_EVENTS}
 
 
 @app.get("/v2/system")
-def system_status(
-    xaita_api_key: str | None = Header(default=None, alias="X-XAITA-API-Key"),
-    authorization: str | None = Header(default=None),
-):
-    role = _check_api_key(xaita_api_key, authorization, "viewer")
+def system_status(xaita_api_key: str | None = Header(default=None, alias="X-XAITA-API-Key"), authorization: str | None = Header(default=None), legacy_api_key: str | None = Header(default=None, alias="xaita-api-key")):
+    role = _check_api_key(xaita_api_key, authorization, legacy_api_key, "viewer")
     datasets = {name: _dataset_status(path) for name, path in DATASET_PATHS.items()}
-    return {
-        "schema_version": "XAITA-OT-V5-SYSTEM-1.0",
-        "service": "xaita-ot",
-        "version": VERSION,
-        "environment": ENVIRONMENT,
-        "role": role,
-        "dashboard": bool(_dashboard_path()),
-        "datasets": datasets,
-        "security": {
-            "authentication_required": REQUIRE_AUTH or bool(_configured_api_keys()),
-            "authentication_configured": _auth_ready(),
-            "force_https": FORCE_HTTPS,
-            "allowed_hosts": ALLOWED_HOSTS,
-            "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE,
-        },
-    }
+    return {"schema_version": "XAITA-OT-V5-SYSTEM-1.0", "service": "xaita-ot", "version": VERSION, "environment": ENVIRONMENT, "role": role, "dashboard": bool(_dashboard_path()), "datasets": datasets, "security": {"authentication_required": REQUIRE_AUTH or bool(_configured_api_keys()), "authentication_configured": _auth_ready(), "force_https": FORCE_HTTPS, "allowed_hosts": ALLOWED_HOSTS, "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE}}
 
 
 @app.get("/v2/datasets")
-def dataset_status(
-    xaita_api_key: str | None = Header(default=None, alias="X-XAITA-API-Key"),
-    authorization: str | None = Header(default=None),
-):
-    _check_api_key(xaita_api_key, authorization, "viewer")
-    return {
-        "schema_version": "XAITA-OT-V2-DATASET-STATUS-1.1",
-        "datasets": {
-            name: _dataset_status(path)
-            for name, path in DATASET_PATHS.items()
-        },
-    }
+def dataset_status(xaita_api_key: str | None = Header(default=None, alias="X-XAITA-API-Key"), authorization: str | None = Header(default=None), legacy_api_key: str | None = Header(default=None, alias="xaita-api-key")):
+    _check_api_key(xaita_api_key, authorization, legacy_api_key, "viewer")
+    return {"schema_version": "XAITA-OT-V2-DATASET-STATUS-1.1", "datasets": {name: _dataset_status(path) for name, path in DATASET_PATHS.items()}}
 
 
 @app.get("/v2/benchmark")
-def benchmark_summary(
-    xaita_api_key: str | None = Header(default=None, alias="X-XAITA-API-Key"),
-    authorization: str | None = Header(default=None),
-):
-    """Return committed, reproducible benchmark summaries for dashboard display."""
-    _check_api_key(xaita_api_key, authorization, "viewer")
+def benchmark_summary(xaita_api_key: str | None = Header(default=None, alias="X-XAITA-API-Key"), authorization: str | None = Header(default=None), legacy_api_key: str | None = Header(default=None, alias="xaita-api-key")):
+    _check_api_key(xaita_api_key, authorization, legacy_api_key, "viewer")
     path = ROOT / "artifacts" / "toniOT_network_5seed_summary.json"
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Benchmark summary artifact unavailable")
@@ -399,72 +277,27 @@ def benchmark_summary(
 
 
 @app.post("/v2/experiment")
-def run_v2_experiment(
-    payload: ExperimentIn,
-    request: Request,
-    xaita_api_key: str | None = Header(default=None, alias="X-XAITA-API-Key"),
-    authorization: str | None = Header(default=None),
-):
-    role = _check_api_key(xaita_api_key, authorization, "analyst")
+def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: str | None = Header(default=None, alias="X-XAITA-API-Key"), authorization: str | None = Header(default=None), legacy_api_key: str | None = Header(default=None, alias="xaita-api-key")):
+    role = _check_api_key(xaita_api_key, authorization, legacy_api_key, "analyst")
     _enforce_rate_limit(request, role, "experiment")
     if payload.dataset not in DATASET_PATHS:
         raise HTTPException(status_code=400, detail="Unsupported dataset")
     path = DATASET_PATHS[payload.dataset]
     if not path:
-        raise HTTPException(
-            status_code=409,
-            detail=f"{payload.dataset} dataset is not configured on this deployment",
-        )
+        raise HTTPException(status_code=409, detail=f"{payload.dataset} dataset is not configured on this deployment")
     if not Path(path).exists():
-        raise HTTPException(
-            status_code=409,
-            detail=f"{payload.dataset} dataset path is configured but unavailable",
-        )
-
+        raise HTTPException(status_code=409, detail=f"{payload.dataset} dataset path is configured but unavailable")
     detector_key = _experiment_detector_name(payload.detector)
     try:
         csv_path = _find_dataset_csv(path, payload.dataset)
-        cfg = load_config()
-        run = run_detection(
-            csv_path,
-            payload.dataset,
-            cfg,
-            seed=payload.seed,
-            detector=detector_key,
-        )
+        run = run_detection(csv_path, payload.dataset, load_config(), seed=payload.seed, detector=detector_key)
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "message": f"{payload.dataset} experiment could not be executed",
-                "error_type": type(exc).__name__,
-                "error": str(exc),
-            },
-        ) from exc
-
+        raise HTTPException(status_code=422, detail={"message": f"{payload.dataset} experiment could not be executed", "error_type": type(exc).__name__, "error": str(exc)}) from exc
     if detector_key not in run.metrics:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown detector '{payload.detector}'. Available: {', '.join(sorted(run.metrics))}",
-        )
-
-    return {
-        "schema_version": "XAITA-OT-V2-RUN-1.2",
-        "experiment_id": run.experiment_id,
-        "dataset": run.dataset,
-        "detector": payload.detector,
-        "detector_key": detector_key,
-        "seed": run.seed,
-        "started_at": run.started_at,
-        "duration_seconds": run.duration_seconds,
-        "rows": run.rows,
-        "windows": run.windows,
-        "metrics": run.metrics[detector_key],
-        "all_model_metrics": run.metrics,
-        "dataset_file": str(csv_path),
-    }
+        raise HTTPException(status_code=400, detail=f"Unknown detector '{payload.detector}'. Available: {', '.join(sorted(run.metrics))}")
+    return {"schema_version": "XAITA-OT-V2-RUN-1.2", "experiment_id": run.experiment_id, "dataset": run.dataset, "detector": payload.detector, "detector_key": detector_key, "seed": run.seed, "started_at": run.started_at, "duration_seconds": run.duration_seconds, "rows": run.rows, "windows": run.windows, "metrics": run.metrics[detector_key], "all_model_metrics": run.metrics, "dataset_file": str(csv_path)}
 
 
 @app.get("/")
@@ -476,13 +309,8 @@ def dashboard():
 
 
 @app.post("/v1/analyze")
-def analyze(
-    events: list[EventIn],
-    request: Request,
-    xaita_api_key: str | None = Header(default=None, alias="X-XAITA-API-Key"),
-    authorization: str | None = Header(default=None),
-):
-    role = _check_api_key(xaita_api_key, authorization, "analyst")
+def analyze(events: list[EventIn], request: Request, xaita_api_key: str | None = Header(default=None, alias="X-XAITA-API-Key"), authorization: str | None = Header(default=None), legacy_api_key: str | None = Header(default=None, alias="xaita-api-key")):
+    role = _check_api_key(xaita_api_key, authorization, legacy_api_key, "analyst")
     _enforce_rate_limit(request, role, "analyze")
     if not events:
         raise HTTPException(status_code=400, detail="At least one event is required")
