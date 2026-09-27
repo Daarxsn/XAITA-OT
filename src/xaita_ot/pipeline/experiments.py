@@ -1,21 +1,17 @@
 from __future__ import annotations
-
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import json
 from pathlib import Path
 import time
-
 import numpy as np
 import pandas as pd
-
 from ..config import AppConfig
 from ..core.seed import set_seed
 from ..io.telemetry import load_csv, semantic_harmonize
 from ..io.adapters import adapt_dataset
-from .evaluation import chronological_split, group_stratified_split, stratified_split, train_baselines
+from .evaluation import chronological_split, group_stratified_split, train_baselines
 from .preprocess import OTPreprocessor
-
 
 @dataclass
 class ExperimentRun:
@@ -29,93 +25,36 @@ class ExperimentRun:
     windows: dict
     metrics: dict
 
+def _normalize_detector_name(name: str) -> str:
+    return {'rf':'random_forest','random forest':'random_forest','random_forest':'random_forest','cnn':'cnn','lstm':'lstm','cnn-lstm':'cnn_lstm','cnn_lstm':'cnn_lstm'}.get(name.strip().lower(), name.strip().lower().replace('-','_'))
 
-def run_detection(csv_path: str | Path, dataset: str, config: AppConfig, seed: int | None = None) -> ExperimentRun:
-    started = time.perf_counter()
-    run_seed = config.seed if seed is None else seed
-    set_seed(run_seed)
+def run_detection(csv_path: str | Path, dataset: str, config: AppConfig, seed: int | None = None, detector: str | None = None) -> ExperimentRun:
+    started = time.perf_counter(); run_seed = config.seed if seed is None else seed; set_seed(run_seed)
     df = adapt_dataset(semantic_harmonize(load_csv(csv_path, require_timestamp=False)), dataset)
-    if "timestamp" not in df.columns:
-        raise ValueError("Missing required columns: ['timestamp']")
-    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
-    df = df.dropna(subset=["timestamp"]).drop_duplicates().sort_values("timestamp").reset_index(drop=True)
-    if df.attrs.get("timestamp_semantics") == "synthetic_event_order":
-        train, val, test = group_stratified_split(
-            df, train=config.experiment.train_fraction, val=config.experiment.validation_fraction,
-            label_col=config.attack_label_column, seed=run_seed,
-        )
+    if 'timestamp' not in df.columns: raise ValueError("Missing required columns: ['timestamp']")
+    df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce', utc=True)
+    df = df.dropna(subset=['timestamp']).drop_duplicates().sort_values('timestamp').reset_index(drop=True)
+    if len(df) < max(20, config.model.window_size * 3): raise ValueError(f'Insufficient usable rows for {dataset}: {len(df)}')
+    if df.attrs.get('timestamp_semantics') == 'synthetic_event_order':
+        train, val, test = group_stratified_split(df, train=config.experiment.train_fraction, val=config.experiment.validation_fraction, label_col=config.attack_label_column, seed=run_seed); split_protocol='group_stratified'
     else:
-        train, val, test = chronological_split(
-            df, train=config.experiment.train_fraction, val=config.experiment.validation_fraction,
-            label_col=config.attack_label_column, episode_aware=config.experiment.episode_aware,
-        )
-    prep = OTPreprocessor(config.model.window_size)
-    train_w = prep.fit_transform_train(train, config.attack_label_column)
-    val_w = prep.transform(val, config.attack_label_column)
-    test_w = prep.transform(test, config.attack_label_column)
-    metrics = train_baselines(train_w, val_w, test_w, config, seed=run_seed)
-    duration = time.perf_counter() - started
-    now = datetime.now(timezone.utc)
-    return ExperimentRun(
-        experiment_id=f"{dataset}-{run_seed}-{now.strftime('%Y%m%dT%H%M%SZ')}",
-        dataset=dataset, seed=run_seed, started_at=now.isoformat(),
-        duration_seconds=float(duration), config=config.model_dump(mode='json'),
-        rows={'train': len(train), 'validation': len(val), 'test': len(test)},
-        windows={'train': len(train_w.X), 'validation': len(val_w.X), 'test': len(test_w.X)}, metrics=metrics,
-    )
+        train, val, test = chronological_split(df, train=config.experiment.train_fraction, val=config.experiment.validation_fraction, label_col=config.attack_label_column, episode_aware=config.experiment.episode_aware); split_protocol='chronological_episode_aware'
+    prep=OTPreprocessor(config.model.window_size); train_w=prep.fit_transform_train(train, config.attack_label_column); val_w=prep.transform(val, config.attack_label_column); test_w=prep.transform(test, config.attack_label_column)
+    detector_key = _normalize_detector_name(detector) if detector else None
+    metrics=train_baselines(train_w,val_w,test_w,config,seed=run_seed,detectors=[detector_key] if detector_key else None)
+    duration=time.perf_counter()-started; now=datetime.now(timezone.utc)
+    return ExperimentRun(experiment_id=f'{dataset}-{detector_key or "all"}-{run_seed}-{now.strftime("%Y%m%dT%H%M%SZ")}',dataset=dataset,seed=run_seed,started_at=now.isoformat(),duration_seconds=float(duration),config={**config.model_dump(mode='json'),'split_protocol':split_protocol,'detector':detector_key or 'all'},rows={'train':len(train),'validation':len(val),'test':len(test)},windows={'train':len(train_w.X),'validation':len(val_w.X),'test':len(test_w.X)},metrics=metrics)
 
-
-def attribution_configurations() -> list[str]:
-    return [
-        'DC',
-        'DC+BSS',
-        'DC+BSS+ECS',
-        'DC+BSS+ECS+MAS',
-        'WEF',
-        'ACFM',
-    ]
-
-
-def experiment_contract(dataset: str, seed: int, detector_names: list[str] | None = None) -> dict:
-    return {
-        'schema_version': 'XAITA-OT-V2-CONTRACT-1.0',
-        'dataset': dataset,
-        'seed': seed,
-        'detectors': detector_names or ['RF', 'CNN', 'LSTM', 'CNN-LSTM'],
-        'attribution_configurations': attribution_configurations(),
-        'outputs': ['metrics', 'runtime', 'config', 'provenance', 'xai', 'artifacts'],
-        'status_semantics': ['planned', 'running', 'completed', 'failed', 'blocked_data'],
-    }
-
-
+def attribution_configurations() -> list[str]: return ['DC','DC+BSS','DC+BSS+ECS','DC+BSS+ECS+MAS','WEF','ACFM']
+def experiment_contract(dataset: str, seed: int, detector_names: list[str] | None = None) -> dict: return {'schema_version':'XAITA-OT-V2-CONTRACT-1.0','dataset':dataset,'seed':seed,'detectors':detector_names or ['RF','CNN','LSTM','CNN-LSTM'],'attribution_configurations':attribution_configurations(),'outputs':['metrics','runtime','config','provenance','xai','artifacts'],'status_semantics':['planned','running','completed','failed','blocked_data']}
 def aggregate_runs(runs: list[ExperimentRun]) -> dict:
-    if not runs:
-        return {'schema_version': 'XAITA-OT-V2-EXPERIMENT-1.0', 'runs': [], 'aggregate': {}}
-    metric_values = {}
+    if not runs:return {'schema_version':'XAITA-OT-V2-EXPERIMENT-1.0','runs':[],'aggregate':{}}
+    metric_values={}
     for run in runs:
-        for model, metrics in run.metrics.items():
-            for metric, value in metrics.items():
-                if isinstance(value, (int, float)) and np.isfinite(value):
-                    metric_values.setdefault(model, {}).setdefault(metric, []).append(float(value))
-    aggregate = {
-        model: {
-            metric: {
-                'mean': float(np.mean(values)),
-                'std': float(np.std(values, ddof=1)) if len(values) > 1 else 0.0,
-                'n': len(values),
-            }
-            for metric, values in metrics.items()
-        }
-        for model, metrics in metric_values.items()
-    }
-    return {
-        'schema_version': 'XAITA-OT-V2-EXPERIMENT-1.0',
-        'runs': [asdict(r) for r in runs],
-        'aggregate': aggregate,
-    }
-
-
-def write_results(result: dict, path: str | Path):
-    p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(result, indent=2, allow_nan=False, default=str), encoding='utf-8')
+        for model,metrics in run.metrics.items():
+            for metric,value in metrics.items():
+                if isinstance(value,(int,float)) and np.isfinite(value):metric_values.setdefault(model,{}).setdefault(metric,[]).append(float(value))
+    aggregate={m:{k:{'mean':float(np.mean(v)),'std':float(np.std(v,ddof=1)) if len(v)>1 else 0.0,'n':len(v)} for k,v in ms.items()} for m,ms in metric_values.items()}
+    return {'schema_version':'XAITA-OT-V2-EXPERIMENT-1.0','runs':[asdict(r) for r in runs],'aggregate':aggregate}
+def write_results(result:dict,path:str|Path):
+    p=Path(path);p.parent.mkdir(parents=True,exist_ok=True);p.write_text(json.dumps(result,indent=2,allow_nan=False,default=str),encoding='utf-8')
