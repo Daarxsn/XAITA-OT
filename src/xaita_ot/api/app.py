@@ -1,10 +1,18 @@
 from datetime import datetime
 import hmac
-import os
 import json
+import logging
+import os
 from pathlib import Path
+import threading
+import time
+from uuid import uuid4
 
 from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -21,6 +29,20 @@ ROOT = Path(_CONFIGURED_ROOT) if _CONFIGURED_ROOT else _PROJECT_ROOT
 _DEFAULT_ROOT = ROOT
 MAX_EVENTS = int(os.environ.get("XAITA_MAX_EVENTS", "5000"))
 API_KEY = os.environ.get("XAITA_API_KEY")
+API_KEY_ROLE = os.environ.get("XAITA_API_KEY_ROLE", "admin").strip().lower()
+ENVIRONMENT = os.environ.get("XAITA_ENV", "development").strip().lower()
+REQUIRE_AUTH = ENVIRONMENT in {"staging", "production"} or os.environ.get("XAITA_REQUIRE_AUTH", "false").lower() == "true"
+RATE_LIMIT_PER_MINUTE = max(1, int(os.environ.get("XAITA_RATE_LIMIT_PER_MINUTE", "30")))
+RATE_LIMIT_WINDOW_SECONDS = 60
+ENABLE_DOCS = os.environ.get("XAITA_ENABLE_DOCS", "true").lower() == "true"
+FORCE_HTTPS = os.environ.get("XAITA_FORCE_HTTPS", "false").lower() == "true"
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get("XAITA_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") if h.strip()]
+CORS_ORIGINS = [o.strip() for o in os.environ.get("XAITA_CORS_ORIGINS", "").split(",") if o.strip()]
+
+logger = logging.getLogger("xaita_ot.api")
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper(), format="%(message)s")
+_rate_lock = threading.Lock()
+_rate_buckets: dict[str, list[float]] = {}
 
 
 def _dataset_path(env_name: str, default_relative: str) -> str | None:
@@ -122,7 +144,25 @@ app = FastAPI(
     title="XAITA-OT API",
     version=VERSION,
     description="Evidence-continuous OT/ICS security analytics API",
+    docs_url="/docs" if ENABLE_DOCS else None,
+    redoc_url="/redoc" if ENABLE_DOCS else None,
+    openapi_url="/openapi.json" if ENABLE_DOCS else None,
 )
+
+if ALLOWED_HOSTS:
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
+if FORCE_HTTPS:
+    app.add_middleware(HTTPSRedirectMiddleware)
+if CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=CORS_ORIGINS,
+        allow_credentials=False,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Authorization", "Content-Type", "X-XAITA-API-Key", "X-Request-ID"],
+    )
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
 engine = XAITAEngine(load_config())
 
 
@@ -145,13 +185,120 @@ def _dashboard_path() -> Path | None:
     return next((path for path in _dashboard_candidates() if path.is_file()), None)
 
 
+def _configured_api_keys() -> dict[str, str]:
+    """Return role -> secret mappings. Legacy XAITA_API_KEY remains an admin key."""
+    keys: dict[str, str] = {}
+    raw = os.environ.get("XAITA_API_KEYS_JSON", "").strip()
+    if raw:
+        try:
+            value = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("XAITA_API_KEYS_JSON must contain valid JSON") from exc
+        if not isinstance(value, dict):
+            raise RuntimeError("XAITA_API_KEYS_JSON must be a JSON object of role to key")
+        for role, secret in value.items():
+            role_key = str(role).strip().lower()
+            if role_key not in {"viewer", "analyst", "admin"} or not isinstance(secret, str) or not secret:
+                raise RuntimeError("XAITA_API_KEYS_JSON roles must be viewer, analyst or admin with non-empty secrets")
+            keys[role_key] = secret
+    if API_KEY:
+        keys[API_KEY_ROLE if API_KEY_ROLE in {"viewer", "analyst", "admin"} else "admin"] = API_KEY
+    return keys
+
+
+def _auth_ready() -> bool:
+    return bool(_configured_api_keys())
+
+
+def _role_allows(actual: str, required: str) -> bool:
+    rank = {"viewer": 1, "analyst": 2, "admin": 3}
+    return rank.get(actual, 0) >= rank.get(required, 99)
+
+
+def _check_api_key(header_key: str | None, authorization: str | None = None, required_role: str = "viewer") -> str:
+    """Authenticate a request and enforce a small, explicit RBAC hierarchy."""
+    keys = _configured_api_keys()
+    auth_required = REQUIRE_AUTH or bool(keys)
+    if not auth_required:
+        return "anonymous"
+    if not keys:
+        raise HTTPException(status_code=503, detail="API authentication is required but not configured")
+
+    candidate = header_key
+    if not candidate and authorization:
+        scheme, _, token = authorization.partition(" ")
+        if scheme.lower() == "bearer" and token:
+            candidate = token.strip()
+    if not candidate:
+        raise HTTPException(status_code=401, detail="API authentication required")
+
+    matched_role = None
+    for role, secret in keys.items():
+        if hmac.compare_digest(candidate, secret):
+            matched_role = role
+            break
+    if matched_role is None:
+        raise HTTPException(status_code=403, detail="Invalid API credentials")
+    if not _role_allows(matched_role, required_role):
+        raise HTTPException(status_code=403, detail=f"Role '{matched_role}' is not authorized for this operation")
+    return matched_role
+
+
+def _enforce_rate_limit(request: Request, role: str, scope: str) -> None:
+    """Apply a lightweight local guard to expensive endpoints.
+
+    This is intentionally process-local. Distributed deployments should also rate-limit
+    at the ingress/API-gateway layer so limits remain consistent across replicas.
+    """
+    identity = request.client.host if request.client else "unknown"
+    key = f"{identity}:{role}:{scope}"
+    now = time.monotonic()
+    cutoff = now - RATE_LIMIT_WINDOW_SECONDS
+    with _rate_lock:
+        bucket = [stamp for stamp in _rate_buckets.get(key, []) if stamp > cutoff]
+        if len(bucket) >= RATE_LIMIT_PER_MINUTE:
+            retry_after = max(1, int(RATE_LIMIT_WINDOW_SECONDS - (now - bucket[0])))
+            _rate_buckets[key] = bucket
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded for this operation",
+                headers={"Retry-After": str(retry_after)},
+            )
+        bucket.append(now)
+        _rate_buckets[key] = bucket
+        if len(_rate_buckets) > 2000:
+            stale = [k for k, values in _rate_buckets.items() if not values or values[-1] <= cutoff]
+            for stale_key in stale[:1000]:
+                _rate_buckets.pop(stale_key, None)
+
+
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
-    response = await call_next(request)
+    request_id = request.headers.get("X-Request-ID", "").strip()[:128] or uuid4().hex
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception(json.dumps({"event": "request_error", "request_id": request_id, "path": request.url.path}))
+        raise
+    duration_ms = round((time.perf_counter() - started) * 1000, 2)
+    response.headers["X-Request-ID"] = request_id
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     response.headers["Cache-Control"] = "no-store"
+    if FORCE_HTTPS:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    logger.info(json.dumps({
+        "event": "http_request",
+        "request_id": request_id,
+        "method": request.method,
+        "path": request.url.path,
+        "status": response.status_code,
+        "duration_ms": duration_ms,
+        "client": request.client.host if request.client else None,
+    }, separators=(",", ":")))
     return response
 
 
@@ -175,13 +322,6 @@ class ExperimentIn(BaseModel):
     seed: int = Field(default=42, ge=0, le=2147483647)
 
 
-def _check_api_key(header_key: str | None) -> None:
-    if API_KEY and not header_key:
-        raise HTTPException(status_code=401, detail="API key required")
-    if API_KEY and not hmac.compare_digest(header_key or "", API_KEY):
-        raise HTTPException(status_code=403, detail="Invalid API key")
-
-
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "xaita-ot", "version": VERSION}
@@ -190,16 +330,49 @@ def health():
 @app.get("/ready")
 def ready():
     dashboard_path = _dashboard_path()
+    datasets = {name: _dataset_status(path) for name, path in DATASET_PATHS.items()}
     return {
         "status": "ready",
         "dashboard": bool(dashboard_path and dashboard_path.is_file()),
         "max_events": MAX_EVENTS,
+        "environment": ENVIRONMENT,
+        "authentication_required": REQUIRE_AUTH or bool(_configured_api_keys()),
+        "authentication_configured": _auth_ready() if (REQUIRE_AUTH or os.environ.get("XAITA_API_KEY") or os.environ.get("XAITA_API_KEYS_JSON")) else False,
+        "datasets_ready": all(item["ready"] for item in datasets.values()),
+    }
+
+
+@app.get("/v2/system")
+def system_status(
+    xaita_api_key: str | None = Header(default=None, alias="X-XAITA-API-Key"),
+    authorization: str | None = Header(default=None),
+):
+    role = _check_api_key(xaita_api_key, authorization, "viewer")
+    datasets = {name: _dataset_status(path) for name, path in DATASET_PATHS.items()}
+    return {
+        "schema_version": "XAITA-OT-V5-SYSTEM-1.0",
+        "service": "xaita-ot",
+        "version": VERSION,
+        "environment": ENVIRONMENT,
+        "role": role,
+        "dashboard": bool(_dashboard_path()),
+        "datasets": datasets,
+        "security": {
+            "authentication_required": REQUIRE_AUTH or bool(_configured_api_keys()),
+            "authentication_configured": _auth_ready(),
+            "force_https": FORCE_HTTPS,
+            "allowed_hosts": ALLOWED_HOSTS,
+            "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE,
+        },
     }
 
 
 @app.get("/v2/datasets")
-def dataset_status(xaita_api_key: str | None = Header(default=None)):
-    _check_api_key(xaita_api_key)
+def dataset_status(
+    xaita_api_key: str | None = Header(default=None, alias="X-XAITA-API-Key"),
+    authorization: str | None = Header(default=None),
+):
+    _check_api_key(xaita_api_key, authorization, "viewer")
     return {
         "schema_version": "XAITA-OT-V2-DATASET-STATUS-1.1",
         "datasets": {
@@ -210,9 +383,12 @@ def dataset_status(xaita_api_key: str | None = Header(default=None)):
 
 
 @app.get("/v2/benchmark")
-def benchmark_summary(xaita_api_key: str | None = Header(default=None)):
+def benchmark_summary(
+    xaita_api_key: str | None = Header(default=None, alias="X-XAITA-API-Key"),
+    authorization: str | None = Header(default=None),
+):
     """Return committed, reproducible benchmark summaries for dashboard display."""
-    _check_api_key(xaita_api_key)
+    _check_api_key(xaita_api_key, authorization, "viewer")
     path = ROOT / "artifacts" / "toniOT_network_5seed_summary.json"
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Benchmark summary artifact unavailable")
@@ -225,9 +401,12 @@ def benchmark_summary(xaita_api_key: str | None = Header(default=None)):
 @app.post("/v2/experiment")
 def run_v2_experiment(
     payload: ExperimentIn,
-    xaita_api_key: str | None = Header(default=None),
+    request: Request,
+    xaita_api_key: str | None = Header(default=None, alias="X-XAITA-API-Key"),
+    authorization: str | None = Header(default=None),
 ):
-    _check_api_key(xaita_api_key)
+    role = _check_api_key(xaita_api_key, authorization, "analyst")
+    _enforce_rate_limit(request, role, "experiment")
     if payload.dataset not in DATASET_PATHS:
         raise HTTPException(status_code=400, detail="Unsupported dataset")
     path = DATASET_PATHS[payload.dataset]
@@ -299,9 +478,12 @@ def dashboard():
 @app.post("/v1/analyze")
 def analyze(
     events: list[EventIn],
-    xaita_api_key: str | None = Header(default=None),
+    request: Request,
+    xaita_api_key: str | None = Header(default=None, alias="X-XAITA-API-Key"),
+    authorization: str | None = Header(default=None),
 ):
-    _check_api_key(xaita_api_key)
+    role = _check_api_key(xaita_api_key, authorization, "analyst")
+    _enforce_rate_limit(request, role, "analyze")
     if not events:
         raise HTTPException(status_code=400, detail="At least one event is required")
     if len(events) > MAX_EVENTS:
