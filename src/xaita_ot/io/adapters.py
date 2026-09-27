@@ -2,7 +2,8 @@ import pandas as pd
 from .taxonomy import harmonize_columns
 
 
-def normalize_labels(df: pd.DataFrame, candidates=('label','Label','Normal/Attack','attack','Attack','attack_label','type')):
+def normalize_labels(df: pd.DataFrame, candidates=('label','Label','Normal/Attack','attack','Attack','Attack State','attack_label','type')):
+    """Normalize heterogeneous dataset labels to the canonical binary ``label``."""
     out = df.copy()
     source = next((c for c in candidates if c in out.columns), None)
     if source is None:
@@ -13,7 +14,7 @@ def normalize_labels(df: pd.DataFrame, candidates=('label','Label','Normal/Attac
         out['label'] = (vals.astype(float) > 0).astype(int)
         return out
     text = vals.astype(str).str.strip().str.lower()
-    benign = {'normal', 'benign', '0', 'false', 'no', 'nan'}
+    benign = {'normal', 'benign', '0', '0.0', 'false', 'no', '', 'nan', 'none', 'null'}
     out['label'] = (~text.isin(benign)).astype(int)
     return out
 
@@ -32,7 +33,8 @@ def _adapt(df, timestamp_aliases, label_candidates, asset, protocol):
 
 
 def adapt_swat(df):
-    return _adapt(df, ('Timestamp',), ('label','Label','Normal/Attack','attack','Attack'), 'SWaT', 'industrial')
+    # SWaT exports may use Attack State with boolean or numeric attack states.
+    return _adapt(df, ('Timestamp',), ('label','Label','Normal/Attack','attack','Attack','Attack State'), 'SWaT', 'industrial')
 
 
 def adapt_batadal(df):
@@ -48,14 +50,7 @@ def adapt_toniot(df):
             errors='coerce',
         )
     elif 'timestamp' not in out.columns:
-        # TON-IoT network CSV has no wall-clock timestamp. Preserve source row
-        # order with a deterministic synthetic event time. Downstream
-        # experiments must therefore use a stratified, not temporal, split.
-        out['timestamp'] = pd.date_range(
-            start='1970-01-01',
-            periods=len(out),
-            freq='s',
-        )
+        out['timestamp'] = pd.date_range(start='1970-01-01', periods=len(out), freq='s')
         out.attrs['timestamp_semantics'] = 'synthetic_event_order'
     return out
 
