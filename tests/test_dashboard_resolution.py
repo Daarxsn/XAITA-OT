@@ -33,5 +33,7 @@ def test_dashboard_path_falls_back_to_working_directory(tmp_path, monkeypatch):
 def test_ready_reports_dashboard_availability(tmp_path, monkeypatch):
     monkeypatch.setattr(api, "_dashboard_path", lambda: tmp_path / "web" / "index.html")
     response = api.ready()
-    assert response["status"] == "ready"
+    assert response["status"] == "degraded"
     assert response["dashboard"] is False
+    assert response["datasets_ready"] is False
+    assert response["datasets"] == {name: False for name in api.SUPPORTED_DATASETS}
