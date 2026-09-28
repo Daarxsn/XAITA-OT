@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from xaita_ot.api.app import app
 
 
-client = TestClient(app)
+client = TestClient(app, base_url="http://localhost")
 
 
 def _payload():
