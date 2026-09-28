@@ -38,10 +38,23 @@ def test_health_and_security_headers():
 def test_ready_reports_dashboard(tmp_path, monkeypatch):
     (tmp_path / "web").mkdir()
     (tmp_path / "web" / "index.html").write_text("<html></html>", encoding="utf-8")
+    for name in ("swat", "batadal", "ton_iot"):
+        (tmp_path / "data" / "raw" / name).mkdir(parents=True)
+        (tmp_path / "data" / "raw" / name / "sample.csv").write_text("timestamp,label\n2026-01-01,0\n", encoding="utf-8")
     monkeypatch.setattr(api, "ROOT", tmp_path)
+    monkeypatch.setattr(api, "DATASET_PATHS", {
+        "SWaT": str(tmp_path / "data" / "raw" / "swat"),
+        "BATADAL": str(tmp_path / "data" / "raw" / "batadal"),
+        "TON-IoT": str(tmp_path / "data" / "raw" / "ton_iot"),
+    })
     response = client.get("/ready")
     assert response.status_code == 200
-    assert response.json() == {"status": "ready", "dashboard": True, "max_events": api.MAX_EVENTS}
+    body = response.json()
+    assert body["status"] == "ready"
+    assert body["dashboard"] is True
+    assert body["datasets_ready"] is True
+    assert body["datasets"] == {"SWaT": True, "BATADAL": True, "TON-IoT": True}
+    assert body["max_events"] == api.MAX_EVENTS
 
 
 def test_dashboard_serves_index(tmp_path, monkeypatch):
@@ -120,8 +133,48 @@ def test_system_status_reports_security(monkeypatch):
     assert response.headers["X-Request-ID"] == "test-request"
 
 
+def test_capabilities_contract(monkeypatch):
+    monkeypatch.setattr(api, "API_KEY", None)
+    response = client.get("/v2/capabilities")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["schema_version"] == "XAITA-OT-V5-CAPABILITIES-1.0"
+    assert body["datasets"] == ["SWaT", "BATADAL", "TON-IoT"]
+    assert {item["id"] for item in body["detectors"]} == {"random_forest", "cnn", "lstm", "cnn_lstm"}
+    assert "DC+BSS+ECS+MAS" in body["attribution_configurations"]
+
+
+def test_ops_summary_reports_dataset_readiness(tmp_path, monkeypatch):
+    monkeypatch.setattr(api, "API_KEY", None)
+    monkeypatch.setattr(api, "ROOT", tmp_path)
+    (tmp_path / "web").mkdir()
+    (tmp_path / "web" / "index.html").write_text("dashboard", encoding="utf-8")
+    dataset_root = tmp_path / "data" / "raw"
+    paths = {}
+    for key, folder in (("SWaT", "swat"), ("BATADAL", "batadal"), ("TON-IoT", "ton_iot")):
+        path = dataset_root / folder
+        path.mkdir(parents=True)
+        (path / "sample.csv").write_text("timestamp,label\n2026-01-01,0\n", encoding="utf-8")
+        paths[key] = str(path)
+    monkeypatch.setattr(api, "DATASET_PATHS", paths)
+    response = client.get("/v2/ops/summary")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["schema_version"] == "XAITA-OT-V5-OPS-1.0"
+    assert body["status"] == "operational"
+    assert body["datasets"]["ready_count"] == 3
+    assert body["execution"]["detectors"] == ["random_forest", "cnn", "lstm", "cnn_lstm"]
+
+
 def test_experiment_rejects_unknown_dataset(monkeypatch):
     monkeypatch.setattr(api, "API_KEY", None)
     response = client.post("/v2/experiment", json={"dataset": "unknown", "detector": "CNN-LSTM", "seed": 42})
     assert response.status_code == 400
     assert response.json()["detail"] == "Unsupported dataset"
+
+
+def test_experiment_rejects_unknown_detector(monkeypatch):
+    monkeypatch.setattr(api, "API_KEY", None)
+    response = client.post("/v2/experiment", json={"dataset": "TON-IoT", "detector": "unknown", "seed": 42})
+    assert response.status_code == 400
+    assert "Unknown detector" in response.json()["detail"]
