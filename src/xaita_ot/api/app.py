@@ -20,7 +20,7 @@ from .. import __version__
 from ..config import load_config
 from ..core.schemas import DetectionEvent
 from ..pipeline.engine import XAITAEngine
-from ..pipeline.experiments import run_detection
+from ..pipeline.experiments import attribution_configurations, run_detection
 
 VERSION = __version__
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -38,6 +38,8 @@ ENABLE_DOCS = os.environ.get("XAITA_ENABLE_DOCS", "true").lower() == "true"
 FORCE_HTTPS = os.environ.get("XAITA_FORCE_HTTPS", "false").lower() == "true"
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get("XAITA_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") if h.strip()]
 CORS_ORIGINS = [o.strip() for o in os.environ.get("XAITA_CORS_ORIGINS", "").split(",") if o.strip()]
+SUPPORTED_DETECTORS = ("random_forest", "cnn", "lstm", "cnn_lstm")
+SUPPORTED_DATASETS = ("SWaT", "BATADAL", "TON-IoT")
 
 logger = logging.getLogger("xaita_ot.api")
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper(), format="%(message)s")
@@ -247,8 +249,11 @@ def health():
 
 @app.get("/ready")
 def ready():
-    dashboard_path = _dashboard_path()
-    return {"status": "ready", "dashboard": bool(dashboard_path and dashboard_path.is_file()), "max_events": MAX_EVENTS}
+    dashboard_ready = bool(_dashboard_path())
+    datasets = {name: _dataset_status(path) for name, path in DATASET_PATHS.items()}
+    datasets_ready = all(item["ready"] for item in datasets.values())
+    status = "ready" if dashboard_ready and datasets_ready else "degraded"
+    return {"status": status, "dashboard": dashboard_ready, "datasets_ready": datasets_ready, "datasets": {name: item["ready"] for name, item in datasets.items()}, "max_events": MAX_EVENTS}
 
 
 @app.get("/v2/system")
@@ -256,6 +261,23 @@ def system_status(xaita_api_key: str | None = Header(default=None, alias="X-XAIT
     role = _check_api_key(xaita_api_key, authorization, legacy_api_key, "viewer")
     datasets = {name: _dataset_status(path) for name, path in DATASET_PATHS.items()}
     return {"schema_version": "XAITA-OT-V5-SYSTEM-1.0", "service": "xaita-ot", "version": VERSION, "environment": ENVIRONMENT, "role": role, "dashboard": bool(_dashboard_path()), "datasets": datasets, "security": {"authentication_required": REQUIRE_AUTH or bool(_configured_api_keys()), "authentication_configured": _auth_ready(), "force_https": FORCE_HTTPS, "allowed_hosts": ALLOWED_HOSTS, "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE}}
+
+
+@app.get("/v2/capabilities")
+def capabilities(xaita_api_key: str | None = Header(default=None, alias="X-XAITA-API-Key"), authorization: str | None = Header(default=None), legacy_api_key: str | None = Header(default=None, alias="xaita-api-key")):
+    role = _check_api_key(xaita_api_key, authorization, legacy_api_key, "viewer")
+    return {"schema_version": "XAITA-OT-V5-CAPABILITIES-1.0", "role": role, "datasets": list(SUPPORTED_DATASETS), "detectors": [{"id": "random_forest", "label": "Random Forest"}, {"id": "cnn", "label": "CNN"}, {"id": "lstm", "label": "LSTM"}, {"id": "cnn_lstm", "label": "CNN-LSTM"}], "attribution_configurations": attribution_configurations(), "access_roles": ["viewer", "analyst", "admin"], "operations": {"read": ["health", "ready", "system", "datasets", "benchmark", "capabilities"], "execute": ["experiment", "analyze"]}, "safety_boundary": "Analyst-support only; no autonomous PLC/RTU/SCADA control action."}
+
+
+@app.get("/v2/ops/summary")
+def operations_summary(xaita_api_key: str | None = Header(default=None, alias="X-XAITA-API-Key"), authorization: str | None = Header(default=None), legacy_api_key: str | None = Header(default=None, alias="xaita-api-key")):
+    role = _check_api_key(xaita_api_key, authorization, legacy_api_key, "viewer")
+    datasets = {name: _dataset_status(path) for name, path in DATASET_PATHS.items()}
+    ready_count = sum(1 for item in datasets.values() if item["ready"])
+    benchmark_path = ROOT / "artifacts" / "toniOT_network_5seed_summary.json"
+    dashboard_ready = bool(_dashboard_path())
+    auth_configured = _auth_ready()
+    return {"schema_version": "XAITA-OT-V5-OPS-1.0", "status": "operational" if dashboard_ready and ready_count == len(datasets) else "degraded", "role": role, "release": {"version": VERSION, "environment": ENVIRONMENT}, "dashboard": {"ready": dashboard_ready}, "datasets": {"ready_count": ready_count, "total": len(datasets), "items": datasets}, "execution": {"detectors": list(SUPPORTED_DETECTORS), "attribution_configurations": attribution_configurations(), "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE}, "security": {"authentication_required": REQUIRE_AUTH or bool(_configured_api_keys()), "authentication_configured": auth_configured, "force_https": FORCE_HTTPS, "allowed_hosts": ALLOWED_HOSTS}, "research": {"benchmark_summary_available": benchmark_path.is_file(), "benchmark_summary_path": str(benchmark_path) if benchmark_path.is_file() else None}, "safety_boundary": "Analyst-support only; no autonomous PLC/RTU/SCADA control action."}
 
 
 @app.get("/v2/datasets")
@@ -282,12 +304,14 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
     _enforce_rate_limit(request, role, "experiment")
     if payload.dataset not in DATASET_PATHS:
         raise HTTPException(status_code=400, detail="Unsupported dataset")
+    detector_key = _experiment_detector_name(payload.detector)
+    if detector_key not in SUPPORTED_DETECTORS:
+        raise HTTPException(status_code=400, detail=f"Unknown detector '{payload.detector}'. Available: {', '.join(SUPPORTED_DETECTORS)}")
     path = DATASET_PATHS[payload.dataset]
     if not path:
         raise HTTPException(status_code=409, detail=f"{payload.dataset} dataset is not configured on this deployment")
     if not Path(path).exists():
         raise HTTPException(status_code=409, detail=f"{payload.dataset} dataset path is configured but unavailable")
-    detector_key = _experiment_detector_name(payload.detector)
     try:
         csv_path = _find_dataset_csv(path, payload.dataset)
         run = run_detection(csv_path, payload.dataset, load_config(), seed=payload.seed, detector=detector_key)
@@ -295,8 +319,6 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
         raise
     except Exception as exc:
         raise HTTPException(status_code=422, detail={"message": f"{payload.dataset} experiment could not be executed", "error_type": type(exc).__name__, "error": str(exc)}) from exc
-    if detector_key not in run.metrics:
-        raise HTTPException(status_code=400, detail=f"Unknown detector '{payload.detector}'. Available: {', '.join(sorted(run.metrics))}")
     return {"schema_version": "XAITA-OT-V2-RUN-1.2", "experiment_id": run.experiment_id, "dataset": run.dataset, "detector": payload.detector, "detector_key": detector_key, "seed": run.seed, "started_at": run.started_at, "duration_seconds": run.duration_seconds, "rows": run.rows, "windows": run.windows, "metrics": run.metrics[detector_key], "all_model_metrics": run.metrics, "dataset_file": str(csv_path)}
 
 
