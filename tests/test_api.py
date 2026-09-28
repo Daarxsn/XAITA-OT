@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from xaita_ot.api import app as api
 
 
-client = TestClient(api.app)
+client = TestClient(api.app, base_url="http://localhost")
 
 
 def event_payload(event_id="evt-1"):
