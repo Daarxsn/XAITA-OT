@@ -50,3 +50,17 @@ Day 8 is locked only when:
 7. The Day 8 lock document is present on `main`.
 
 A passing disposable smoke is deployment-integration evidence only. It does not claim customer-network acceptance, OT safety certification, penetration-test completion, load-test capacity, or regulatory certification.
+
+
+## Acceptance Evidence
+
+Final acceptance commit: `e8ee889a068a65193ca68118ac7dfc70239cf127`.
+
+GitHub Actions passed on this commit:
+- XAITA-OT CI — success
+- XAITA-OT V5 Preflight — success
+- XAITA-OT V5 Operational Check — success
+
+The CI E2E smoke exercised readiness, dashboard delivery, all three dataset mounts, system/capability/operations contracts, unauthenticated access rejection, and invalid credential rejection.
+
+**Day 8 status: LOCKED.**
