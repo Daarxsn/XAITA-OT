@@ -4,7 +4,7 @@ from ..config import AppConfig
 from ..core.seed import set_seed
 from ..core.btae import reconstruct
 from ..core.context import contextualize, load_attack_map
-from ..core.attribution import assess, to_dict
+from ..core.attribution import assess, to_dict, validate_assessments
 from ..core.risk import score_risk
 from ..explain.xai import feature_importance_linearized, build_explanation
 from ..cti.generator import generate_cti
@@ -61,6 +61,7 @@ class XAITAEngine:
             base = {"DC": dc, "BSS": bss, "ECS": ecs, "EC": ec, "MAS": mas}
             evidence = self._hypothesis_evidence(base, hypotheses)
             attrs = assess(hypotheses, evidence, self.config.attribution.reliability, self.config.attribution.support_threshold, self.config.attribution.conflict_threshold)
+            validate_assessments(attrs)
             best = to_dict(attrs[0]) if attrs else None
             if best is not None:
                 best["evidence_vector"] = evidence.get(best["hypothesis"], {})
