@@ -130,5 +130,7 @@ jobs:
           name: v3-phase8-${{ matrix.python-version }}
           path: artifacts/v3/phase8
           if-no-files-found: error
+      - name: V5 disposable end-to-end deployment smoke
+        run: python scripts/v5_e2e_smoke.py
       - name: Compile package
         run: python -m compileall -q src scripts
