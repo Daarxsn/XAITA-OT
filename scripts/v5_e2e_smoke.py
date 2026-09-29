@@ -47,6 +47,8 @@ def _request(base_url: str, path: str, api_key: str | None = None) -> tuple[int,
         except json.JSONDecodeError:
             body = {}
         return exc.code, body
+    except urllib.error.URLError:
+        return 0, {}
 
 
 def _wait_for_health(base_url: str, process: subprocess.Popen[str]) -> None:
@@ -58,7 +60,14 @@ def _wait_for_health(base_url: str, process: subprocess.Popen[str]) -> None:
         if status == 200 and body.get("status") == "ok":
             return
         time.sleep(0.25)
-    raise RuntimeError("API did not become healthy within 30 seconds")
+    output = ""
+    if process.stdout is not None:
+        try:
+            output = process.stdout.read()
+        except Exception:
+            output = ""
+    detail = output[-4000:] if output else "no API output captured"
+    raise RuntimeError("API did not become healthy within 30 seconds; server output:\n" + detail)
 
 
 def main() -> int:
