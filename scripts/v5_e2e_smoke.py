@@ -30,11 +30,15 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def _request(base_url: str, path: str, api_key: str | None = None) -> tuple[int, dict]:
+def _request(base_url: str, path: str, api_key: str | None = None, method: str = "GET", payload: object | None = None) -> tuple[int, dict]:
     headers = {"Accept": "application/json", "User-Agent": "XAITA-OT-v5-e2e-smoke/1.0"}
     if api_key:
         headers["X-XAITA-API-Key"] = api_key
-    request = urllib.request.Request(base_url.rstrip("/") + path, headers=headers)
+    data = None
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(base_url.rstrip("/") + path, headers=headers, method=method, data=data)
     try:
         with urllib.request.urlopen(request, timeout=8) as response:
             raw = response.read()
@@ -154,7 +158,7 @@ def main() -> int:
             status, body = _request(base_url, "/v2/ops/summary", VIEWER_KEY)
             checks.append(("operations summary", status == 200 and body.get("schema_version") == "XAITA-OT-V5-OPS-1.0", f"HTTP {status}"))
 
-            status, body = _request(base_url, "/v1/analyze")
+            status, body = _request(base_url, "/v1/analyze", method="POST", payload=[])
             checks.append(("authentication boundary", status in {401, 403}, f"HTTP {status}"))
 
             status, body = _request(base_url, "/v2/system", "wrong-key")
