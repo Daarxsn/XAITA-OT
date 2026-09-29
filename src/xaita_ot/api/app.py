@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .. import __version__
@@ -28,6 +28,7 @@ _CONFIGURED_ROOT = os.environ.get("XAITA_OT_ROOT")
 ROOT = Path(_CONFIGURED_ROOT) if _CONFIGURED_ROOT else _PROJECT_ROOT
 _DEFAULT_ROOT = ROOT
 MAX_EVENTS = int(os.environ.get("XAITA_MAX_EVENTS", "5000"))
+MAX_REQUEST_BYTES = max(1024, int(os.environ.get("XAITA_MAX_REQUEST_BYTES", str(8 * 1024 * 1024))))
 API_KEY = os.environ.get("XAITA_API_KEY")
 API_KEY_ROLE = os.environ.get("XAITA_API_KEY_ROLE", "admin").strip().lower()
 ENVIRONMENT = os.environ.get("XAITA_ENV", "development").strip().lower()
@@ -198,17 +199,31 @@ def _enforce_rate_limit(request: Request, role: str, scope: str) -> None:
             stale = [k for k, values in _rate_buckets.items() if not values or values[-1] <= cutoff]
             for stale_key in stale[:1000]:
                 _rate_buckets.pop(stale_key, None)
+        if len(_rate_buckets) > 2000:
+            oldest = sorted(_rate_buckets, key=lambda item: _rate_buckets[item][-1] if _rate_buckets[item] else 0)
+            for stale_key in oldest[: max(1, len(_rate_buckets) - 2000)]:
+                _rate_buckets.pop(stale_key, None)
 
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     request_id = request.headers.get("X-Request-ID", "").strip()[:128] or uuid4().hex
     started = time.perf_counter()
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            declared_length = int(content_length)
+        except ValueError:
+            declared_length = -1
+        if declared_length < 0 or declared_length > MAX_REQUEST_BYTES:
+            response = JSONResponse(status_code=413, content={"detail": f"Maximum request body is {MAX_REQUEST_BYTES} bytes"})
+            response.headers["X-Request-ID"] = request_id
+            return response
     try:
         response = await call_next(request)
-    except Exception:
-        logger.exception(json.dumps({"event": "request_error", "request_id": request_id, "path": request.url.path}))
-        raise
+    except Exception as exc:
+        logger.exception(json.dumps({"event": "request_error", "request_id": request_id, "path": request.url.path, "error_type": type(exc).__name__}, separators=(",", ":")))
+        response = JSONResponse(status_code=500, content={"detail": "Internal server error", "request_id": request_id})
     duration_ms = round((time.perf_counter() - started) * 1000, 2)
     response.headers["X-Request-ID"] = request_id
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -253,14 +268,14 @@ def ready():
     datasets = {name: _dataset_status(path) for name, path in DATASET_PATHS.items()}
     datasets_ready = all(item["ready"] for item in datasets.values())
     status = "ready" if dashboard_ready and datasets_ready else "degraded"
-    return {"status": status, "dashboard": dashboard_ready, "datasets_ready": datasets_ready, "datasets": {name: item["ready"] for name, item in datasets.items()}, "max_events": MAX_EVENTS}
+    return {"status": status, "dashboard": dashboard_ready, "datasets_ready": datasets_ready, "datasets": {name: item["ready"] for name, item in datasets.items()}, "max_events": MAX_EVENTS, "max_request_bytes": MAX_REQUEST_BYTES}
 
 
 @app.get("/v2/system")
 def system_status(xaita_api_key: str | None = Header(default=None, alias="X-XAITA-API-Key"), authorization: str | None = Header(default=None), legacy_api_key: str | None = Header(default=None, alias="xaita-api-key")):
     role = _check_api_key(xaita_api_key, authorization, legacy_api_key, "viewer")
     datasets = {name: _dataset_status(path) for name, path in DATASET_PATHS.items()}
-    return {"schema_version": "XAITA-OT-V5-SYSTEM-1.0", "service": "xaita-ot", "version": VERSION, "environment": ENVIRONMENT, "role": role, "dashboard": bool(_dashboard_path()), "datasets": datasets, "security": {"authentication_required": REQUIRE_AUTH or bool(_configured_api_keys()), "authentication_configured": _auth_ready(), "force_https": FORCE_HTTPS, "allowed_hosts": ALLOWED_HOSTS, "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE}}
+    return {"schema_version": "XAITA-OT-V5-SYSTEM-1.0", "service": "xaita-ot", "version": VERSION, "environment": ENVIRONMENT, "role": role, "dashboard": bool(_dashboard_path()), "datasets": datasets, "security": {"authentication_required": REQUIRE_AUTH or bool(_configured_api_keys()), "authentication_configured": _auth_ready(), "force_https": FORCE_HTTPS, "allowed_hosts": ALLOWED_HOSTS, "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE, "max_request_bytes": MAX_REQUEST_BYTES, "max_events": MAX_EVENTS}}
 
 
 @app.get("/v2/capabilities")
