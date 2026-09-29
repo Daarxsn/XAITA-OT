@@ -38,7 +38,15 @@ def _request(base_url: str, path: str, api_key: str | None = None) -> tuple[int,
     try:
         with urllib.request.urlopen(request, timeout=8) as response:
             raw = response.read()
-            body = json.loads(raw.decode("utf-8")) if raw else {}
+            text = raw.decode("utf-8", errors="replace") if raw else ""
+            content_type = response.headers.get("Content-Type", "").lower()
+            if "json" in content_type:
+                try:
+                    body = json.loads(text) if text else {}
+                except json.JSONDecodeError:
+                    body = {"_raw": text}
+            else:
+                body = {"_raw": text}
             return response.status, body
     except urllib.error.HTTPError as exc:
         raw = exc.read()
@@ -115,7 +123,8 @@ def main() -> int:
             checks.append(("readiness", status == 200 and body.get("status") == "ready" and body.get("dashboard") is True, f"HTTP {status}"))
 
             status, body = _request(base_url, "/")
-            checks.append(("dashboard", status == 200, f"HTTP {status}"))
+            dashboard_html = body.get("_raw", "") if isinstance(body, dict) else ""
+            checks.append(("dashboard", status == 200 and len(dashboard_html) > 1000, f"HTTP {status}, {len(dashboard_html)} bytes"))
 
             status, body = _request(base_url, "/v2/datasets", VIEWER_KEY)
             datasets = body.get("datasets", {}) if isinstance(body, dict) else {}
