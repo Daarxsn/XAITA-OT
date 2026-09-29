@@ -1,10 +1,14 @@
 from datetime import datetime, timezone
 import json
 
+from ..core.provenance import build_provenance_manifest, provenance_digest
+
 
 def generate_cti(incident_id, detection, episode, context, attribution, xai, risk):
     provenance = [e.event_id for e in episode.events]
     observation_ids = [e.observation_id for e in episode.events if e.observation_id]
+    provenance_manifest = build_provenance_manifest(episode, context)
+    provenance_hash = provenance_digest(provenance_manifest)
     event_trace = [
         {
             'event_id': e.event_id,
@@ -38,6 +42,8 @@ def generate_cti(incident_id, detection, episode, context, attribution, xai, ris
       'xai': xai,
       'risk': risk,
       'provenance': provenance,
+      'provenance_manifest': provenance_manifest,
+      'provenance_digest': provenance_hash,
       'provenance_links': {
           'observations': observation_ids,
           'detections': provenance,
