@@ -1,6 +1,6 @@
 # XAITA-OT V5 — Day 11 Operational Robustness Lock
 
-**Status: IMPLEMENTED / ACCEPTANCE IN PROGRESS**
+**Status: COMPLETE / LOCKED**
 
 ## Scope
 
@@ -30,4 +30,15 @@ Day 11 does not add autonomous OT control actions, network-control behavior or p
 5. Day 11 regression tests pass.
 6. Final Day 11 lock evidence is recorded on main.
 
-Day 11 will be locked only after all required acceptance gates pass on the final implementation commit.
+## Final acceptance evidence
+
+Final accepted commit: `fd32dd5f5c2780532825dfa24668412cf27a862d`
+
+GitHub Actions on the final commit:
+- XAITA-OT CI — **success**
+- XAITA-OT V5 Preflight — **success**
+- XAITA-OT V5 Operational Check — **success**
+
+All Day 11 regression tests pass, including Python 3.11 and 3.12. The public security contract exposes the configured request-size, event-count and rate-limit controls.
+
+**Day 11 status: LOCKED.**
