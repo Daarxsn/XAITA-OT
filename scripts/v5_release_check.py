@@ -79,7 +79,7 @@ def run() -> list[tuple[str, bool, str]]:
     results.append(check("resource-control configuration", "XAITA_MAX_EVENTS=" in env and "XAITA_RATE_LIMIT_PER_MINUTE=" in env and "XAITA_MAX_REQUEST_BYTES=" in env, "resource controls documented in .env.example"))
 
     ci = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    ci_contract = all(token in ci for token in ["python-version: ["3.11", "3.12"]", "pip-audit", "pytest -q", "scripts/v5_e2e_smoke.py"])
+    ci_contract = all(token in ci for token in ["python-version:", "\"3.11\"", "\"3.12\"", "pip-audit", "pytest -q", "scripts/v5_e2e_smoke.py"])
     results.append(check("CI release gate", ci_contract, "supported Python matrix, dependency audit, tests and deployment smoke are gated"))
 
     for path in TEXT_FILES:
