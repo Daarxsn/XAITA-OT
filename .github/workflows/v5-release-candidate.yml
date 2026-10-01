@@ -1,0 +1,40 @@
+name: XAITA-OT V5 Release Candidate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  release-candidate:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install build tooling
+        run: |
+          python -m pip install --upgrade pip setuptools wheel build
+          pip install -e ".[dev]"
+      - name: Build wheel and source distribution
+        run: python -m build --wheel --sdist --outdir dist
+      - name: Verify release candidate integrity
+        run: python scripts/v5_release_artifact_check.py
+      - name: Run release manifest regression
+        run: python -m pytest -q tests/test_v56_release_manifest.py
+      - name: Upload release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: xaita-ot-v5-release-candidate-py${{ matrix.python-version }}
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+            artifacts/v5_release_manifest.json
+          if-no-files-found: error
