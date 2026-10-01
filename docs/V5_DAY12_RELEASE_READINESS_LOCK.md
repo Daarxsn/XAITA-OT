@@ -1,6 +1,6 @@
 # XAITA-OT V5 — Day 12 V5.5 Release Readiness Lock
 
-**Status: IMPLEMENTED / ACCEPTANCE IN PROGRESS**
+**Status: COMPLETE / LOCKED**
 
 ## Scope
 
@@ -32,4 +32,15 @@ This gate verifies repository artifacts and executable contracts. It does **not*
 6. Release-readiness check passes on the final commit.
 7. Final Day 12 lock evidence is recorded on `main`.
 
-Day 12 will be locked only after all required acceptance gates pass on the final implementation commit.
+## Final acceptance evidence
+
+Final accepted commit: `d1c6447bdd97c5e00cf50170f15699954b2523e5`
+
+GitHub Actions on the final commit:
+- XAITA-OT CI — **success**
+- XAITA-OT V5 Preflight — **success**
+- XAITA-OT V5 Operational Check — **success**
+
+The V5.5 release-readiness regression gate passes, including the resource-control configuration contract. Python 3.11 and 3.12 CI are green.
+
+**Day 12 status: LOCKED.**
