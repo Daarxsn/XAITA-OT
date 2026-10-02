@@ -34,19 +34,22 @@ class _FakeValidation:
         return {"dataset": "SWaT", "sha256": self.sha256, "validation_status": "pass"}
 
 
-class _FakeRun:
-    dataset = "SWaT"
-    seed = 42
-    experiment_id = "SWaT-cnn_lstm-42-test"
-    started_at = "2026-01-01T00:00:00Z"
-    duration_seconds = 1.25
-    config = {
-        "detector": "cnn_lstm",
-        "split_protocol": "chronological_episode_aware",
-    }
-    rows = {"train": 4, "validation": 1, "test": 1}
-    windows = {"train": 1, "validation": 1, "test": 1}
-    metrics = {"cnn_lstm": {"f1": 1.0}}
+def _fake_run():
+    from xaita_ot.pipeline.experiments import ExperimentRun
+    return ExperimentRun(
+        experiment_id="SWaT-cnn_lstm-42-test",
+        dataset="SWaT",
+        seed=42,
+        started_at="2026-01-01T00:00:00Z",
+        duration_seconds=1.25,
+        config={
+            "detector": "cnn_lstm",
+            "split_protocol": "chronological_episode_aware",
+        },
+        rows={"train": 4, "validation": 1, "test": 1},
+        windows={"train": 1, "validation": 1, "test": 1},
+        metrics={"cnn_lstm": {"f1": 1.0}},
+    )
 
 
 def test_reproducibility_fingerprint_is_deterministic():
@@ -67,7 +70,7 @@ def test_reproducibility_fingerprint_is_deterministic():
 
 
 def test_result_envelope_contains_audit_identity():
-    payload = build_result_envelope(_FakeValidation(), _FakeRun(), config=AppConfig())
+    payload = build_result_envelope(_FakeValidation(), _fake_run(), config=AppConfig())
     assert payload["schema_version"] == SCHEMA_VERSION
     assert payload["dataset_validation"]["sha256"] == "a" * 64
     assert payload["experiment"]["experiment_id"] == "SWaT-cnn_lstm-42-test"
