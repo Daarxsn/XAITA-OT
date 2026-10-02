@@ -9,6 +9,7 @@ from pathlib import Path
 from . import __version__
 from .config import load_config
 from .cti.generator import write_json
+from .io.dataset_validation import DatasetValidationError, build_manifest, write_manifest
 from .pipeline.demo import demo_events, make_demo_csv
 from .pipeline.engine import XAITAEngine
 
@@ -47,6 +48,34 @@ def build_parser() -> argparse.ArgumentParser:
         default=3000,
         help="Number of rows to generate (must be positive).",
     )
+
+    validate = sub.add_parser(
+        "validate-data",
+        help="Validate researcher-supplied real benchmark CSVs and write a reproducibility manifest.",
+    )
+    validate.add_argument(
+        "--dataset",
+        required=True,
+        choices=["SWaT", "BATADAL", "TON-IoT"],
+        help="Benchmark dataset family.",
+    )
+    validate.add_argument(
+        "--root",
+        required=True,
+        help="Dataset root directory or a single CSV file.",
+    )
+    validate.add_argument(
+        "--out",
+        default=None,
+        help="Manifest JSON path. Defaults to artifacts/<dataset>_real_data_manifest.json.",
+    )
+    validate.add_argument(
+        "--chunksize",
+        type=int,
+        default=100000,
+        help="CSV rows processed per chunk (must be positive).",
+    )
+
     return parser
 
 
@@ -56,8 +85,25 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "synthetic-data" and args.rows <= 0:
         parser.error("--rows must be a positive integer")
+    if args.cmd == "validate-data" and args.chunksize <= 0:
+        parser.error("--chunksize must be a positive integer")
 
     try:
+        if args.cmd == "validate-data":
+            output = args.out or f"artifacts/{args.dataset}_real_data_manifest.json"
+            payload = build_manifest(args.dataset, args.root)
+            path = write_manifest(payload, output)
+            print(json.dumps({
+                "dataset": payload["dataset"],
+                "files": payload["file_count"],
+                "validated_files": payload["validated_files"],
+                "review_files": payload["review_files"],
+                "benchmark_validation_ready": payload["benchmark_validation_ready"],
+                "manifest_sha256": payload["manifest_sha256"],
+                "manifest": str(path),
+            }, sort_keys=True))
+            return 0 if payload["benchmark_validation_ready"] else 2
+
         cfg = load_config()
         engine = XAITAEngine(cfg)
 
@@ -73,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         parser.error(f"unsupported command: {args.cmd}")
-    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError, TypeError, json.JSONDecodeError, DatasetValidationError) as exc:
         parser.exit(1, f"xaita: error: {exc}\n")
 
     return 1
