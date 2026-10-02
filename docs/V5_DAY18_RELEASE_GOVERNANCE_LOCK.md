@@ -1,6 +1,6 @@
 # XAITA-OT V5 — Day 18 Release Governance Lock
 
-**Status: IMPLEMENTED / PENDING ACCEPTANCE**
+**Status: COMPLETE / LOCKED**
 
 ## Scope
 
@@ -14,6 +14,25 @@ Day 18 executes the V5 roadmap requirement to open the release pull request only
 4. Release PR checks pass before merge.
 5. Release PR is merged into `main`.
 6. Final Day 18 lock evidence is recorded on `main`.
+
+## Final acceptance evidence
+
+Release PR: #16 — merged successfully.
+
+Release merge commit: `faa8e8827dbf5b4c494c3541b56bb38e95756373`
+
+Post-merge verification on `main`:
+- XAITA-OT CI — **success**
+- V5 Preflight — **success**
+- V5 Operational Check — **success**
+- V5 Release Candidate — **success**
+- V5 Release Provenance — **success**
+- V5 Security Posture — **success**
+- V5 Clean Install — **success**
+- V4.5 Installation — **success**
+- V4.5 Dependency Audit — **success**
+
+**Day 18 status: LOCKED.**
 
 ## Boundary
 
