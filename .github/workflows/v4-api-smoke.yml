@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [v4-development]
 
+permissions:
+  contents: read
+
 jobs:
   api-smoke:
     runs-on: ubuntu-latest
