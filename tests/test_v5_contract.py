@@ -46,5 +46,5 @@ def test_v5_contract_serialization_is_stable():
     document = V5_CONTRACT.as_dict()
     assert document["contract_id"] == "XAITA-OT-V5-DEV-1.0"
     assert document["supported_python"] == ["3.10", "3.11", "3.12", "3.13"]
-    assert document["cli_commands"] == ["demo", "synthetic-data"]
+    assert document["cli_commands"] == ["demo", "synthetic-data", "validate-data"]
     assert document["api_routes"][0] == "GET /health"
