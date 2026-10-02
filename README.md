@@ -98,6 +98,17 @@ only validates the dataset files and metadata. It does not itself constitute mod
 performance, cross-environment generalization, security certification or customer
 OT acceptance.
 
+For a validated real benchmark file, run one detector with an auditable result envelope:
+
+```powershell
+xaita real-experiment --dataset SWaT --csv data/raw/swat/<benchmark-file>.csv --detector random_forest --seed 42
+```
+
+The result records the validated file hash, dataset, detector, seed, split protocol,
+configuration digest and a deterministic reproducibility fingerprint. Execution is
+blocked when the input fails the validation gate. Raw benchmark files are never
+written by the command.
+
 ## Dataset policy
 
 Actual SWaT, BATADAL and TON-IoT benchmark files must be supplied by the researcher under their applicable dataset terms. Do not place proprietary or restricted benchmark files in source control.
