@@ -13,7 +13,7 @@ def test_release_provenance_script_requires_release_artifacts(tmp_path):
     result = subprocess.run(
         [sys.executable, str(script)],
         cwd=tmp_path,
-        env={**os.environ, "PYTHONPATH": str(ROOT / "src")},
+        env={**os.environ, "PYTHONPATH": str(ROOT / "src"), "XAITA_RELEASE_ROOT": str(tmp_path)},
         capture_output=True,
         text=True,
     )
