@@ -16,6 +16,21 @@ class V5Contract:
     major: int = 5
     minor: int = 1
     phase: str = "baseline-hardening"
+    contract_id: str = "XAITA-OT-V5-DEV-1.0"
+    supported_python: tuple[str, ...] = ("3.10", "3.11", "3.12", "3.13")
+    cli_commands: tuple[str, ...] = ("demo", "synthetic-data")
+    api_routes: tuple[str, ...] = (
+        "GET /health",
+        "GET /ready",
+        "GET /",
+        "GET /v2/system",
+        "GET /v2/capabilities",
+        "GET /v2/ops/summary",
+        "GET /v2/datasets",
+        "GET /v2/benchmark",
+        "POST /v2/experiment",
+        "POST /v1/analyze",
+    )
     pipeline: tuple[str, ...] = (
         "observation",
         "detection",
@@ -39,6 +54,10 @@ class V5Contract:
         return {
             "version": self.version,
             "phase": self.phase,
+            "contract_id": self.contract_id,
+            "supported_python": list(self.supported_python),
+            "cli_commands": list(self.cli_commands),
+            "api_routes": list(self.api_routes),
             "pipeline": list(self.pipeline),
             "preserves_confidence_separation": self.preserves_confidence_separation,
             "preserves_provenance": self.preserves_provenance,
