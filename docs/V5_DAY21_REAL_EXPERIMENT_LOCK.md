@@ -1,6 +1,6 @@
 # XAITA-OT V5 — Day 21 Reproducible Real-Experiment Lock
 
-**Status:** IMPLEMENTED / ACCEPTANCE PENDING
+**Status:** COMPLETE / LOCKED
 
 ## Scope
 
@@ -35,7 +35,7 @@ Day 21 adds the controlled real-benchmark experiment execution layer on top of t
 3. File and configuration identity are hashable and reproducible. — **PASS**
 4. Invalid benchmark input cannot silently proceed to model execution. — **PASS**
 5. CLI and developer contract are documented. — **PASS**
-6. Final GitHub Actions acceptance suite is green on the final implementation commit. — **PENDING**
+6. Final GitHub Actions acceptance suite is green on the final implementation commit. — **PASS**
 
 ## Verification boundary
 
@@ -43,5 +43,18 @@ Day 21 establishes the reproducible execution mechanism. It does not claim that 
 
 It also does not constitute production OT certification, independent security testing or customer deployment acceptance.
 
+## Final acceptance evidence
+
+Final accepted commit: `cbf4d873cd348dfee631b31216658413de7ee423`
+
+GitHub Actions on the final implementation commit:
+- XAITA-OT CI — **success**
+- V5 Preflight — **success**
+- V5 Operational Check — **success**
+- V5 Release Candidate — **success**
+- V5 Security Posture — **success**
+- V5 Clean Install — **success**
+- V5 Release Provenance — **success**
+
 **Day 21 implementation status: COMPLETE.**  
-**Day 21 lock status: PENDING CI ACCEPTANCE.**
+**Day 21 status: LOCKED.**
