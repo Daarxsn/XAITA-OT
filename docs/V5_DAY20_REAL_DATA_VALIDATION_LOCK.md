@@ -1,6 +1,6 @@
 # XAITA-OT V5 — Day 20 Real-Dataset Validation Lock
 
-**Status:** IMPLEMENTED / ACCEPTANCE PENDING
+**Status: COMPLETE / LOCKED**
 
 ## Scope
 
@@ -23,6 +23,28 @@ Day 20 establishes the repository-level validation and reproducibility layer for
 - Regression coverage for validation, CLI behavior and multi-dataset execution.
 - README and developer-contract documentation updated.
 
+## Acceptance evidence
+
+Final implementation commit: `0a7c5ac0c19519485aeef37d0b74b269e74ec034`
+
+GitHub Actions on the final implementation commit:
+- XAITA-OT CI — **success**
+- V5 Preflight — **success**
+- V5 Operational Check — **success**
+- V5 Release Candidate — **success**
+- V5 Security Posture — **success**
+- V5 Clean Install — **success**
+- V5 Release Provenance — **success**
+
+Day 20 regression coverage passed, including:
+- SWaT `Attack State` validation
+- BATADAL timestamp validation
+- TON-IoT date/time validation
+- deterministic file/manifest identity
+- review-state handling for invalid/incomplete input
+- `validate-data` CLI
+- all-dataset validation runner
+
 ## Acceptance criteria
 
 1. Dataset-specific timestamp/label rules are implemented and tested. — **PASS**
@@ -31,11 +53,10 @@ Day 20 establishes the repository-level validation and reproducibility layer for
 4. File identity and reproducibility metadata are recorded. — **PASS**
 5. Validation failures are surfaced as review states rather than silently accepted. — **PASS**
 6. Validation CLI and all-dataset runner are documented. — **PASS**
-7. Final GitHub Actions acceptance suite is green on the final implementation commit. — **PENDING**
+7. Final GitHub Actions acceptance suite is green on the final implementation commit. — **PASS**
 
 ## Verification boundary
 
 Day 20 provides the validation/reproducibility mechanism. A passing file manifest means the supplied files satisfy the implemented ingestion checks; it does not claim detector performance, statistical significance, cross-environment generalization, independent security assessment, production OT certification or customer acceptance.
 
-**Day 20 implementation status: COMPLETE.**  
-**Day 20 lock status: PENDING CI ACCEPTANCE.**
+**Day 20 status: LOCKED.**
