@@ -30,6 +30,13 @@ jobs:
         run: python -m build --wheel --sdist --outdir dist
       - name: Verify release candidate integrity
         run: python scripts/v5_release_artifact_check.py
+      - name: Generate release provenance
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REF: ${{ github.ref }}
+        run: python scripts/v5_release_provenance.py
+      - name: Run release provenance regression
+        run: python -m pytest -q tests/test_v510_release_provenance.py
       - name: Run release manifest regression
         run: python -m pytest -q tests/test_v56_release_manifest.py
       - name: Upload release candidate
@@ -40,4 +47,5 @@ jobs:
             dist/*.whl
             dist/*.tar.gz
             artifacts/v5_release_manifest.json
+            artifacts/v5_release_provenance.json
           if-no-files-found: error
