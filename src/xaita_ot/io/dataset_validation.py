@@ -20,13 +20,12 @@ DATASET_ALIASES = {
     "batadal": "BATADAL",
     "ton-iot": "TON-IoT",
     "toniot": "TON-IoT",
-    "toniOT": "TON-IoT",
 }
 
 TIMESTAMP_ALIASES = {
     "SWaT": ("Timestamp", "timestamp", "time", "ts"),
     "BATADAL": ("DATETIME", "timestamp", "Timestamp", "time", "ts"),
-    "TON-IoT": ("ts", "timestamp", "time", "Time", "date"),
+    "TON-IoT": ("ts", "timestamp", "time", "Time"),
 }
 
 LABEL_ALIASES = {
@@ -112,14 +111,49 @@ def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
+def _resolve_case_insensitive(columns: list[str], name: str) -> str | None:
+    lookup = {column.lower(): column for column in columns}
+    return lookup.get(name.lower())
+
+
+def _parse_timestamp(frame: pd.DataFrame, dataset: str, timestamp_column: str | None) -> tuple[pd.Series | None, str | None]:
+    if dataset == "TON-IoT":
+        date_column = _resolve_case_insensitive(list(frame.columns), "date")
+        time_column = _resolve_case_insensitive(list(frame.columns), "time")
+        if date_column and time_column:
+            combined = (
+                frame[date_column].astype(str).str.strip()
+                + " "
+                + frame[time_column].astype(str).str.strip()
+            )
+            return pd.to_datetime(combined, errors="coerce", utc=True), f"{date_column} + {time_column}"
+    if timestamp_column is None:
+        return None, None
+    return (
+        pd.to_datetime(
+            frame[timestamp_column],
+            errors="coerce",
+            dayfirst=dataset == "BATADAL",
+            utc=True,
+        ),
+        timestamp_column,
+    )
+
+
 def _label_is_attack(series: pd.Series) -> pd.Series:
     if pd.api.types.is_numeric_dtype(series):
-        return pd.to_numeric(series, errors="coerce").fillna(0).astype(float) > 0
+        numeric = pd.to_numeric(series, errors="coerce")
+        return numeric.fillna(0).astype(float) > 0
     text = series.astype(str).str.strip().str.lower()
     return ~text.isin(BENIGN_VALUES)
 
 
-def validate_csv(path: str | Path, dataset: str, root: str | Path | None = None, chunksize: int = 100_000) -> CSVValidation:
+def validate_csv(
+    path: str | Path,
+    dataset: str,
+    root: str | Path | None = None,
+    chunksize: int = 100_000,
+) -> CSVValidation:
     dataset_name = canonical_dataset(dataset)
     source = Path(path)
     if not source.is_file():
@@ -128,8 +162,7 @@ def validate_csv(path: str | Path, dataset: str, root: str | Path | None = None,
     root_path = Path(root).resolve() if root is not None else source.parent.resolve()
     source_resolved = source.resolve()
     try:
-        relative = source_resolved.relative_to(root_path)
-        display_path = relative.as_posix()
+        display_path = source_resolved.relative_to(root_path).as_posix()
     except ValueError:
         display_path = source_resolved.as_posix()
 
@@ -141,31 +174,34 @@ def validate_csv(path: str | Path, dataset: str, root: str | Path | None = None,
         duplicates = sorted({column for column in columns if columns.count(column) > 1})
         raise DatasetValidationError(f"{dataset_name}: duplicate columns {duplicates} in {source}")
 
-    timestamp_column = _resolve_column(columns, TIMESTAMP_ALIASES[dataset_name])
-    label_column = _resolve_column(columns, LABEL_ALIASES[dataset_name])
+    source_timestamp_column = _resolve_column(columns, TIMESTAMP_ALIASES[dataset_name])
+    source_label_column = _resolve_column(columns, LABEL_ALIASES[dataset_name])
 
     rows = 0
     invalid_timestamps = 0
     missing_cells = 0
     duplicate_timestamps = 0
-    monotonic = True if timestamp_column else None
+    monotonic = True if (source_timestamp_column or dataset_name == "TON-IoT") else None
     start_timestamp = None
     end_timestamp = None
     previous_timestamp = None
-    seen_timestamps: set[pd.Timestamp] = set()
     label_values: set[str] = set()
     attack_rows = 0
     normal_rows = 0
+    effective_timestamp_column = source_timestamp_column
 
     try:
-        iterator = pd.read_csv(source, chunksize=chunksize, low_memory=False)
-        for frame in iterator:
+        for frame in pd.read_csv(source, chunksize=chunksize, low_memory=False):
             frame.columns = columns
             rows += len(frame)
             missing_cells += int(frame.isna().sum().sum())
 
-            if timestamp_column:
-                timestamps = pd.to_datetime(frame[timestamp_column], errors="coerce", utc=True)
+            timestamps, timestamp_display = _parse_timestamp(
+                frame, dataset_name, source_timestamp_column
+            )
+            if timestamp_display:
+                effective_timestamp_column = timestamp_display
+            if timestamps is not None:
                 invalid_timestamps += int(timestamps.isna().sum())
                 valid = timestamps.dropna()
                 if len(valid):
@@ -174,39 +210,40 @@ def validate_csv(path: str | Path, dataset: str, root: str | Path | None = None,
                     if start_timestamp is None:
                         start_timestamp = first.isoformat()
                     end_timestamp = last.isoformat()
-                    if previous_timestamp is not None and first < previous_timestamp:
+                    if previous_timestamp is not None:
+                        if first < previous_timestamp:
+                            monotonic = False
+                        if first == previous_timestamp:
+                            duplicate_timestamps += 1
+                    diffs = valid.diff().dropna()
+                    duplicate_timestamps += int((diffs == pd.Timedelta(0)).sum())
+                    if bool((diffs < pd.Timedelta(0)).any()):
                         monotonic = False
-                    if len(valid) > 1 and bool((valid.diff().dropna() < pd.Timedelta(0)).any()):
-                        monotonic = False
-                    duplicate_timestamps += int(valid.duplicated().sum())
-                    seen_timestamps.update(valid.tolist())
-                    if len(seen_timestamps) > 1_000_000:
-                        # Keep memory bounded; exact duplicate detection within
-                        # each chunk and order checks remain authoritative.
-                        seen_timestamps.clear()
                     previous_timestamp = last
 
-            if label_column:
-                labels = frame[label_column]
+            if source_label_column:
+                labels = frame[source_label_column]
                 label_values.update(str(value) for value in labels.dropna().unique())
                 attacks = _label_is_attack(labels)
                 attack_rows += int(attacks.sum())
                 normal_rows += int((~attacks).sum())
 
     except Exception as exc:
-        raise DatasetValidationError(f"{dataset_name}: unable to parse {source}: {type(exc).__name__}: {exc}") from exc
+        raise DatasetValidationError(
+            f"{dataset_name}: unable to parse {source}: {type(exc).__name__}: {exc}"
+        ) from exc
 
     if rows == 0:
         raise DatasetValidationError(f"{dataset_name}: {source} is empty")
 
     ready = (
-        timestamp_column is not None
+        effective_timestamp_column is not None
+        and source_label_column is not None
         and invalid_timestamps == 0
         and duplicate_timestamps == 0
         and bool(monotonic)
         and missing_cells == 0
     )
-    status = "pass" if ready else "review"
 
     return CSVValidation(
         dataset=dataset_name,
@@ -215,8 +252,8 @@ def validate_csv(path: str | Path, dataset: str, root: str | Path | None = None,
         size_bytes=source.stat().st_size,
         rows=rows,
         columns=columns,
-        timestamp_column=timestamp_column,
-        label_column=label_column,
+        timestamp_column=effective_timestamp_column,
+        label_column=source_label_column,
         invalid_timestamps=invalid_timestamps,
         missing_cells=missing_cells,
         duplicate_timestamps=duplicate_timestamps,
@@ -226,7 +263,7 @@ def validate_csv(path: str | Path, dataset: str, root: str | Path | None = None,
         label_values=sorted(label_values),
         attack_rows=attack_rows,
         normal_rows=normal_rows,
-        validation_status=status,
+        validation_status="pass" if ready else "review",
     )
 
 
@@ -239,7 +276,11 @@ def discover_csvs(root: str | Path) -> list[Path]:
             raise DatasetValidationError(f"Dataset input is not a CSV: {base}")
         return [base]
     files = sorted(
-        {path.resolve() for path in base.rglob("*") if path.is_file() and path.suffix.lower() == ".csv"},
+        {
+            path.resolve()
+            for path in base.rglob("*")
+            if path.is_file() and path.suffix.lower() == ".csv"
+        },
         key=lambda item: item.as_posix().lower(),
     )
     if not files:
@@ -253,7 +294,7 @@ def build_manifest(dataset: str, root: str | Path) -> dict[str, Any]:
     files = discover_csvs(base)
     records = [validate_csv(path, dataset_name, base).as_dict() for path in files]
     passed = sum(item["validation_status"] == "pass" for item in records)
-    return {
+    payload: dict[str, Any] = {
         "schema_version": "XAITA-OT-V5-REAL-DATA-MANIFEST-1.0",
         "dataset": dataset_name,
         "root": str(base),
@@ -263,18 +304,26 @@ def build_manifest(dataset: str, root: str | Path) -> dict[str, Any]:
         "benchmark_validation_ready": passed == len(records) and len(records) > 0,
         "files": records,
     }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    payload["manifest_sha256"] = hashlib.sha256(canonical).hexdigest()
+    return payload
 
 
 def build_all_manifests(dataset_roots: dict[str, str | Path]) -> dict[str, Any]:
-    manifests = {}
-    for dataset, root in dataset_roots.items():
-        dataset_name = canonical_dataset(dataset)
-        manifests[dataset_name] = build_manifest(dataset_name, root)
-    return {
+    manifests = {
+        canonical_dataset(dataset): build_manifest(dataset, root)
+        for dataset, root in dataset_roots.items()
+    }
+    payload: dict[str, Any] = {
         "schema_version": "XAITA-OT-V5-REAL-DATA-MANIFEST-BUNDLE-1.0",
         "datasets": manifests,
-        "all_validation_ready": all(item["benchmark_validation_ready"] for item in manifests.values()),
+        "all_validation_ready": bool(manifests) and all(
+            item["benchmark_validation_ready"] for item in manifests.values()
+        ),
     }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    payload["bundle_sha256"] = hashlib.sha256(canonical).hexdigest()
+    return payload
 
 
 def write_manifest(payload: dict[str, Any], output: str | Path) -> Path:
