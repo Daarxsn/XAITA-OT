@@ -1,0 +1,45 @@
+name: XAITA-OT V5 Release Provenance
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  provenance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install build tooling
+        run: |
+          python -m pip install --upgrade pip setuptools wheel build
+          pip install -e ".[dev]"
+      - name: Build release artifacts
+        run: python -m build --wheel --sdist --outdir dist
+      - name: Verify release candidate integrity
+        run: python scripts/v5_release_artifact_check.py
+      - name: Generate release provenance
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REF: ${{ github.ref }}
+        run: python scripts/v5_release_provenance.py
+      - name: Run provenance regression
+        run: python -m pytest -q tests/test_v510_release_provenance.py
+      - name: Upload provenance evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: xaita-ot-v5-release-provenance
+          path: |
+            artifacts/v5_release_manifest.json
+            artifacts/v5_release_provenance.json
+            dist/*.whl
+            dist/*.tar.gz
+          if-no-files-found: error
