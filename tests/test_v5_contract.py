@@ -27,7 +27,7 @@ def test_v5_contract_preserves_safety_invariants():
 def test_v5_developer_contract_is_explicit():
     assert V5_CONTRACT.contract_id == "XAITA-OT-V5-DEV-1.0"
     assert V5_CONTRACT.supported_python == ("3.10", "3.11", "3.12", "3.13")
-    assert V5_CONTRACT.cli_commands == ("demo", "synthetic-data")
+    assert V5_CONTRACT.cli_commands == ("demo", "synthetic-data", "validate-data")
     assert V5_CONTRACT.api_routes == (
         "GET /health",
         "GET /ready",
