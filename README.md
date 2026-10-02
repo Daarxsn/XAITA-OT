@@ -72,6 +72,32 @@ python run_api.py
 
 API: `http://127.0.0.1:8080/docs`
 
+## Real benchmark validation
+
+Researcher-supplied SWaT, BATADAL and TON-IoT files are validated without storing
+raw data in Git. The validator records CSV schema, timestamps, labels, row counts,
+missing/invalid values, SHA-256 file identity and a deterministic manifest digest.
+
+For one dataset:
+
+```powershell
+xaita validate-data --dataset SWaT --root data/raw/swat
+xaita validate-data --dataset BATADAL --root data/raw/batadal
+xaita validate-data --dataset TON-IoT --root data/raw/ton_iot
+```
+
+For all configured datasets:
+
+```powershell
+python scripts/v5_validate_local_datasets.py
+```
+
+A validation result of `ready=false` or exit code `2` means the files require
+review; it is not silently converted into benchmark evidence. A passing manifest
+only validates the dataset files and metadata. It does not itself constitute model
+performance, cross-environment generalization, security certification or customer
+OT acceptance.
+
 ## Dataset policy
 
 Actual SWaT, BATADAL and TON-IoT benchmark files must be supplied by the researcher under their applicable dataset terms. Do not place proprietary or restricted benchmark files in source control.
