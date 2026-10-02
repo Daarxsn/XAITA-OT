@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [v4.5-development, main]
 
+permissions:
+  contents: read
+
 jobs:
   clean-install:
     runs-on: ubuntu-latest
