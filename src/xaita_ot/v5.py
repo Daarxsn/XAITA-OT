@@ -18,7 +18,7 @@ class V5Contract:
     phase: str = "baseline-hardening"
     contract_id: str = "XAITA-OT-V5-DEV-1.0"
     supported_python: tuple[str, ...] = ("3.10", "3.11", "3.12", "3.13")
-    cli_commands: tuple[str, ...] = ("demo", "synthetic-data", "validate-data")
+    cli_commands: tuple[str, ...] = ("demo", "synthetic-data", "validate-data", "real-experiment")
     api_routes: tuple[str, ...] = (
         "GET /health",
         "GET /ready",
