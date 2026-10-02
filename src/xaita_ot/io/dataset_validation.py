@@ -297,7 +297,7 @@ def build_manifest(dataset: str, root: str | Path) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "schema_version": "XAITA-OT-V5-REAL-DATA-MANIFEST-1.0",
         "dataset": dataset_name,
-        "root": str(base),
+        "root": ".",
         "file_count": len(records),
         "validated_files": passed,
         "review_files": len(records) - passed,
