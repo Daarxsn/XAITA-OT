@@ -12,7 +12,7 @@ import sys
 import zipfile
 import tarfile
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(os.environ.get("XAITA_RELEASE_ROOT", Path(__file__).resolve().parents[1]))
 DIST = ROOT / "dist"
 OUT = ROOT / "artifacts"
 OUT.mkdir(exist_ok=True)
