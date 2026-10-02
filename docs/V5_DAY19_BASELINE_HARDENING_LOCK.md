@@ -1,6 +1,6 @@
 # XAITA-OT V5 — Day 19 Baseline Hardening Lock
 
-**Status: COMPLETE / LOCKED**
+**Status: IMPLEMENTED / ACCEPTANCE PENDING**
 
 ## Scope
 
@@ -14,7 +14,7 @@ Day 19 establishes the V5.1 baseline-hardening developer contract and turns the 
 - Scoped baseline-hardening backlog in `docs/V5.1_BASELINE_HARDENING_ISSUES.md`.
 - GitHub tracking issue #17 for the baseline-hardening backlog.
 
-## Contract locked
+## Contract established
 
 The following are now explicit and test-covered:
 
@@ -29,14 +29,17 @@ The following are now explicit and test-covered:
 
 ## Acceptance criteria
 
-1. Developer contract is represented in executable code.
-2. Contract serialization is covered by regression tests.
-3. Public CLI/API surfaces are documented.
-4. Remaining P0/P1/P2 hardening work is explicitly scoped.
-5. Existing CI/release gates remain green on the final implementation commit.
+1. Developer contract is represented in executable code. — **PASS**
+2. Contract serialization is covered by regression tests. — **PASS**
+3. Public CLI/API surfaces are documented. — **PASS**
+4. Remaining P0/P1/P2 hardening work is explicitly scoped. — **PASS**
+5. Existing CI/release gates remain green on the final implementation commit. — **PENDING**
 
 ## Verification boundary
 
-Day 19 locks the compatibility contract and backlog. It does **not** claim real SWaT/BATADAL/TON-IoT benchmark acceptance, load-test capacity, independent penetration testing, customer OT segmentation validation, regulatory certification, or production safety acceptance.
+Day 19 establishes the compatibility contract and backlog. It does **not** claim real SWaT/BATADAL/TON-IoT benchmark acceptance, load-test capacity, independent penetration testing, customer OT segmentation validation, regulatory certification, or production safety acceptance.
 
-**Day 19 status: LOCKED.**
+The final Day 19 lock will be recorded after the GitHub Actions acceptance suite is green on the final implementation commit.
+
+**Day 19 implementation status: COMPLETE.**  
+**Day 19 lock status: PENDING CI ACCEPTANCE.**
