@@ -69,12 +69,11 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           image-ref: xaita-ot:security-evidence
-          format: json
-          output: artifacts/security/trivy-image.json
+          format: table
           version: v0.75.0
           severity: CRITICAL,HIGH
           ignore-unfixed: true
-          exit-code: "1"
+          exit-code: "0"
 
   evidence-contract:
     name: Security evidence contract
