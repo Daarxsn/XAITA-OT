@@ -17,6 +17,7 @@ from .pipeline.real_experiments import (
     run_real_experiment,
     run_real_experiment_matrix,
     build_statistical_research_report,
+    evaluate_attribution_cases,
     run_real_experiment_statistical_matrix,
     run_real_experiment_suite,
     write_result_envelope,
