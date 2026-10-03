@@ -32,3 +32,6 @@ xaita = "xaita_ot.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.bandit]
+exclude_dirs = ["tests", "artifacts"]
