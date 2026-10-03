@@ -354,14 +354,47 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
         raise HTTPException(status_code=409, detail=f"{payload.dataset} dataset is not configured on this deployment")
     if not Path(path).exists():
         raise HTTPException(status_code=409, detail=f"{payload.dataset} dataset path is configured but unavailable")
+
+    lifecycle_key = f"{payload.dataset}:{detector_key}:{payload.seed}"
+    with _experiment_lifecycle_lock:
+        active = next((job for job in _experiment_jobs.values() if job["lifecycle_key"] == lifecycle_key and job["status"] == "running"), None)
+        if active:
+            raise HTTPException(status_code=409, detail={"message": "Equivalent experiment is already running", "job_id": active["job_id"], "status": active["status"]})
+        job_id = uuid4().hex
+        _experiment_jobs[job_id] = {
+            "job_id": job_id, "lifecycle_key": lifecycle_key, "status": "running",
+            "dataset": payload.dataset, "detector": detector_key, "seed": payload.seed,
+            "started_at": datetime.utcnow().isoformat() + "Z", "finished_at": None,
+            "duration_seconds": None, "error_type": None, "error": None,
+        }
+
+    started = time.monotonic()
     try:
         csv_path = _find_dataset_csv(path, payload.dataset)
         run = run_detection(csv_path, payload.dataset, load_config(), seed=payload.seed, detector=detector_key)
+        duration = round(time.monotonic() - started, 3)
+        if duration > EXPERIMENT_TIMEOUT_SECONDS:
+            with _experiment_lifecycle_lock:
+                _experiment_jobs[job_id].update({
+                    "status": "timed_out", "finished_at": datetime.utcnow().isoformat() + "Z",
+                    "duration_seconds": duration, "error_type": "ExperimentTimeout",
+                    "error": f"Experiment exceeded {EXPERIMENT_TIMEOUT_SECONDS:g}s execution deadline",
+                })
+            raise HTTPException(status_code=504, detail={"message": "Experiment exceeded execution deadline", "job_id": job_id, "timeout_seconds": EXPERIMENT_TIMEOUT_SECONDS})
+        with _experiment_lifecycle_lock:
+            _experiment_jobs[job_id].update({"status": "completed", "finished_at": datetime.utcnow().isoformat() + "Z", "duration_seconds": duration})
     except HTTPException:
         raise
     except Exception as exc:
+        duration = round(time.monotonic() - started, 3)
+        with _experiment_lifecycle_lock:
+            _experiment_jobs[job_id].update({
+                "status": "failed", "finished_at": datetime.utcnow().isoformat() + "Z",
+                "duration_seconds": duration, "error_type": type(exc).__name__, "error": str(exc),
+            })
         raise HTTPException(status_code=422, detail={"message": f"{payload.dataset} experiment could not be executed", "error_type": type(exc).__name__, "error": str(exc)}) from exc
-    return {"schema_version": "XAITA-OT-V2-RUN-1.2", "experiment_id": run.experiment_id, "dataset": run.dataset, "detector": payload.detector, "detector_key": detector_key, "seed": run.seed, "started_at": run.started_at, "duration_seconds": run.duration_seconds, "rows": run.rows, "windows": run.windows, "metrics": run.metrics[detector_key], "all_model_metrics": run.metrics, "dataset_file": str(csv_path)}
+    return {"schema_version": "XAITA-OT-V2-RUN-1.3", "job_id": job_id, "experiment_id": run.experiment_id, "dataset": run.dataset, "detector": payload.detector, "detector_key": detector_key, "seed": run.seed, "started_at": run.started_at, "duration_seconds": run.duration_seconds, "rows": run.rows, "windows": run.windows, "metrics": run.metrics[detector_key], "all_model_metrics": run.metrics, "dataset_file": str(csv_path)}
+
 
 
 @app.get("/")
