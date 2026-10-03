@@ -36,6 +36,8 @@ REQUIRE_AUTH = ENVIRONMENT in {"staging", "production"} or os.environ.get("XAITA
 RATE_LIMIT_PER_MINUTE = max(1, int(os.environ.get("XAITA_RATE_LIMIT_PER_MINUTE", "30")))
 RATE_LIMIT_WINDOW_SECONDS = 60
 EXPERIMENT_TIMEOUT_SECONDS = max(1, float(os.environ.get("XAITA_EXPERIMENT_TIMEOUT_SECONDS", "300")))
+MAX_CONCURRENT_EXPERIMENTS = max(1, int(os.environ.get("XAITA_MAX_CONCURRENT_EXPERIMENTS", "1")))
+MAX_RETAINED_EXPERIMENT_JOBS = max(100, int(os.environ.get("XAITA_MAX_RETAINED_EXPERIMENT_JOBS", "1000")))
 _experiment_lifecycle_lock = threading.Lock()
 _experiment_jobs: dict[str, dict] = {}
 ENABLE_DOCS = os.environ.get("XAITA_ENABLE_DOCS", "true").lower() == "true"
@@ -292,7 +294,7 @@ def ready():
 def system_status(xaita_api_key: str | None = Header(default=None, alias="X-XAITA-API-Key"), authorization: str | None = Header(default=None), legacy_api_key: str | None = Header(default=None, alias="xaita-api-key")):
     role = _check_api_key(xaita_api_key, authorization, legacy_api_key, "viewer")
     datasets = {name: _dataset_status(path) for name, path in DATASET_PATHS.items()}
-    return {"schema_version": "XAITA-OT-V5-SYSTEM-1.0", "service": "xaita-ot", "version": VERSION, "environment": ENVIRONMENT, "role": role, "dashboard": bool(_dashboard_path()), "datasets": datasets, "security": {"authentication_required": REQUIRE_AUTH or bool(_configured_api_keys()), "authentication_configured": _auth_ready(), "force_https": FORCE_HTTPS, "allowed_hosts": ALLOWED_HOSTS, "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE, "max_request_bytes": MAX_REQUEST_BYTES, "max_events": MAX_EVENTS}}
+    return {"schema_version": "XAITA-OT-V5-SYSTEM-1.0", "service": "xaita-ot", "version": VERSION, "environment": ENVIRONMENT, "role": role, "dashboard": bool(_dashboard_path()), "datasets": datasets, "security": {"authentication_required": REQUIRE_AUTH or bool(_configured_api_keys()), "authentication_configured": _auth_ready(), "force_https": FORCE_HTTPS, "allowed_hosts": ALLOWED_HOSTS, "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE, "max_request_bytes": MAX_REQUEST_BYTES, "max_events": MAX_EVENTS, "experiment_timeout_seconds": EXPERIMENT_TIMEOUT_SECONDS, "max_concurrent_experiments": MAX_CONCURRENT_EXPERIMENTS}}
 
 
 @app.get("/v2/capabilities")
@@ -360,6 +362,9 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
         active = next((job for job in _experiment_jobs.values() if job["lifecycle_key"] == lifecycle_key and job["status"] == "running"), None)
         if active:
             raise HTTPException(status_code=409, detail={"message": "Equivalent experiment is already running", "job_id": active["job_id"], "status": active["status"]})
+        running_count = sum(1 for job in _experiment_jobs.values() if job["status"] == "running")
+        if running_count >= MAX_CONCURRENT_EXPERIMENTS:
+            raise HTTPException(status_code=429, detail={"message": "Experiment concurrency limit reached", "max_concurrent_experiments": MAX_CONCURRENT_EXPERIMENTS})
         job_id = uuid4().hex
         _experiment_jobs[job_id] = {
             "job_id": job_id, "lifecycle_key": lifecycle_key, "status": "running",
@@ -367,6 +372,10 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
             "started_at": datetime.utcnow().isoformat() + "Z", "finished_at": None,
             "duration_seconds": None, "error_type": None, "error": None,
         }
+        if len(_experiment_jobs) > MAX_RETAINED_EXPERIMENT_JOBS:
+            terminal = [key for key, value in _experiment_jobs.items() if value["status"] != "running"]
+            for stale_key in terminal[: max(1, len(_experiment_jobs) - MAX_RETAINED_EXPERIMENT_JOBS)]:
+                _experiment_jobs.pop(stale_key, None)
 
     started = time.monotonic()
     try:
@@ -383,7 +392,15 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
             raise HTTPException(status_code=504, detail={"message": "Experiment exceeded execution deadline", "job_id": job_id, "timeout_seconds": EXPERIMENT_TIMEOUT_SECONDS})
         with _experiment_lifecycle_lock:
             _experiment_jobs[job_id].update({"status": "completed", "finished_at": datetime.utcnow().isoformat() + "Z", "duration_seconds": duration})
-    except HTTPException:
+    except HTTPException as exc:
+        with _experiment_lifecycle_lock:
+            _experiment_jobs[job_id].update({
+                "status": "timed_out" if exc.status_code == 504 else "failed",
+                "finished_at": datetime.utcnow().isoformat() + "Z",
+                "duration_seconds": round(time.monotonic() - started, 3),
+                "error_type": "ExperimentTimeout" if exc.status_code == 504 else "HTTPException",
+                "error": str(exc.detail),
+            })
         raise
     except Exception as exc:
         duration = round(time.monotonic() - started, 3)
