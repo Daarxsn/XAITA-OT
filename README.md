@@ -128,6 +128,8 @@ xaita real-experiment-statistics --swat-csv <swat.csv> --batadal-csv <batadal.cs
 
 The statistical runner requires at least two unique seeds, executes the Day 23 matrix for each seed, and reports per-dataset/per-detector metric mean, sample standard deviation, Student-t confidence intervals, and paired detector comparisons across matched seeds. Failed matrix runs are retained and prevent statistical acceptance. These statistics are descriptive/research evaluation outputs; they do not establish benchmark superiority, significance beyond the reported tests, generalization, or production OT acceptance.
 
+For expensive API experiments, execution is tracked with a process-local lifecycle state. Equivalent dataset/detector/seed requests are rejected while already running, concurrent execution is bounded by `XAITA_MAX_CONCURRENT_EXPERIMENTS`, and each job exposes terminal `completed`, `failed`, or `timed_out` state through `GET /v2/experiment/{job_id}`. The elapsed execution deadline is controlled by `XAITA_EXPERIMENT_TIMEOUT_SECONDS`; the API classifies an over-deadline run safely after execution returns rather than claiming forced process termination. Retained terminal job state is bounded by `XAITA_MAX_RETAINED_EXPERIMENT_JOBS`.
+
 To evaluate attribution configurations on an explicit researcher-supplied labeled case set:
 
 ```powershell
