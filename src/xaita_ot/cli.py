@@ -121,6 +121,16 @@ def build_parser() -> argparse.ArgumentParser:
     real_experiment_statistics.add_argument("--out", default=None)
     real_experiment_statistics.add_argument("--config", default="configs/default.yaml")
 
+    attribution_evaluation = sub.add_parser(
+        "attribution-evaluation",
+        help="Evaluate attribution configurations on an explicit labeled case set.",
+    )
+    attribution_evaluation.add_argument("--cases-json", required=True)
+    attribution_evaluation.add_argument("--reliabilities-json", required=True)
+    attribution_evaluation.add_argument("--support-threshold", type=float, default=0.60)
+    attribution_evaluation.add_argument("--conflict-threshold", type=float, default=0.35)
+    attribution_evaluation.add_argument("--out", default=None)
+
     real_experiment_report = sub.add_parser(
         "real-experiment-report",
         help="Validate a completed statistical envelope and package a research report artifact.",
@@ -186,6 +196,28 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--seed must be non-negative")
 
     try:
+        if args.cmd == "attribution-evaluation":
+            cases_payload = json.loads(Path(args.cases_json).read_text(encoding="utf-8"))
+            reliabilities = json.loads(Path(args.reliabilities_json).read_text(encoding="utf-8"))
+            cases = cases_payload["cases"] if isinstance(cases_payload, dict) and "cases" in cases_payload else cases_payload
+            payload = evaluate_attribution_cases(
+                cases,
+                reliabilities=reliabilities,
+                support_threshold=args.support_threshold,
+                conflict_threshold=args.conflict_threshold,
+                configurations=ATTRIBUTION_CONFIGURATIONS,
+            )
+            output = args.out or f"artifacts/attribution/attribution_evaluation_{payload['fingerprint'][:12]}.json"
+            path = write_result_envelope(payload, output)
+            print(json.dumps({
+                "status": payload["status"],
+                "case_count": payload["case_count"],
+                "configurations": payload["configurations"],
+                "fingerprint": payload["fingerprint"],
+                "result": str(path),
+            }, sort_keys=True))
+            return 0
+
         if args.cmd == "real-experiment-report":
             source = Path(args.statistics_json)
             payload = json.loads(source.read_text(encoding="utf-8"))
