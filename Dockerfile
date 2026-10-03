@@ -12,8 +12,10 @@ COPY run_api.py ./
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libpcre2-8-0 \
     && rm -rf /var/lib/apt/lists/* \
-    && pip install --no-cache-dir -U pip "setuptools>=78.1.1" wheel "msgpack>=1.2.1" "urllib3>=2.8.0" \
+    && pip install --no-cache-dir -U pip \
     && pip install --no-cache-dir . \
+    && pip install --no-cache-dir --upgrade --force-reinstall "setuptools>=78.1.1" "msgpack>=1.2.1" "urllib3>=2.8.0" \
+    && python -c "import importlib.metadata as m; assert tuple(map(int, m.version('setuptools').split('.')[:2])) >= (78,1); assert tuple(map(int, m.version('msgpack').split('.')[:2])) >= (1,2); assert tuple(map(int, m.version('urllib3').split('.')[:2])) >= (2,8)" \
     && groupadd --system xaita \
     && useradd --system --gid xaita --home-dir /app --no-create-home xaita \
     && mkdir -p /app/data/raw/batadal \
