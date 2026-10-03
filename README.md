@@ -128,6 +128,14 @@ xaita real-experiment-statistics --swat-csv <swat.csv> --batadal-csv <batadal.cs
 
 The statistical runner requires at least two unique seeds, executes the Day 23 matrix for each seed, and reports per-dataset/per-detector metric mean, sample standard deviation, Student-t confidence intervals, and paired detector comparisons across matched seeds. Failed matrix runs are retained and prevent statistical acceptance. These statistics are descriptive/research evaluation outputs; they do not establish benchmark superiority, significance beyond the reported tests, generalization, or production OT acceptance.
 
+To package a completed statistical envelope as a provenance-bound research artifact:
+
+```powershell
+xaita real-experiment-report --statistics-json artifacts/real_experiments/statistics_42.json
+```
+
+The report command accepts only a completed Day 24 statistical envelope, preserves its source fingerprint, summarizes the supplied evidence, and emits a deterministic report fingerprint. It does not infer benchmark performance, rankings, generalization, certification, or production acceptance.
+
 The result records the validated file hash, dataset, detector, seed, split protocol,
 configuration digest and a deterministic reproducibility fingerprint. Execution is
 blocked when the input fails the validation gate. Raw benchmark files are never

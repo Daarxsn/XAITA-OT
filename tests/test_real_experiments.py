@@ -304,3 +304,41 @@ def test_real_experiment_statistical_matrix_aggregates_metrics(monkeypatch):
     assert len(result["statistics"]["paired_detector_comparisons"]) == 18
     assert all(row["n"] == 3 for row in result["statistics"]["summary"])
     assert all(row["ci_low"] <= row["mean"] <= row["ci_high"] for row in result["statistics"]["summary"])
+
+
+def test_build_statistical_research_report_requires_completed_evidence():
+    from xaita_ot.pipeline.real_experiments import build_statistical_research_report
+    with pytest.raises(ValueError, match="completed statistical evidence"):
+        build_statistical_research_report({
+            "schema_version": "XAITA-OT-V5-REAL-EXPERIMENT-STATISTICS-1.0",
+            "statistics": {"status": "failed"},
+        })
+
+
+def test_build_statistical_research_report_is_provenance_bound():
+    from xaita_ot.pipeline.real_experiments import build_statistical_research_report
+    payload = {
+        "schema_version": "XAITA-OT-V5-REAL-EXPERIMENT-STATISTICS-1.0",
+        "package_version": "0.5.1",
+        "statistics": {
+            "status": "completed",
+            "repeat_count": 3,
+            "completed_matrix_count": 3,
+            "failed_matrix_count": 0,
+            "observation_count": 6,
+            "seeds": [42, 43, 44],
+            "confidence": 0.95,
+            "fingerprint": "a" * 64,
+            "summary": [
+                {"dataset": "SWaT", "detector": "cnn", "metric": "f1", "n": 3,
+                 "mean": 0.8, "std": 0.01, "ci_low": 0.79, "ci_high": 0.81, "confidence": 0.95}
+            ],
+            "paired_detector_comparisons": [],
+        },
+    }
+    report = build_statistical_research_report(payload)
+    assert report["schema_version"] == "XAITA-OT-V5-RESEARCH-REPORT-1.0"
+    assert report["report"]["source_statistics_fingerprint"] == "a" * 64
+    assert report["report"]["seed_count"] == 3
+    assert len(report["report"]["fingerprint"]) == 64
+    assert "benchmark evidence" in report["evidence"]["verification_boundary"][0]

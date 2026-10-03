@@ -16,6 +16,7 @@ from .pipeline.real_experiments import (
     REAL_EXPERIMENT_DETECTORS,
     run_real_experiment,
     run_real_experiment_matrix,
+    build_statistical_research_report,
     run_real_experiment_statistical_matrix,
     run_real_experiment_suite,
     write_result_envelope,
@@ -119,6 +120,13 @@ def build_parser() -> argparse.ArgumentParser:
     real_experiment_statistics.add_argument("--out", default=None)
     real_experiment_statistics.add_argument("--config", default="configs/default.yaml")
 
+    real_experiment_report = sub.add_parser(
+        "real-experiment-report",
+        help="Validate a completed statistical envelope and package a research report artifact.",
+    )
+    real_experiment_report.add_argument("--statistics-json", required=True)
+    real_experiment_report.add_argument("--out", default=None)
+
     real_experiment = sub.add_parser(
         "real-experiment",
         help="Validate a real benchmark CSV, execute one detector, and write an auditable result envelope.",
@@ -177,6 +185,22 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--seed must be non-negative")
 
     try:
+        if args.cmd == "real-experiment-report":
+            source = Path(args.statistics_json)
+            payload = json.loads(source.read_text(encoding="utf-8"))
+            report = build_statistical_research_report(payload)
+            output = args.out or f"artifacts/real_experiments/research_report_{report["report"]["fingerprint"][:12]}.json"
+            path = write_result_envelope(report, output)
+            print(json.dumps({
+                "status": report["report"]["status"],
+                "source_statistics_fingerprint": report["report"]["source_statistics_fingerprint"],
+                "fingerprint": report["report"]["fingerprint"],
+                "seed_count": report["report"]["seed_count"],
+                "observation_count": report["report"]["observation_count"],
+                "result": str(path),
+            }, sort_keys=True))
+            return 0
+
         if args.cmd == "real-experiment-statistics":
             cfg = load_config(args.config)
             seeds = args.seeds if args.seeds is not None else [42, 43, 44]

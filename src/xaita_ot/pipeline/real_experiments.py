@@ -417,6 +417,72 @@ def run_real_experiment_statistical_matrix(
     }
 
 
+
+def build_statistical_research_report(payload: dict[str, Any]) -> dict[str, Any]:
+    """Validate a completed Day 24 envelope and package it as a research artifact."""
+    if payload.get("schema_version") != "XAITA-OT-V5-REAL-EXPERIMENT-STATISTICS-1.0":
+        raise ValueError("unsupported statistical result schema")
+    statistics = payload.get("statistics")
+    if not isinstance(statistics, dict):
+        raise ValueError("statistics envelope is required")
+    if statistics.get("status") != "completed":
+        raise ValueError("research report requires completed statistical evidence")
+    repeat_count = int(statistics.get("repeat_count", 0))
+    completed = int(statistics.get("completed_matrix_count", 0))
+    failed = int(statistics.get("failed_matrix_count", 0))
+    observations = int(statistics.get("observation_count", 0))
+    if repeat_count < 2 or completed != repeat_count or failed != 0 or observations <= 0:
+        raise ValueError("research report requires complete multi-seed statistical evidence")
+
+    summary = statistics.get("summary", [])
+    paired = statistics.get("paired_detector_comparisons", [])
+    if not isinstance(summary, list) or not summary:
+        raise ValueError("research report requires non-empty statistical summary")
+    if not isinstance(paired, list):
+        raise ValueError("paired detector comparisons must be a list")
+
+    datasets = sorted({row.get("dataset") for row in summary if row.get("dataset")})
+    detectors = sorted({row.get("detector") for row in summary if row.get("detector")})
+    metrics = sorted({row.get("metric") for row in summary if row.get("metric")})
+    report_payload = {
+        "source_schema_version": payload["schema_version"],
+        "source_package_version": payload.get("package_version"),
+        "source_statistics_fingerprint": statistics.get("fingerprint"),
+        "seeds": statistics.get("seeds", []),
+        "confidence": statistics.get("confidence"),
+        "repeat_count": repeat_count,
+        "observation_count": observations,
+        "datasets": datasets,
+        "detectors": detectors,
+        "metrics": metrics,
+        "summary": summary,
+        "paired_detector_comparisons": paired,
+        "verification_boundary": [
+            "This artifact packages supplied statistical evidence; it does not create benchmark evidence.",
+            "No ranking, superiority, generalization, certification, or production-acceptance claim is inferred.",
+            "Real benchmark claims require authorized datasets, reproducible execution, and archival of the source statistical envelope.",
+        ],
+    }
+    fingerprint = hashlib.sha256(_canonical_json(report_payload)).hexdigest()
+    return {
+        "schema_version": "XAITA-OT-V5-RESEARCH-REPORT-1.0",
+        "package_version": __version__,
+        "report": {
+            "status": "completed",
+            "source_statistics_fingerprint": statistics.get("fingerprint"),
+            "fingerprint": fingerprint,
+            "datasets": datasets,
+            "detectors": detectors,
+            "metrics": metrics,
+            "seed_count": repeat_count,
+            "observation_count": observations,
+            "summary_count": len(summary),
+            "paired_comparison_count": len(paired),
+        },
+        "evidence": report_payload,
+    }
+
+
 def write_result_envelope(payload: dict[str, Any], output: str | Path) -> Path:
     destination = Path(output)
     destination.parent.mkdir(parents=True, exist_ok=True)
