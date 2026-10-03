@@ -6,7 +6,7 @@ from ..core.btae import reconstruct
 from ..core.context import contextualize, load_attack_map
 from ..core.attribution import assess, to_dict, validate_assessments
 from ..core.risk import score_risk
-from ..explain.xai import feature_importance_linearized, build_explanation
+from ..explain.xai import feature_importance_linearized, build_explanation, validate_explanation, explanation_fingerprint
 from ..cti.generator import generate_cti
 
 
@@ -85,6 +85,8 @@ class XAITAEngine:
             else:
                 fi = xai_feature_importance or feature_importance_linearized(np.zeros((1, 1, 1), dtype=np.float32), ["unknown"])
             xai = build_explanation(ep.events[0], ep, ctx, risk, fi)
+            validate_explanation(xai, ep, ctx, risk)
+            xai["fingerprint"] = explanation_fingerprint(xai)
             detection = {"event_ids": [e.event_id for e in ep.events], "mean_detection_confidence": dc}
             outputs.append(generate_cti(ep.episode_id, detection, ep, ctx, best, xai, risk))
         return outputs
