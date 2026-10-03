@@ -621,3 +621,97 @@ def write_result_envelope(payload: dict[str, Any], output: str | Path) -> Path:
         encoding="utf-8",
     )
     return destination
+
+
+EXPERIMENT_MANIFEST_SCHEMA_VERSION = "XAITA-OT-V5-EXPERIMENT-MANIFEST-1.0"
+
+
+def build_experiment_manifest(
+    result: dict[str, Any],
+    *,
+    result_sha256: str,
+    result_path: str | None = None,
+    software_revision: str | None = None,
+) -> dict[str, Any]:
+    """Build an immutable manifest for a completed experiment result artifact."""
+    if not isinstance(result, dict):
+        raise ValueError("experiment result must be a mapping")
+    if not isinstance(result_sha256, str) or len(result_sha256) != 64:
+        raise ValueError("result_sha256 must be a 64-character SHA-256 digest")
+    validation = result.get("dataset_validation") or {}
+    experiment = result.get("experiment") or {}
+    reproducibility = result.get("reproducibility") or {}
+    if not validation.get("sha256"):
+        raise ValueError("result is missing dataset validation SHA-256")
+    required = ("dataset", "seed", "config", "rows", "windows", "metrics")
+    missing = [key for key in required if key not in experiment]
+    if missing:
+        raise ValueError(f"result experiment is missing required fields: {', '.join(missing)}")
+    if not reproducibility.get("fingerprint"):
+        raise ValueError("result is missing reproducibility fingerprint")
+    split_protocol = reproducibility.get("split_protocol") or experiment["config"].get("split_protocol")
+    if not split_protocol:
+        raise ValueError("result is missing split protocol")
+    config_sha = reproducibility.get("config_sha256") or hashlib.sha256(
+        _canonical_json(experiment["config"])
+    ).hexdigest()
+
+    manifest_core = {
+        "schema_version": EXPERIMENT_MANIFEST_SCHEMA_VERSION,
+        "package": "xaita-ot",
+        "package_version": result.get("package_version", __version__),
+        "software_revision": software_revision,
+        "result": {
+            "path": result_path,
+            "sha256": result_sha256,
+            "schema_version": result.get("schema_version"),
+            "reproducibility_fingerprint": reproducibility["fingerprint"],
+        },
+        "dataset": {
+            "name": experiment["dataset"],
+            "sha256": validation["sha256"],
+            "validation_status": validation.get("validation_status"),
+        },
+        "execution": {
+            "seed": int(experiment["seed"]),
+            "detector": reproducibility.get("detector") or experiment["config"].get("detector"),
+            "split_protocol": split_protocol,
+            "config_sha256": config_sha,
+        },
+        "shape": {
+            "rows": experiment["rows"],
+            "windows": experiment["windows"],
+        },
+        "verification_boundary": (
+            "Immutable experiment handover metadata. The manifest records artifact "
+            "identity and provenance; it does not establish benchmark superiority, "
+            "generalization, certification, or production OT acceptance."
+        ),
+    }
+    manifest_core["manifest_sha256"] = hashlib.sha256(
+        _canonical_json(manifest_core)
+    ).hexdigest()
+    return manifest_core
+
+
+def write_experiment_manifest(
+    result: dict[str, Any],
+    *,
+    result_sha256: str,
+    output_path: str | Path,
+    result_path: str | None = None,
+    software_revision: str | None = None,
+) -> Path:
+    manifest = build_experiment_manifest(
+        result,
+        result_sha256=result_sha256,
+        result_path=result_path,
+        software_revision=software_revision,
+    )
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True, allow_nan=False),
+        encoding="utf-8",
+    )
+    return path
