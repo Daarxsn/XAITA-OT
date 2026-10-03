@@ -1,6 +1,6 @@
 # XAITA-OT V5 — Day 32 Security Evidence Lock
 
-**Status:** COMPLETE / LOCKED
+**Status:** IMPLEMENTED / FINAL CI VERIFICATION IN PROGRESS
 
 ## Scope
 
@@ -9,9 +9,9 @@ Day 32 closes the V5 P1 **Security evidence** requirement with executable SAST, 
 ## Delivered
 
 - Dedicated V5 Security Evidence GitHub Actions workflow.
-- Bandit Python SAST gate.
+- Bandit Python SAST gate, restricted to high-severity/high-confidence findings for the repository acceptance threshold.
 - pip-audit installed-dependency vulnerability gate.
-- Trivy repository/filesystem HIGH/CRITICAL gate.
+- Trivy repository/filesystem HIGH/CRITICAL gate using the verified v0.36.0 action revision.
 - Trivy built-container HIGH/CRITICAL gate with unfixed findings explicitly handled.
 - Explicit workflow read/security-event permissions.
 - Bandit policy configuration in `pyproject.toml`.
