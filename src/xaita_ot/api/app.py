@@ -314,6 +314,29 @@ def operations_summary(xaita_api_key: str | None = Header(default=None, alias="X
     return {"schema_version": "XAITA-OT-V5-OPS-1.0", "status": "operational" if dashboard_ready and ready_count == len(datasets) else "degraded", "role": role, "release": {"version": VERSION, "environment": ENVIRONMENT}, "dashboard": {"ready": dashboard_ready}, "datasets": {"ready_count": ready_count, "total": len(datasets), "items": datasets}, "execution": {"detectors": list(SUPPORTED_DETECTORS), "attribution_configurations": attribution_configurations(), "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE, "max_request_bytes": MAX_REQUEST_BYTES, "max_events": MAX_EVENTS}, "security": {"authentication_required": REQUIRE_AUTH or bool(_configured_api_keys()), "authentication_configured": auth_configured, "force_https": FORCE_HTTPS, "allowed_hosts": ALLOWED_HOSTS, "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE, "max_request_bytes": MAX_REQUEST_BYTES, "max_events": MAX_EVENTS}, "research": {"benchmark_summary_available": benchmark_path.is_file(), "benchmark_summary_path": str(benchmark_path) if benchmark_path.is_file() else None}, "safety_boundary": "Analyst-support only; no autonomous PLC/RTU/SCADA control action."}
 
 
+@app.get("/v2/dashboard")
+def dashboard_summary(xaita_api_key: str | None = Header(default=None, alias="X-XAITA-API-Key"), authorization: str | None = Header(default=None), legacy_api_key: str | None = Header(default=None, alias="xaita-api-key")):
+    role = _check_api_key(xaita_api_key, authorization, legacy_api_key, "viewer")
+    datasets = {name: _dataset_status(path) for name, path in DATASET_PATHS.items()}
+    ready_count = sum(1 for item in datasets.values() if item["ready"])
+    benchmark_path = ROOT / "artifacts" / "toniOT_network_5seed_summary.json"
+    with _experiment_lifecycle_lock:
+        jobs = [dict(job) for job in _experiment_jobs.values()]
+    job_counts = {status: sum(1 for job in jobs if job["status"] == status) for status in ("running", "completed", "failed", "timed_out")}
+    return {
+        "schema_version": "XAITA-OT-V5-DASHBOARD-1.0",
+        "source": "api",
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "role": role,
+        "platform": {"status": "operational" if bool(_dashboard_path()) and ready_count == len(datasets) else "degraded", "version": VERSION, "environment": ENVIRONMENT},
+        "datasets": {"ready_count": ready_count, "total": len(datasets), "items": {name: {"ready": item["ready"], "exists": item["exists"], "csv_count": item["csv_count"], "sample_file": item["sample_file"]} for name, item in datasets.items()}},
+        "experiments": {"jobs_retained": len(jobs), "counts": job_counts, "max_concurrent": MAX_CONCURRENT_EXPERIMENTS, "timeout_seconds": EXPERIMENT_TIMEOUT_SECONDS},
+        "benchmark": {"available": benchmark_path.is_file(), "artifact": benchmark_path.name if benchmark_path.is_file() else None},
+        "security": {"authentication_required": REQUIRE_AUTH or bool(_configured_api_keys()), "authentication_configured": _auth_ready(), "force_https": FORCE_HTTPS},
+        "safety_boundary": "Analyst-support only; no autonomous PLC/RTU/SCADA control action.",
+    }
+
+
 @app.get("/v2/datasets")
 def dataset_status(xaita_api_key: str | None = Header(default=None, alias="X-XAITA-API-Key"), authorization: str | None = Header(default=None), legacy_api_key: str | None = Header(default=None, alias="xaita-api-key")):
     _check_api_key(xaita_api_key, authorization, legacy_api_key, "viewer")
