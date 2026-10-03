@@ -406,7 +406,7 @@ def test_experiment_manifest_is_deterministic_and_binds_result_identity(tmp_path
 
 def test_experiment_manifest_rejects_incomplete_result():
     from xaita_ot.pipeline.real_experiments import build_experiment_manifest
-    with pytest.raises(ValueError, match="reproducibility fingerprint"):
+    with pytest.raises(ValueError, match="missing required fields"):
         build_experiment_manifest(
             {"dataset_validation": {"sha256": "a" * 64}, "experiment": {}},
             result_sha256="d" * 64,
