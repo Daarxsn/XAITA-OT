@@ -3,6 +3,8 @@ from pathlib import Path
 
 import yaml
 
+from ..cti.package import load_cti_package, validate_cti_package, cti_package_metadata
+
 DEFAULT_TECHNIQUES = {
     "reconnaissance": {"technique_id": "T0846", "name": "Remote System Discovery"},
     "protocol": {"technique_id": "T0869", "name": "Standard Application Layer Protocol"},
@@ -38,3 +40,15 @@ def contextualize(episode, mapping=None):
                 }
             )
     return out
+
+
+def load_reviewed_attack_map(path=None):
+    """Return the pinned, reviewed ATT&CK-for-ICS package mapping only."""
+    package = load_cti_package(path)
+    validate_cti_package(package)
+    return package["mappings"]
+
+
+def reviewed_attack_package_metadata(path=None):
+    package = load_cti_package(path)
+    return cti_package_metadata(package)
