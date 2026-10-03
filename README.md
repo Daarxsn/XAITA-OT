@@ -138,6 +138,14 @@ xaita attribution-evaluation --cases-json attribution_cases.json --reliabilities
 
 The evaluator compares the existing DC, DC+BSS, DC+BSS+ECS, DC+BSS+ECS+MAS, ACFM and WEF configurations. Every case must provide an explicit expected hypothesis. The result retains per-case predictions, top-1 accuracy, belief/plausibility summaries, interval width, thresholds and a deterministic fingerprint. These are evaluation outputs only; they do not create real benchmark evidence or calibrated attribution probabilities.
 
+To create an immutable manifest for a completed experiment result:
+
+```powershell
+xaita experiment-manifest --result-json artifacts/real_experiments/<result>.json
+```
+
+The manifest binds the exact result-file SHA-256, dataset validation SHA-256, reproducibility fingerprint, dataset, detector, seed, split protocol, configuration digest, result shape, package version and optional Git revision. It is deterministic and fails closed when the source result is missing required provenance fields. The manifest is handover/provenance evidence only; it does not establish benchmark superiority, generalization, certification or production OT acceptance.
+
 To package a completed statistical envelope as a provenance-bound research artifact:
 
 ```powershell
