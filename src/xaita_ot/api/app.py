@@ -35,6 +35,9 @@ ENVIRONMENT = os.environ.get("XAITA_ENV", "development").strip().lower()
 REQUIRE_AUTH = ENVIRONMENT in {"staging", "production"} or os.environ.get("XAITA_REQUIRE_AUTH", "false").lower() == "true"
 RATE_LIMIT_PER_MINUTE = max(1, int(os.environ.get("XAITA_RATE_LIMIT_PER_MINUTE", "30")))
 RATE_LIMIT_WINDOW_SECONDS = 60
+EXPERIMENT_TIMEOUT_SECONDS = max(1, float(os.environ.get("XAITA_EXPERIMENT_TIMEOUT_SECONDS", "300")))
+_experiment_lifecycle_lock = threading.Lock()
+_experiment_jobs: dict[str, dict] = {}
 ENABLE_DOCS = os.environ.get("XAITA_ENABLE_DOCS", "true").lower() == "true"
 FORCE_HTTPS = os.environ.get("XAITA_FORCE_HTTPS", "false").lower() == "true"
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get("XAITA_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") if h.strip()]
@@ -248,6 +251,20 @@ class EventIn(BaseModel):
     label: str = Field(default="unknown", min_length=1, max_length=128)
     detection_confidence: float = Field(ge=0, le=1)
     features: dict[str, float] = Field(default_factory=dict)
+
+
+class ExperimentJob(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    job_id: str
+    status: str
+    dataset: str
+    detector: str
+    seed: int
+    started_at: str | None = None
+    finished_at: str | None = None
+    duration_seconds: float | None = None
+    error_type: str | None = None
+    error: str | None = None
 
 
 class ExperimentIn(BaseModel):
