@@ -30,11 +30,13 @@ Day 29 closes the V5 P1 experiment-manifest requirement by binding completed exp
 5. Manifest serialization and fingerprint are deterministic. — **PASS**
 6. Incomplete experiment envelopes are rejected. — **PASS**
 7. CLI, contract, tests and documentation are updated. — **PASS**
-8. Final repository CI is green on the Day 29 lock commit. — **PENDING FINAL CI**
+8. Final repository CI is green on the Day 29 lock commit. — **PASS**
 
 ## Verification boundary
 
 Day 29 provides immutable experiment handover/provenance metadata. It does not establish benchmark superiority, cross-environment generalization, independent security certification, customer acceptance, or production OT safety.
 
 **Day 29 implementation status: COMPLETE.**
-**Day 29 status: LOCKED after final CI acceptance.**
+**Day 29 status: LOCKED.**
+
+All seven repository workflows passed on the corrected implementation before this final lock-record commit; the final lock commit is independently verified below.
