@@ -1,0 +1,30 @@
+schema_version: XAITA-OT-CTI-PACKAGE-1.0
+package_id: xaita-ot-ics-attack-mapping
+framework: MITRE ATT&CK for ICS
+framework_version: "19.2"
+review_status: reviewed
+reviewed_on: "2026-10-04"
+source:
+  name: MITRE ATT&CK
+  version_history_url: https://attack.mitre.org/resources/versions/
+  matrix_url: https://attack.mitre.org/matrices/ics/
+  release_notes_url: https://attack.mitre.org/resources/updates/
+  mapping_policy: "Behavior-to-technique context only; mappings do not establish actor identity or attribution."
+mappings:
+  reconnaissance:
+    technique_id: T0846
+    name: Remote System Discovery
+    source_url: https://attack.mitre.org/techniques/T0846/
+    review_note: "Parent technique retained as the stable behavioral mapping; sub-technique selection requires additional evidence."
+  protocol:
+    technique_id: T0869
+    name: Standard Application Layer Protocol
+    source_url: https://attack.mitre.org/techniques/T0869/
+  unauthorized_command:
+    technique_id: T0855
+    name: Unauthorized Command Message
+    source_url: https://attack.mitre.org/techniques/T0855/
+  process_deviation:
+    technique_id: T0831
+    name: Manipulation of Control
+    source_url: https://attack.mitre.org/techniques/T0831/
