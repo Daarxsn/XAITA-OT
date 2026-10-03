@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 import json
 
 from ..core.provenance import build_provenance_manifest, provenance_digest, validate_provenance
+from .package import cti_package_metadata
 
 
 def generate_cti(incident_id, detection, episode, context, attribution, xai, risk):
@@ -27,6 +28,7 @@ def generate_cti(incident_id, detection, episode, context, attribution, xai, ris
     ]
     return {
       'schema_version': 'XAITA-OT-CTI-1.0',
+      'cti_package': cti_package_metadata(),
       'incident_id': incident_id,
       'generated_at': datetime.now(timezone.utc).isoformat(),
       'detection': detection,
