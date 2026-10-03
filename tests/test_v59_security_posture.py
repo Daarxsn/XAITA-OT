@@ -15,3 +15,14 @@ def test_security_posture_gate_passes():
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Security posture: PASS" in result.stdout
+
+
+def test_security_evidence_contract_script_passes():
+    import subprocess, sys
+    result = subprocess.run(
+        [sys.executable, "scripts/v5_security_evidence_check.py"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
