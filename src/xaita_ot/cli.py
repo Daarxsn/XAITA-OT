@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import hashlib
+import subprocess
 from pathlib import Path
 
 from . import __version__
@@ -17,6 +19,7 @@ from .pipeline.real_experiments import (
     run_real_experiment,
     run_real_experiment_matrix,
     build_statistical_research_report,
+    build_experiment_manifest,
     evaluate_attribution_cases,
     run_real_experiment_statistical_matrix,
     run_real_experiment_suite,
@@ -138,6 +141,14 @@ def build_parser() -> argparse.ArgumentParser:
     real_experiment_report.add_argument("--statistics-json", required=True)
     real_experiment_report.add_argument("--out", default=None)
 
+    experiment_manifest = sub.add_parser(
+        "experiment-manifest",
+        help="Build an immutable manifest for a completed experiment result artifact.",
+    )
+    experiment_manifest.add_argument("--result-json", required=True)
+    experiment_manifest.add_argument("--out", default=None)
+    experiment_manifest.add_argument("--software-revision", default=None)
+
     real_experiment = sub.add_parser(
         "real-experiment",
         help="Validate a real benchmark CSV, execute one detector, and write an auditable result envelope.",
@@ -215,6 +226,38 @@ def main(argv: list[str] | None = None) -> int:
                 "configurations": payload["configurations"],
                 "fingerprint": payload["fingerprint"],
                 "result": str(path),
+            }, sort_keys=True))
+            return 0
+
+        if args.cmd == "experiment-manifest":
+            source = Path(args.result_json)
+            raw = source.read_bytes()
+            payload = json.loads(raw.decode("utf-8"))
+            digest = hashlib.sha256(raw).hexdigest()
+            revision = args.software_revision
+            if revision is None:
+                try:
+                    revision = subprocess.run(
+                        ["git", "rev-parse", "HEAD"],
+                        capture_output=True, text=True, check=True,
+                    ).stdout.strip()
+                except (OSError, subprocess.CalledProcessError):
+                    revision = None
+            manifest = build_experiment_manifest(
+                payload,
+                result_sha256=digest,
+                result_path=str(source),
+                software_revision=revision,
+            )
+            output = args.out or f"artifacts/real_experiments/manifest_{manifest['manifest_sha256'][:12]}.json"
+            out_path = Path(output)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(json.dumps({
+                "status": "completed",
+                "manifest_sha256": manifest["manifest_sha256"],
+                "result_sha256": manifest["result"]["sha256"],
+                "result": str(out_path),
             }, sort_keys=True))
             return 0
 
