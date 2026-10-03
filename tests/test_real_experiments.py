@@ -184,7 +184,7 @@ def test_real_experiment_suite_retains_detector_failure(tmp_path, monkeypatch):
     assert payload["suite"]["completed_count"] == 3
     assert payload["suite"]["failed_detectors"] == ["lstm"]
 
-    
+
 def test_real_experiment_matrix_runs_datasets_in_deterministic_order(tmp_path, monkeypatch):
     from xaita_ot.pipeline.real_experiments import run_real_experiment_matrix
 
