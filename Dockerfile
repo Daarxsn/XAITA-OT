@@ -9,7 +9,10 @@ COPY web ./web
 COPY scripts ./scripts
 COPY run_api.py ./
 
-RUN pip install --no-cache-dir -U pip \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libpcre2-8-0 \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir -U pip "setuptools>=78.1.1" wheel "msgpack>=1.2.1" "urllib3>=2.8.0" \
     && pip install --no-cache-dir . \
     && groupadd --system xaita \
     && useradd --system --gid xaita --home-dir /app --no-create-home xaita \
