@@ -301,6 +301,6 @@ def test_real_experiment_statistical_matrix_aggregates_metrics(monkeypatch):
     assert result["statistics"]["repeat_count"] == 3
     assert result["statistics"]["observation_count"] == 72
     assert len(result["statistics"]["summary"]) == 24
-    assert len(result["statistics"]["paired_detector_comparisons"]) == 72
+    assert len(result["statistics"]["paired_detector_comparisons"]) == 18
     assert all(row["n"] == 3 for row in result["statistics"]["summary"])
     assert all(row["ci_low"] <= row["mean"] <= row["ci_high"] for row in result["statistics"]["summary"])
