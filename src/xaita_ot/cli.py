@@ -11,7 +11,7 @@ from .config import load_config
 from .cti.generator import write_json
 from .io.dataset_validation import DatasetValidationError, build_manifest, write_manifest
 from .pipeline.demo import demo_events, make_demo_csv
-from .pipeline.real_experiments import run_real_experiment, write_result_envelope
+from .pipeline.real_experiments import REAL_EXPERIMENT_DETECTORS, run_real_experiment, run_real_experiment_suite, write_result_envelope
 from .pipeline.engine import XAITAEngine
 
 
@@ -77,6 +77,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="CSV rows processed per chunk (must be positive).",
     )
 
+    real_experiment_suite = sub.add_parser(
+        "real-experiment-suite",
+        help="Validate a real benchmark CSV, execute the four-detector suite, and write an auditable bundle.",
+    )
+    real_experiment_suite.add_argument("--dataset", required=True, choices=["SWaT", "BATADAL", "TON-IoT"])
+    real_experiment_suite.add_argument("--csv", required=True)
+    real_experiment_suite.add_argument("--seed", type=int, default=42)
+    real_experiment_suite.add_argument("--root", default=None)
+    real_experiment_suite.add_argument("--out", default=None)
+    real_experiment_suite.add_argument("--config", default="configs/default.yaml")
+
     real_experiment = sub.add_parser(
         "real-experiment",
         help="Validate a real benchmark CSV, execute one detector, and write an auditable result envelope.",
@@ -131,10 +142,30 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--rows must be a positive integer")
     if args.cmd == "validate-data" and args.chunksize <= 0:
         parser.error("--chunksize must be a positive integer")
-    if args.cmd == "real-experiment" and args.seed < 0:
+    if args.cmd in {"real-experiment", "real-experiment-suite"} and args.seed < 0:
         parser.error("--seed must be non-negative")
 
     try:
+        if args.cmd == "real-experiment-suite":
+            cfg = load_config(args.config)
+            output = args.out or f"artifacts/real_experiments/{args.dataset}_suite_{args.seed}.json"
+            payload = run_real_experiment_suite(
+                csv_path=args.csv, dataset=args.dataset, config=cfg, seed=args.seed,
+                dataset_root=args.root, detectors=REAL_EXPERIMENT_DETECTORS,
+            )
+            path = write_result_envelope(payload, output)
+            print(json.dumps({
+                "dataset": payload["suite"]["dataset"],
+                "seed": payload["suite"]["seed"],
+                "requested_detectors": payload["suite"]["requested_detectors"],
+                "completed_detectors": payload["suite"]["completed_detectors"],
+                "failed_detectors": payload["suite"]["failed_detectors"],
+                "status": payload["suite"]["status"],
+                "fingerprint": payload["suite"]["fingerprint"],
+                "result": str(path),
+            }, sort_keys=True))
+            return 0 if payload["suite"]["status"] == "completed" else 1
+
         if args.cmd == "real-experiment":
             cfg = load_config(args.config)
             output = args.out or (
