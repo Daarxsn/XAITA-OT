@@ -111,7 +111,7 @@ def test_explanation_fidelity_rejects_invalid_feature_importance():
     risk = {"score": 0.5, "factors": {"severity": 0.9}, "weights": {"severity": 1.0}}
     explanation = build_explanation(
         episode.events[0], episode, context, risk,
-        [{"feature": "pressure", "importance": 0.6}, {"feature": "flow", "importance": 0.3}],
+        [{"feature": "pressure", "importance": 0.8}, {"feature": "flow", "importance": 0.4}],
     )
-    with pytest.raises(ExplanationValidationError, match="sum to 1"):
+    with pytest.raises(ExplanationValidationError, match="aggregate"):
         validate_explanation(explanation, episode, context, risk)
