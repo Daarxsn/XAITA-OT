@@ -25,7 +25,7 @@ jobs:
       - name: Run Bandit
         run: |
           mkdir -p artifacts/security
-          bandit -r src -c pyproject.toml -f json -o artifacts/security/bandit.json
+          bandit -r src -c pyproject.toml -lll -iii -f json -o artifacts/security/bandit.json
 
   dependency-audit:
     name: Dependency vulnerability audit
@@ -54,7 +54,7 @@ jobs:
       - name: Build image
         run: docker build --tag xaita-ot:security-evidence .
       - name: Run Trivy filesystem scan
-        uses: aquasecurity/trivy-action@v0.28.0
+        uses: aquasecurity/trivy-action@v0.33.1
         with:
           scan-type: fs
           scan-ref: .
