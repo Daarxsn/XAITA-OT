@@ -299,3 +299,13 @@ def test_dashboard_requires_viewer_when_authentication_is_configured(monkeypatch
     monkeypatch.setattr(api, "API_KEY_ROLE", "viewer")
     assert client.get("/v2/dashboard").status_code == 401
     assert client.get("/v2/dashboard", headers={"X-XAITA-API-Key": "dashboard-secret"}).status_code == 200
+
+
+def test_reviewed_cti_package_is_pinned_and_digested():
+    from xaita_ot.cti.package import load_cti_package, cti_package_digest
+    package = load_cti_package()
+    assert package["framework"] == "MITRE ATT&CK for ICS"
+    assert package["framework_version"] == "19.2"
+    assert package["review_status"] == "reviewed"
+    assert set(package["mappings"]) == {"reconnaissance", "protocol", "unauthorized_command", "process_deviation"}
+    assert len(cti_package_digest(package)) == 64
