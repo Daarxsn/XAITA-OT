@@ -189,7 +189,7 @@ def main(argv: list[str] | None = None) -> int:
             source = Path(args.statistics_json)
             payload = json.loads(source.read_text(encoding="utf-8"))
             report = build_statistical_research_report(payload)
-            output = args.out or f"artifacts/real_experiments/research_report_{report["report"]["fingerprint"][:12]}.json"
+            output = args.out or f"artifacts/real_experiments/research_report_{report['report']['fingerprint'][:12]}.json"
             path = write_result_envelope(report, output)
             print(json.dumps({
                 "status": report["report"]["status"],
