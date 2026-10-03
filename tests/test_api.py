@@ -255,3 +255,47 @@ def test_experiment_concurrency_limit_is_explicit(monkeypatch, tmp_path):
     response = client.post("/v2/experiment", json={"dataset": "TON-IoT", "detector": "CNN-LSTM", "seed": 42})
     assert response.status_code == 429
     assert response.json()["detail"]["max_concurrent_experiments"] == 1
+
+
+def test_dashboard_summary_is_api_backed_and_safe(tmp_path, monkeypatch):
+    monkeypatch.setattr(api, "API_KEY", None)
+    monkeypatch.setattr(api, "ROOT", tmp_path)
+    dataset_root = tmp_path / "data" / "raw"
+    paths = {}
+    for key, folder in (("SWaT", "swat"), ("BATADAL", "batadal"), ("TON-IoT", "ton_iot")):
+        path = dataset_root / folder
+        path.mkdir(parents=True)
+        (path / "sample.csv").write_text("timestamp,label\\n2026-01-01,0\\n", encoding="utf-8")
+        paths[key] = str(path)
+    (tmp_path / "web").mkdir()
+    (tmp_path / "web" / "index.html").write_text("dashboard", encoding="utf-8")
+    (tmp_path / "artifacts").mkdir()
+    (tmp_path / "artifacts" / "toniOT_network_5seed_summary.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(api, "DATASET_PATHS", paths)
+    with api._experiment_lifecycle_lock:
+        api._experiment_jobs.clear()
+        api._experiment_jobs["job-running"] = {
+            "job_id": "job-running",
+            "lifecycle_key": "TON-IoT:cnn_lstm:42",
+            "status": "running",
+            "dataset": "TON-IoT",
+            "detector": "cnn_lstm",
+            "seed": 42,
+        }
+    response = client.get("/v2/dashboard")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["schema_version"] == "XAITA-OT-V5-DASHBOARD-1.0"
+    assert body["source"] == "api"
+    assert body["datasets"]["ready_count"] == 3
+    assert body["experiments"]["counts"]["running"] == 1
+    assert body["benchmark"]["available"] is True
+    assert "path" not in body["datasets"]["items"]["SWaT"]
+    assert "secret" not in response.text.lower()
+
+
+def test_dashboard_requires_viewer_when_authentication_is_configured(monkeypatch):
+    monkeypatch.setattr(api, "API_KEY", "dashboard-secret")
+    monkeypatch.setattr(api, "API_KEY_ROLE", "viewer")
+    assert client.get("/v2/dashboard").status_code == 401
+    assert client.get("/v2/dashboard", headers={"X-XAITA-API-Key": "dashboard-secret"}).status_code == 200
