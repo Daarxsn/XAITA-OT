@@ -128,6 +128,14 @@ xaita real-experiment-statistics --swat-csv <swat.csv> --batadal-csv <batadal.cs
 
 The statistical runner requires at least two unique seeds, executes the Day 23 matrix for each seed, and reports per-dataset/per-detector metric mean, sample standard deviation, Student-t confidence intervals, and paired detector comparisons across matched seeds. Failed matrix runs are retained and prevent statistical acceptance. These statistics are descriptive/research evaluation outputs; they do not establish benchmark superiority, significance beyond the reported tests, generalization, or production OT acceptance.
 
+To evaluate attribution configurations on an explicit researcher-supplied labeled case set:
+
+```powershell
+xaita attribution-evaluation --cases-json attribution_cases.json --reliabilities-json attribution_reliabilities.json
+```
+
+The evaluator compares the existing DC, DC+BSS, DC+BSS+ECS, DC+BSS+ECS+MAS, ACFM and WEF configurations. Every case must provide an explicit expected hypothesis. The result retains per-case predictions, top-1 accuracy, belief/plausibility summaries, interval width, thresholds and a deterministic fingerprint. These are evaluation outputs only; they do not create real benchmark evidence or calibrated attribution probabilities.
+
 To package a completed statistical envelope as a provenance-bound research artifact:
 
 ```powershell
