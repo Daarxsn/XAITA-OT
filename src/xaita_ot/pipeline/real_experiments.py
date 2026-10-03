@@ -22,6 +22,7 @@ from ..io.dataset_validation import DatasetValidationError, validate_csv
 SCHEMA_VERSION = "XAITA-OT-V5-REAL-EXPERIMENT-1.0"
 SUITE_SCHEMA_VERSION = "XAITA-OT-V5-REAL-EXPERIMENT-SUITE-1.0"
 REAL_EXPERIMENT_DETECTORS = ("random_forest", "cnn", "lstm", "cnn_lstm")
+REAL_EXPERIMENT_DATASETS = ("SWaT", "BATADAL", "TON-IoT")
 
 
 def _canonical_json(payload: Any) -> bytes:
@@ -175,6 +176,99 @@ def run_real_experiment_suite(
             "fingerprint": hashlib.sha256(_canonical_json(fingerprint_payload)).hexdigest(),
         },
         "runs": runs,
+    }
+
+
+
+def run_real_experiment_matrix(
+    *,
+    csv_paths: dict[str, str | Path],
+    config: AppConfig,
+    seed: int | None = None,
+    detectors: tuple[str, ...] = REAL_EXPERIMENT_DETECTORS,
+    datasets: tuple[str, ...] = REAL_EXPERIMENT_DATASETS,
+) -> dict[str, Any]:
+    """Execute a deterministic multi-dataset detector matrix with retained failures."""
+    requested_datasets = tuple(str(d).strip() for d in datasets)
+    if not requested_datasets:
+        raise ValueError("datasets must contain at least one dataset")
+    unknown_datasets = sorted(set(requested_datasets) - set(REAL_EXPERIMENT_DATASETS))
+    if unknown_datasets:
+        raise ValueError(f"Unknown dataset(s): {', '.join(unknown_datasets)}")
+    if len(set(requested_datasets)) != len(requested_datasets):
+        raise ValueError("datasets must be unique")
+
+    normalized_paths = {str(k).strip(): Path(v) for k, v in csv_paths.items()}
+    missing = [dataset for dataset in requested_datasets if dataset not in normalized_paths]
+    if missing:
+        raise ValueError(f"Missing CSV path(s) for dataset(s): {', '.join(missing)}")
+    extra = sorted(set(normalized_paths) - set(requested_datasets))
+    if extra:
+        raise ValueError(f"Unexpected CSV path dataset(s): {', '.join(extra)}")
+
+    run_seed = config.seed if seed is None else seed
+    dataset_runs: list[dict[str, Any]] = []
+    for dataset in requested_datasets:
+        try:
+            suite = run_real_experiment_suite(
+                csv_path=normalized_paths[dataset],
+                dataset=dataset,
+                config=config,
+                seed=run_seed,
+                detectors=detectors,
+            )
+            dataset_runs.append({
+                "status": "completed" if suite["suite"]["status"] == "completed" else "failed",
+                "dataset": dataset,
+                "result": suite,
+            })
+        except Exception as exc:
+            dataset_runs.append({
+                "status": "failed",
+                "dataset": dataset,
+                "error": {"type": type(exc).__name__, "message": str(exc)},
+            })
+
+    completed = sum(item["status"] == "completed" for item in dataset_runs)
+    failed = len(dataset_runs) - completed
+    dataset_status = [
+        {
+            "dataset": item["dataset"],
+            "status": item["status"],
+            "completed_detectors": (
+                item["result"]["suite"]["completed_detectors"] if "result" in item else []
+            ),
+            "failed_detectors": (
+                item["result"]["suite"]["failed_detectors"] if "result" in item else []
+            ),
+        }
+        for item in dataset_runs
+    ]
+    normalized_detectors = tuple(
+        str(d).strip().lower().replace("-", "_") for d in detectors
+    )
+    fingerprint_payload = {
+        "datasets": list(requested_datasets),
+        "detectors": list(normalized_detectors),
+        "seed": int(run_seed),
+        "dataset_status": dataset_status,
+        "config": config.model_dump(mode="json"),
+        "package_version": __version__,
+    }
+    return {
+        "schema_version": "XAITA-OT-V5-REAL-EXPERIMENT-MATRIX-1.0",
+        "package_version": __version__,
+        "matrix": {
+            "datasets": list(requested_datasets),
+            "detectors": list(normalized_detectors),
+            "dataset_count": len(requested_datasets),
+            "completed_dataset_count": completed,
+            "failed_dataset_count": failed,
+            "seed": int(run_seed),
+            "status": "completed" if failed == 0 else "failed",
+            "fingerprint": hashlib.sha256(_canonical_json(fingerprint_payload)).hexdigest(),
+        },
+        "datasets": dataset_runs,
     }
 
 

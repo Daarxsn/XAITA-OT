@@ -112,6 +112,14 @@ xaita real-experiment-suite --dataset SWaT --csv data/raw/swat/<benchmark-file>.
 
 The suite runs `random_forest`, `cnn`, `lstm` and `cnn_lstm` in deterministic order. Each completed detector retains an audit envelope; the suite records completed/failed detectors, configuration identity and a deterministic suite fingerprint. Any detector failure makes the suite `failed`, so partial execution is not presented as four-detector acceptance evidence.
 
+To execute the same four-detector suite across all three configured real benchmark families:
+
+```powershell
+xaita real-experiment-matrix --swat-csv <swat.csv> --batadal-csv <batadal.csv> --toniot-csv <toniot.csv> --seed 42
+```
+
+The matrix validates and executes `SWaT`, `BATADAL` and `TON-IoT` in deterministic order, with `random_forest`, `cnn`, `lstm` and `cnn_lstm` for each dataset. Each dataset retains its complete suite result or an explicit failure record. The matrix is accepted only when all requested datasets complete all requested detectors, and its fingerprint binds dataset order, detector order, seed, status and configuration.
+
 The result records the validated file hash, dataset, detector, seed, split protocol,
 configuration digest and a deterministic reproducibility fingerprint. Execution is
 blocked when the input fails the validation gate. Raw benchmark files are never

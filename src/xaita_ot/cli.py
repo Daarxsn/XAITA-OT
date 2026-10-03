@@ -11,7 +11,14 @@ from .config import load_config
 from .cti.generator import write_json
 from .io.dataset_validation import DatasetValidationError, build_manifest, write_manifest
 from .pipeline.demo import demo_events, make_demo_csv
-from .pipeline.real_experiments import REAL_EXPERIMENT_DETECTORS, run_real_experiment, run_real_experiment_suite, write_result_envelope
+from .pipeline.real_experiments import (
+    REAL_EXPERIMENT_DATASETS,
+    REAL_EXPERIMENT_DETECTORS,
+    run_real_experiment,
+    run_real_experiment_matrix,
+    run_real_experiment_suite,
+    write_result_envelope,
+)
 from .pipeline.engine import XAITAEngine
 
 
@@ -88,6 +95,17 @@ def build_parser() -> argparse.ArgumentParser:
     real_experiment_suite.add_argument("--out", default=None)
     real_experiment_suite.add_argument("--config", default="configs/default.yaml")
 
+    real_experiment_matrix = sub.add_parser(
+        "real-experiment-matrix",
+        help="Validate and execute the four-detector suite across SWaT, BATADAL and TON-IoT.",
+    )
+    real_experiment_matrix.add_argument("--swat-csv", required=True, help="CSV path for SWaT.")
+    real_experiment_matrix.add_argument("--batadal-csv", required=True, help="CSV path for BATADAL.")
+    real_experiment_matrix.add_argument("--toniot-csv", required=True, help="CSV path for TON-IoT.")
+    real_experiment_matrix.add_argument("--seed", type=int, default=42)
+    real_experiment_matrix.add_argument("--out", default=None)
+    real_experiment_matrix.add_argument("--config", default="configs/default.yaml")
+
     real_experiment = sub.add_parser(
         "real-experiment",
         help="Validate a real benchmark CSV, execute one detector, and write an auditable result envelope.",
@@ -142,10 +160,37 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--rows must be a positive integer")
     if args.cmd == "validate-data" and args.chunksize <= 0:
         parser.error("--chunksize must be a positive integer")
-    if args.cmd in {"real-experiment", "real-experiment-suite"} and args.seed < 0:
+    if args.cmd in {"real-experiment", "real-experiment-suite", "real-experiment-matrix"} and args.seed < 0:
         parser.error("--seed must be non-negative")
 
     try:
+        if args.cmd == "real-experiment-matrix":
+            cfg = load_config(args.config)
+            output = args.out or f"artifacts/real_experiments/matrix_{args.seed}.json"
+            payload = run_real_experiment_matrix(
+                csv_paths={
+                    "SWaT": args.swat_csv,
+                    "BATADAL": args.batadal_csv,
+                    "TON-IoT": args.toniot_csv,
+                },
+                config=cfg,
+                seed=args.seed,
+                detectors=REAL_EXPERIMENT_DETECTORS,
+                datasets=REAL_EXPERIMENT_DATASETS,
+            )
+            path = write_result_envelope(payload, output)
+            print(json.dumps({
+                "datasets": payload["matrix"]["datasets"],
+                "detectors": payload["matrix"]["detectors"],
+                "seed": payload["matrix"]["seed"],
+                "status": payload["matrix"]["status"],
+                "completed_dataset_count": payload["matrix"]["completed_dataset_count"],
+                "failed_dataset_count": payload["matrix"]["failed_dataset_count"],
+                "fingerprint": payload["matrix"]["fingerprint"],
+                "result": str(path),
+            }, sort_keys=True))
+            return 0 if payload["matrix"]["status"] == "completed" else 1
+
         if args.cmd == "real-experiment-suite":
             cfg = load_config(args.config)
             output = args.out or f"artifacts/real_experiments/{args.dataset}_suite_{args.seed}.json"

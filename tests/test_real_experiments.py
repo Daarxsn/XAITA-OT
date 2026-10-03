@@ -183,3 +183,71 @@ def test_real_experiment_suite_retains_detector_failure(tmp_path, monkeypatch):
     assert payload["suite"]["status"] == "failed"
     assert payload["suite"]["completed_count"] == 3
     assert payload["suite"]["failed_detectors"] == ["lstm"]
+
+    
+def test_real_experiment_matrix_runs_datasets_in_deterministic_order(tmp_path, monkeypatch):
+    from xaita_ot.pipeline.real_experiments import run_real_experiment_matrix
+
+    paths = {
+        "SWaT": tmp_path / "swat.csv",
+        "BATADAL": tmp_path / "batadal.csv",
+        "TON-IoT": tmp_path / "toniot.csv",
+    }
+    calls = []
+
+    def fake_suite(csv_path, dataset, config, seed=None, detectors=()):
+        calls.append((dataset, tuple(detectors)))
+        return {
+            "suite": {
+                "status": "completed",
+                "completed_detectors": list(detectors),
+                "failed_detectors": [],
+            }
+        }
+
+    monkeypatch.setattr(
+        "xaita_ot.pipeline.real_experiments.run_real_experiment_suite",
+        fake_suite,
+    )
+    payload = run_real_experiment_matrix(csv_paths=paths, config=AppConfig(), seed=42)
+    assert calls == [
+        ("SWaT", ("random_forest", "cnn", "lstm", "cnn_lstm")),
+        ("BATADAL", ("random_forest", "cnn", "lstm", "cnn_lstm")),
+        ("TON-IoT", ("random_forest", "cnn", "lstm", "cnn_lstm")),
+    ]
+    assert payload["matrix"]["status"] == "completed"
+    assert payload["matrix"]["completed_dataset_count"] == 3
+    assert payload["matrix"]["failed_dataset_count"] == 0
+    assert len(payload["matrix"]["fingerprint"]) == 64
+
+
+def test_real_experiment_matrix_retains_dataset_failure(tmp_path, monkeypatch):
+    from xaita_ot.pipeline.real_experiments import run_real_experiment_matrix
+
+    paths = {
+        "SWaT": tmp_path / "swat.csv",
+        "BATADAL": tmp_path / "batadal.csv",
+        "TON-IoT": tmp_path / "toniot.csv",
+    }
+
+    def fake_suite(csv_path, dataset, config, seed=None, detectors=()):
+        if dataset == "BATADAL":
+            raise DatasetValidationError("BATADAL validation blocked")
+        return {
+            "suite": {
+                "status": "completed",
+                "completed_detectors": list(detectors),
+                "failed_detectors": [],
+            }
+        }
+
+    monkeypatch.setattr(
+        "xaita_ot.pipeline.real_experiments.run_real_experiment_suite",
+        fake_suite,
+    )
+    payload = run_real_experiment_matrix(csv_paths=paths, config=AppConfig(), seed=42)
+    assert payload["matrix"]["status"] == "failed"
+    assert payload["matrix"]["completed_dataset_count"] == 2
+    assert payload["matrix"]["failed_dataset_count"] == 1
+    assert payload["datasets"][1]["dataset"] == "BATADAL"
+    assert payload["datasets"][1]["error"]["type"] == "DatasetValidationError"
