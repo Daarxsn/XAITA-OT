@@ -104,6 +104,14 @@ For a validated real benchmark file, run one detector with an auditable result e
 xaita real-experiment --dataset SWaT --csv data/raw/swat/<benchmark-file>.csv --detector random_forest --seed 42
 ```
 
+To execute all four supported detectors against the same validated file and seed:
+
+```powershell
+xaita real-experiment-suite --dataset SWaT --csv data/raw/swat/<benchmark-file>.csv --seed 42
+```
+
+The suite runs `random_forest`, `cnn`, `lstm` and `cnn_lstm` in deterministic order. Each completed detector retains an audit envelope; the suite records completed/failed detectors, configuration identity and a deterministic suite fingerprint. Any detector failure makes the suite `failed`, so partial execution is not presented as four-detector acceptance evidence.
+
 The result records the validated file hash, dataset, detector, seed, split protocol,
 configuration digest and a deterministic reproducibility fingerprint. Execution is
 blocked when the input fails the validation gate. Raw benchmark files are never
