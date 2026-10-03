@@ -330,6 +330,16 @@ def benchmark_summary(xaita_api_key: str | None = Header(default=None, alias="X-
         raise HTTPException(status_code=500, detail="Benchmark summary artifact is invalid") from exc
 
 
+@app.get("/v2/experiment/{job_id}")
+def experiment_status(job_id: str, xaita_api_key: str | None = Header(default=None, alias="X-XAITA-API-Key"), authorization: str | None = Header(default=None), legacy_api_key: str | None = Header(default=None, alias="xaita-api-key")):
+    _check_api_key(xaita_api_key, authorization, legacy_api_key, "viewer")
+    with _experiment_lifecycle_lock:
+        job = _experiment_jobs.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Experiment job not found")
+        return {"schema_version": "XAITA-OT-V5-JOB-1.0", "job": dict(job)}
+
+
 @app.post("/v2/experiment")
 def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: str | None = Header(default=None, alias="X-XAITA-API-Key"), authorization: str | None = Header(default=None), legacy_api_key: str | None = Header(default=None, alias="xaita-api-key")):
     role = _check_api_key(xaita_api_key, authorization, legacy_api_key, "analyst")
