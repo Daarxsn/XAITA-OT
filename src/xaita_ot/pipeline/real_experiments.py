@@ -418,6 +418,136 @@ def run_real_experiment_statistical_matrix(
 
 
 
+ATTRIBUTION_EVALUATION_SCHEMA_VERSION = "XAITA-OT-V5-ATTRIBUTION-EVALUATION-1.0"
+ATTRIBUTION_CONFIGURATIONS = (
+    "DC", "DC+BSS", "DC+BSS+ECS", "DC+BSS+ECS+MAS", "ACFM", "WEF",
+)
+
+def evaluate_attribution_cases(
+    cases: list[dict[str, Any]],
+    *,
+    reliabilities: dict[str, float],
+    support_threshold: float = 0.60,
+    conflict_threshold: float = 0.35,
+    configurations: tuple[str, ...] = ATTRIBUTION_CONFIGURATIONS,
+) -> dict[str, Any]:
+    """Evaluate attribution configurations on explicitly labeled evidence cases."""
+    from ..core.attribution import assess, validate_assessments
+    from ..core.attribution_baselines import weighted_evidence_fusion
+
+    if not cases:
+        raise ValueError("attribution evaluation requires at least one case")
+    requested = tuple(str(c).strip() for c in configurations)
+    unknown = sorted(set(requested) - set(ATTRIBUTION_CONFIGURATIONS))
+    if unknown:
+        raise ValueError(f"Unknown attribution configuration(s): {', '.join(unknown)}")
+    if len(set(requested)) != len(requested):
+        raise ValueError("attribution configurations must be unique")
+    if not 0.0 < conflict_threshold < support_threshold < 1.0:
+        raise ValueError("thresholds must satisfy 0 < conflict < support < 1")
+
+    case_results = {name: [] for name in requested}
+    source_map = {
+        "DC": ["DC"],
+        "DC+BSS": ["DC", "BSS"],
+        "DC+BSS+ECS": ["DC", "BSS", "ECS"],
+        "DC+BSS+ECS+MAS": ["DC", "BSS", "ECS", "MAS"],
+        "ACFM": ["DC", "BSS", "ECS", "EC", "MAS"],
+        "WEF": None,
+    }
+    for index, case in enumerate(cases):
+        hypotheses = list(case.get("hypotheses", []))
+        evidence = case.get("evidence", {})
+        expected = case.get("expected_hypothesis")
+        if not hypotheses or expected not in hypotheses:
+            raise ValueError(f"case {index} must contain hypotheses and a matching expected_hypothesis")
+        if not isinstance(evidence, dict):
+            raise ValueError(f"case {index} evidence must be a mapping")
+
+        for name in requested:
+            sources = source_map[name]
+            filtered = {
+                hypothesis: {
+                    source: float(value)
+                    for source, value in evidence.get(hypothesis, {}).items()
+                    if sources is None or source in sources
+                }
+                for hypothesis in hypotheses
+            }
+            if name == "WEF":
+                scored = []
+                for hypothesis in hypotheses:
+                    result = weighted_evidence_fusion(filtered[hypothesis], reliabilities)
+                    scored.append((hypothesis, result["score"]))
+                scored.sort(key=lambda row: (-row[1], row[0]))
+                predicted, score = scored[0]
+                case_results[name].append({
+                    "case_id": str(case.get("case_id", index)),
+                    "expected_hypothesis": expected,
+                    "predicted_hypothesis": predicted,
+                    "correct": predicted == expected,
+                    "belief": float(score),
+                    "plausibility": float(score),
+                    "interval_width": 0.0,
+                    "is_interval": False,
+                })
+                continue
+
+            assessments = assess(
+                hypotheses, filtered, reliabilities,
+                support_threshold, conflict_threshold,
+            )
+            validate_assessments(assessments)
+            best = assessments[0]
+            case_results[name].append({
+                "case_id": str(case.get("case_id", index)),
+                "expected_hypothesis": expected,
+                "predicted_hypothesis": best.hypothesis,
+                "correct": best.hypothesis == expected,
+                "belief": float(best.belief),
+                "plausibility": float(best.plausibility),
+                "interval_width": float(best.interval_width),
+                "is_interval": True,
+            })
+
+    summaries = []
+    for name in requested:
+        rows = case_results[name]
+        summaries.append({
+            "configuration": name,
+            "case_count": len(rows),
+            "top1_accuracy": float(sum(row["correct"] for row in rows) / len(rows)),
+            "mean_belief": float(np.mean([row["belief"] for row in rows])),
+            "mean_plausibility": float(np.mean([row["plausibility"] for row in rows])),
+            "mean_interval_width": float(np.mean([row["interval_width"] for row in rows])),
+        })
+
+    fingerprint_payload = {
+        "cases": cases,
+        "reliabilities": reliabilities,
+        "support_threshold": support_threshold,
+        "conflict_threshold": conflict_threshold,
+        "configurations": list(requested),
+        "summaries": summaries,
+        "case_results": case_results,
+    }
+    return {
+        "schema_version": ATTRIBUTION_EVALUATION_SCHEMA_VERSION,
+        "status": "completed",
+        "case_count": len(cases),
+        "configurations": list(requested),
+        "thresholds": {"support": float(support_threshold), "conflict": float(conflict_threshold)},
+        "summaries": summaries,
+        "cases": case_results,
+        "verification_boundary": [
+            "This evaluates supplied attribution cases against explicit expected hypotheses.",
+            "It does not constitute SWaT, BATADAL or TON-IoT benchmark evidence.",
+            "Accuracy, belief, plausibility and interval width are evaluation outputs, not calibrated probabilities or causal attribution claims.",
+        ],
+        "fingerprint": hashlib.sha256(_canonical_json(fingerprint_payload)).hexdigest(),
+    }
+
+
 def build_statistical_research_report(payload: dict[str, Any]) -> dict[str, Any]:
     """Validate a completed Day 24 envelope and package it as a research artifact."""
     if payload.get("schema_version") != "XAITA-OT-V5-REAL-EXPERIMENT-STATISTICS-1.0":
