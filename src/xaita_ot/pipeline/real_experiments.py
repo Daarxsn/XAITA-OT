@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import asdict
 import hashlib
 import json
+import numpy as np
+import pandas as pd
 from pathlib import Path
 from typing import Any
 
