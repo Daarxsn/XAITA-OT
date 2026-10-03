@@ -20,6 +20,8 @@ from ..io.dataset_validation import DatasetValidationError, validate_csv
 
 
 SCHEMA_VERSION = "XAITA-OT-V5-REAL-EXPERIMENT-1.0"
+SUITE_SCHEMA_VERSION = "XAITA-OT-V5-REAL-EXPERIMENT-SUITE-1.0"
+REAL_EXPERIMENT_DETECTORS = ("random_forest", "cnn", "lstm", "cnn_lstm")
 
 
 def _canonical_json(payload: Any) -> bytes:
@@ -99,6 +101,81 @@ def run_real_experiment(
 
     run = run_detection(csv_path, dataset, config, seed=seed, detector=detector)
     return build_result_envelope(validation, run, config=config)
+
+
+
+def run_real_experiment_suite(
+    *,
+    csv_path: str | Path,
+    dataset: str,
+    config: AppConfig,
+    seed: int | None = None,
+    dataset_root: str | Path | None = None,
+    detectors: tuple[str, ...] = REAL_EXPERIMENT_DETECTORS,
+) -> dict[str, Any]:
+    """Validate once, execute the detector suite, and return one auditable bundle."""
+    validation = validate_csv(csv_path, dataset, root=dataset_root)
+    if validation.validation_status != "pass":
+        raise DatasetValidationError(
+            f"{validation.dataset}: validation status is '{validation.validation_status}'; "
+            "real experiment suite execution is blocked until the dataset passes validation"
+        )
+
+    requested = tuple(str(d).strip().lower().replace("-", "_") for d in detectors)
+    if not requested:
+        raise ValueError("detectors must contain at least one detector")
+    unknown = sorted(set(requested) - set(REAL_EXPERIMENT_DETECTORS))
+    if unknown:
+        raise ValueError(f"Unknown detector(s): {', '.join(unknown)}")
+    if len(set(requested)) != len(requested):
+        raise ValueError("detectors must be unique")
+
+    run_seed = config.seed if seed is None else seed
+    runs: list[dict[str, Any]] = []
+    for detector in requested:
+        try:
+            run = run_detection(csv_path, dataset, config, seed=run_seed, detector=detector)
+            runs.append({"status": "completed", "detector": detector,
+                         "result": build_result_envelope(validation, run, config=config)})
+        except Exception as exc:
+            runs.append({"status": "failed", "detector": detector,
+                         "error": {"type": type(exc).__name__, "message": str(exc)}})
+
+    completed = sum(item["status"] == "completed" for item in runs)
+    failed = len(runs) - completed
+    split_protocols = sorted({
+        item["result"]["reproducibility"]["split_protocol"]
+        for item in runs if item["status"] == "completed"
+    })
+    fingerprint_payload = {
+        "dataset_sha256": validation.sha256,
+        "dataset": validation.dataset,
+        "detectors": list(requested),
+        "seed": int(run_seed),
+        "split_protocols": split_protocols,
+        "config": config.model_dump(mode="json"),
+        "package_version": __version__,
+    }
+    return {
+        "schema_version": SUITE_SCHEMA_VERSION,
+        "package_version": __version__,
+        "dataset_validation": validation.as_dict(),
+        "suite": {
+            "dataset": validation.dataset,
+            "seed": int(run_seed),
+            "requested_detectors": list(requested),
+            "completed_detectors": [x["detector"] for x in runs if x["status"] == "completed"],
+            "failed_detectors": [x["detector"] for x in runs if x["status"] == "failed"],
+            "detector_count": len(requested),
+            "completed_count": completed,
+            "failed_count": failed,
+            "status": "completed" if failed == 0 else "failed",
+            "split_protocols": split_protocols,
+            "config_sha256": hashlib.sha256(_canonical_json(config.model_dump(mode="json"))).hexdigest(),
+            "fingerprint": hashlib.sha256(_canonical_json(fingerprint_payload)).hexdigest(),
+        },
+        "runs": runs,
+    }
 
 
 def write_result_envelope(payload: dict[str, Any], output: str | Path) -> Path:
