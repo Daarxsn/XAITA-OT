@@ -27,11 +27,24 @@ Day 23 extends the Day 22 four-detector real-experiment suite from one benchmark
 4. Dataset-level failures are retained and cannot be mistaken for complete matrix evidence. — **PASS**
 5. Matrix reproducibility identity is deterministic and hashable. — **PASS**
 6. CLI, contract, tests and documentation are updated. — **PASS**
-7. Final repository CI is green on the Day 23 implementation commit. — **PENDING FINAL CI**
+7. Final repository CI is green on the Day 23 implementation commit. — **PASS**
 
 ## Verification boundary
 
 Day 23 establishes the controlled cross-dataset execution mechanism. It does not claim benchmark performance, statistical significance, cross-environment generalization, ablation validity, production OT certification, independent security testing or customer acceptance. Real performance claims require authorized benchmark files and archival of the generated matrix envelope.
 
+## Final acceptance evidence
+
+Final accepted implementation commit: `5b34cb52d3a34c0ba7c9772082ede95a5360feac`
+
+GitHub Actions on the final implementation commit:
+- XAITA-OT CI — **success**
+- V5 Preflight — **success**
+- V5 Operational Check — **success**
+- V5 Release Candidate — **success**
+- V5 Release Provenance — **success**
+- V5 Clean Install — **success**
+- V5 Security Posture — **success**
+
 **Day 23 implementation status: COMPLETE.**
-**Day 23 status: LOCKED after final CI acceptance.**
+**Day 23 status: LOCKED.**
