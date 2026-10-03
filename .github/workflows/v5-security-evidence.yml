@@ -66,7 +66,6 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: "1"
       - name: Run Trivy image scan
-        continue-on-error: true
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           image-ref: xaita-ot:security-evidence
@@ -75,23 +74,7 @@ jobs:
           version: v0.75.0
           severity: CRITICAL,HIGH
           ignore-unfixed: true
-          exit-code: "0"
-      - name: Report image vulnerabilities
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          data = json.loads(Path("artifacts/security/trivy-image.json").read_text())
-          findings = []
-          for result in data.get("Results", []):
-              for vuln in result.get("Vulnerabilities") or []:
-                  if vuln.get("Severity") in {"HIGH", "CRITICAL"}:
-                      findings.append((result.get("Target"), vuln.get("VulnerabilityID"), vuln.get("PkgName"), vuln.get("InstalledVersion"), vuln.get("FixedVersion"), vuln.get("Severity")))
-          print("HIGH/CRITICAL image findings:")
-          for item in findings:
-              print(" | ".join(str(x or "") for x in item))
-          print(f"TOTAL={len(findings)}")
-          PY
+          exit-code: "1"
 
   evidence-contract:
     name: Security evidence contract
