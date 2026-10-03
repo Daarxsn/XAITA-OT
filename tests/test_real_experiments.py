@@ -374,3 +374,40 @@ def test_attribution_evaluation_rejects_missing_expected_hypothesis():
             [{"hypotheses": ["H1"], "evidence": {"H1": {"DC": 0.9}}}],
             reliabilities={"DC": 0.7},
         )
+
+
+def test_experiment_manifest_is_deterministic_and_binds_result_identity(tmp_path):
+    from xaita_ot.pipeline.real_experiments import build_experiment_manifest
+    result = {
+        "schema_version": "XAITA-OT-V5-REAL-EXPERIMENT-1.0",
+        "package_version": "0.5.1",
+        "dataset_validation": {"sha256": "a" * 64, "validation_status": "pass"},
+        "experiment": {
+            "dataset": "SWaT", "seed": 42,
+            "config": {"detector": "cnn", "split_protocol": "chronological_episode_aware"},
+            "rows": {"train": 10, "validation": 5, "test": 5},
+            "windows": {"train": 8, "validation": 3, "test": 3},
+            "metrics": {"cnn": {"f1": 0.9}},
+        },
+        "reproducibility": {
+            "fingerprint": "b" * 64,
+            "detector": "cnn",
+            "split_protocol": "chronological_episode_aware",
+            "config_sha256": "c" * 64,
+        },
+    }
+    first = build_experiment_manifest(result, result_sha256="d" * 64, result_path="result.json", software_revision="e" * 40)
+    second = build_experiment_manifest(result, result_sha256="d" * 64, result_path="result.json", software_revision="e" * 40)
+    assert first == second
+    assert len(first["manifest_sha256"]) == 64
+    assert first["result"]["sha256"] == "d" * 64
+    assert first["dataset"]["sha256"] == "a" * 64
+
+
+def test_experiment_manifest_rejects_incomplete_result():
+    from xaita_ot.pipeline.real_experiments import build_experiment_manifest
+    with pytest.raises(ValueError, match="reproducibility fingerprint"):
+        build_experiment_manifest(
+            {"dataset_validation": {"sha256": "a" * 64}, "experiment": {}},
+            result_sha256="d" * 64,
+        )
