@@ -26,11 +26,13 @@ Day 26 implements a deterministic attribution-evaluation gate over explicitly la
 4. Per-case and aggregate outputs are retained. — **PASS**
 5. Evaluation fingerprint is deterministic and provenance-bound to supplied inputs. — **PASS**
 6. CLI, V5 contract, tests and documentation are updated. — **PASS**
-7. Final repository CI is green on the Day 26 lock commit. — **PENDING FINAL CI**
+7. Final repository CI is green on the Day 26 lock commit. — **PASS**
 
 ## Verification boundary
 
 Day 26 evaluates supplied attribution cases. It does not create SWaT/BATADAL/TON-IoT benchmark evidence, infer calibrated probabilities, establish causal attribution, rank real-world attackers, or establish production/customer acceptance.
 
 **Day 26 implementation status: COMPLETE.**
-**Day 26 status: LOCKED after final CI acceptance.**
+**Day 26 status: LOCKED.**
+
+Final implementation acceptance was verified before this lock record. The lock commit itself is the final repository state and is subject to the final CI closure gate.
