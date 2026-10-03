@@ -272,6 +272,149 @@ def run_real_experiment_matrix(
     }
 
 
+def _mean_std_ci(values: list[float], confidence: float = 0.95) -> dict[str, Any]:
+    import math
+    from scipy import stats
+    finite = [float(v) for v in values if math.isfinite(float(v))]
+    n = len(finite)
+    if n == 0:
+        return {"n": 0, "mean": None, "std": None, "ci_low": None, "ci_high": None, "confidence": confidence}
+    mean = float(sum(finite) / n)
+    std = float(np.std(np.asarray(finite), ddof=1)) if n > 1 else 0.0
+    half = float(stats.t.ppf((1.0 + confidence) / 2.0, n - 1) * std / np.sqrt(n)) if n > 1 else 0.0
+    return {"n": n, "mean": mean, "std": std, "ci_low": mean - half, "ci_high": mean + half, "confidence": confidence}
+
+
+def run_real_experiment_statistical_matrix(
+    *,
+    csv_paths: dict[str, str | Path],
+    config: AppConfig,
+    seeds: list[int],
+    detectors: tuple[str, ...] = REAL_EXPERIMENT_DETECTORS,
+    datasets: tuple[str, ...] = REAL_EXPERIMENT_DATASETS,
+    confidence: float = 0.95,
+) -> dict[str, Any]:
+    """Repeat the controlled matrix across seeds and return reproducible statistics."""
+    if len(seeds) < 2:
+        raise ValueError("statistical matrix requires at least two seeds")
+    if len(set(seeds)) != len(seeds):
+        raise ValueError("statistical matrix seeds must be unique")
+    if not 0.0 < confidence < 1.0:
+        raise ValueError("confidence must be between 0 and 1")
+
+    runs = []
+    for seed in seeds:
+        matrix = run_real_experiment_matrix(
+            csv_paths=csv_paths,
+            config=config,
+            seed=int(seed),
+            detectors=detectors,
+            datasets=datasets,
+        )
+        runs.append({"seed": int(seed), "status": matrix["matrix"]["status"], "result": matrix})
+
+    observations = []
+    for run in runs:
+        seed = run["seed"]
+        for dataset_run in run["result"]["datasets"]:
+            if dataset_run["status"] != "completed":
+                continue
+            for detector_run in dataset_run["result"]["runs"]:
+                if detector_run["status"] != "completed":
+                    continue
+                experiment = detector_run["result"]["experiment"]
+                for detector, metrics in experiment["metrics"].items():
+                    if detector not in tuple(str(d).strip().lower().replace("-", "_") for d in detectors):
+                        continue
+                    for metric, value in metrics.items():
+                        if isinstance(value, (int, float)) and np.isfinite(value):
+                            observations.append({
+                                "dataset": dataset_run["dataset"],
+                                "detector": detector,
+                                "seed": seed,
+                                "metric": metric,
+                                "value": float(value),
+                            })
+
+    summary = []
+    if observations:
+        frame = pd.DataFrame(observations)
+        for keys, group in frame.groupby(["dataset", "detector", "metric"], dropna=False):
+            stats_row = _mean_std_ci(group["value"].tolist(), confidence)
+            summary.append({
+                "dataset": keys[0],
+                "detector": keys[1],
+                "metric": keys[2],
+                **stats_row,
+            })
+
+    paired = []
+    if observations:
+        frame = pd.DataFrame(observations)
+        for dataset in sorted(frame["dataset"].unique()):
+            for metric in sorted(frame["metric"].unique()):
+                pivot = frame[frame["dataset"] == dataset].pivot_table(
+                    index="seed", columns="detector", values="value", aggfunc="first"
+                )
+                detectors_present = [d for d in detectors if d in pivot.columns]
+                if len(detectors_present) < 2:
+                    continue
+                from scipy import stats
+                baseline = detectors_present[0]
+                for detector in detectors_present[1:]:
+                    pair = pivot[[baseline, detector]].dropna()
+                    diff = pair[baseline].to_numpy(float) - pair[detector].to_numpy(float)
+                    n = len(diff)
+                    if n < 2:
+                        p_value = None
+                        t_stat = None
+                    elif np.allclose(diff, 0.0):
+                        p_value = 1.0
+                        t_stat = 0.0
+                    else:
+                        test = stats.ttest_rel(pair[baseline], pair[detector])
+                        p_value = float(test.pvalue)
+                        t_stat = float(test.statistic)
+                    effect = float(np.mean(diff) / np.std(diff, ddof=1)) if n > 1 and np.std(diff, ddof=1) > 0 else 0.0
+                    paired.append({
+                        "dataset": dataset,
+                        "metric": metric,
+                        "baseline": baseline,
+                        "detector": detector,
+                        "n": n,
+                        "baseline_minus_detector_mean": float(np.mean(diff)) if n else None,
+                        "cohens_dz": effect,
+                        "t_statistic": t_stat,
+                        "p_value": p_value,
+                    })
+
+    completed_matrices = sum(run["status"] == "completed" for run in runs)
+    return {
+        "schema_version": "XAITA-OT-V5-REAL-EXPERIMENT-STATISTICS-1.0",
+        "package_version": __version__,
+        "statistics": {
+            "seeds": [int(seed) for seed in seeds],
+            "repeat_count": len(seeds),
+            "confidence": float(confidence),
+            "completed_matrix_count": completed_matrices,
+            "failed_matrix_count": len(runs) - completed_matrices,
+            "status": "completed" if completed_matrices == len(runs) and observations else "failed",
+            "summary": summary,
+            "paired_detector_comparisons": paired,
+            "observation_count": len(observations),
+            "fingerprint": hashlib.sha256(_canonical_json({
+                "seeds": [int(seed) for seed in seeds],
+                "detectors": list(detectors),
+                "datasets": list(datasets),
+                "confidence": float(confidence),
+                "summary": summary,
+                "paired_detector_comparisons": paired,
+            })).hexdigest(),
+        },
+        "runs": runs,
+    }
+
+
 def write_result_envelope(payload: dict[str, Any], output: str | Path) -> Path:
     destination = Path(output)
     destination.parent.mkdir(parents=True, exist_ok=True)

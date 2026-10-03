@@ -120,6 +120,14 @@ xaita real-experiment-matrix --swat-csv <swat.csv> --batadal-csv <batadal.csv> -
 
 The matrix validates and executes `SWaT`, `BATADAL` and `TON-IoT` in deterministic order, with `random_forest`, `cnn`, `lstm` and `cnn_lstm` for each dataset. Each dataset retains its complete suite result or an explicit failure record. The matrix is accepted only when all requested datasets complete all requested detectors, and its fingerprint binds dataset order, detector order, seed, status and configuration.
 
+For repeated real benchmark evaluation across multiple seeds:
+
+```powershell
+xaita real-experiment-statistics --swat-csv <swat.csv> --batadal-csv <batadal.csv> --toniot-csv <toniot.csv> --seed 42 --seed 43 --seed 44 --confidence 0.95
+```
+
+The statistical runner requires at least two unique seeds, executes the Day 23 matrix for each seed, and reports per-dataset/per-detector metric mean, sample standard deviation, Student-t confidence intervals, and paired detector comparisons across matched seeds. Failed matrix runs are retained and prevent statistical acceptance. These statistics are descriptive/research evaluation outputs; they do not establish benchmark superiority, significance beyond the reported tests, generalization, or production OT acceptance.
+
 The result records the validated file hash, dataset, detector, seed, split protocol,
 configuration digest and a deterministic reproducibility fingerprint. Execution is
 blocked when the input fails the validation gate. Raw benchmark files are never

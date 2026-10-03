@@ -16,6 +16,7 @@ from .pipeline.real_experiments import (
     REAL_EXPERIMENT_DETECTORS,
     run_real_experiment,
     run_real_experiment_matrix,
+    run_real_experiment_statistical_matrix,
     run_real_experiment_suite,
     write_result_envelope,
 )
@@ -106,6 +107,18 @@ def build_parser() -> argparse.ArgumentParser:
     real_experiment_matrix.add_argument("--out", default=None)
     real_experiment_matrix.add_argument("--config", default="configs/default.yaml")
 
+    real_experiment_statistics = sub.add_parser(
+        "real-experiment-statistics",
+        help="Repeat the real benchmark matrix across multiple seeds and compute statistical summaries.",
+    )
+    real_experiment_statistics.add_argument("--swat-csv", required=True)
+    real_experiment_statistics.add_argument("--batadal-csv", required=True)
+    real_experiment_statistics.add_argument("--toniot-csv", required=True)
+    real_experiment_statistics.add_argument("--seed", action="append", type=int, dest="seeds")
+    real_experiment_statistics.add_argument("--confidence", type=float, default=0.95)
+    real_experiment_statistics.add_argument("--out", default=None)
+    real_experiment_statistics.add_argument("--config", default="configs/default.yaml")
+
     real_experiment = sub.add_parser(
         "real-experiment",
         help="Validate a real benchmark CSV, execute one detector, and write an auditable result envelope.",
@@ -164,6 +177,33 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--seed must be non-negative")
 
     try:
+        if args.cmd == "real-experiment-statistics":
+            cfg = load_config(args.config)
+            seeds = args.seeds if args.seeds is not None else [42, 43, 44]
+            output = args.out or f"artifacts/real_experiments/statistics_{seeds[0]}.json"
+            payload = run_real_experiment_statistical_matrix(
+                csv_paths={
+                    "SWaT": args.swat_csv,
+                    "BATADAL": args.batadal_csv,
+                    "TON-IoT": args.toniot_csv,
+                },
+                config=cfg,
+                seeds=seeds,
+                confidence=args.confidence,
+            )
+            path = write_result_envelope(payload, output)
+            print(json.dumps({
+                "seeds": payload["statistics"]["seeds"],
+                "confidence": payload["statistics"]["confidence"],
+                "status": payload["statistics"]["status"],
+                "observation_count": payload["statistics"]["observation_count"],
+                "completed_matrix_count": payload["statistics"]["completed_matrix_count"],
+                "failed_matrix_count": payload["statistics"]["failed_matrix_count"],
+                "fingerprint": payload["statistics"]["fingerprint"],
+                "result": str(path),
+            }, sort_keys=True))
+            return 0 if payload["statistics"]["status"] == "completed" else 1
+
         if args.cmd == "real-experiment-matrix":
             cfg = load_config(args.config)
             output = args.out or f"artifacts/real_experiments/matrix_{args.seed}.json"

@@ -251,3 +251,56 @@ def test_real_experiment_matrix_retains_dataset_failure(tmp_path, monkeypatch):
     assert payload["matrix"]["failed_dataset_count"] == 1
     assert payload["datasets"][1]["dataset"] == "BATADAL"
     assert payload["datasets"][1]["error"]["type"] == "DatasetValidationError"
+
+
+def test_real_experiment_statistical_matrix_requires_repeated_seeds(monkeypatch):
+    from xaita_ot.pipeline.real_experiments import run_real_experiment_statistical_matrix
+    with pytest.raises(ValueError, match="at least two seeds"):
+        run_real_experiment_statistical_matrix(
+            csv_paths={"SWaT": "a", "BATADAL": "b", "TON-IoT": "c"},
+            config=AppConfig(),
+            seeds=[42],
+        )
+
+
+def test_real_experiment_statistical_matrix_aggregates_metrics(monkeypatch):
+    from xaita_ot.pipeline.real_experiments import run_real_experiment_statistical_matrix
+
+    def fake_matrix(csv_paths, config, seed, detectors, datasets):
+        runs = []
+        for dataset in datasets:
+            detector_runs = []
+            for detector in detectors:
+                detector_runs.append({
+                    "status": "completed",
+                    "detector": detector,
+                    "result": {
+                        "experiment": {
+                            "metrics": {detector: {"precision": 0.8 + seed / 1000.0, "f1": 0.7 + seed / 1000.0}}
+                        }
+                    },
+                })
+            runs.append({
+                "status": "completed",
+                "dataset": dataset,
+                "result": {"runs": detector_runs},
+            })
+        return {"matrix": {"status": "completed"}, "datasets": runs}
+
+    monkeypatch.setattr(
+        "xaita_ot.pipeline.real_experiments.run_real_experiment_matrix",
+        fake_matrix,
+    )
+    result = run_real_experiment_statistical_matrix(
+        csv_paths={"SWaT": "a", "BATADAL": "b", "TON-IoT": "c"},
+        config=AppConfig(),
+        seeds=[42, 43, 44],
+        confidence=0.95,
+    )
+    assert result["statistics"]["status"] == "completed"
+    assert result["statistics"]["repeat_count"] == 3
+    assert result["statistics"]["observation_count"] == 72
+    assert len(result["statistics"]["summary"]) == 24
+    assert len(result["statistics"]["paired_detector_comparisons"]) == 72
+    assert all(row["n"] == 3 for row in result["statistics"]["summary"])
+    assert all(row["ci_low"] <= row["mean"] <= row["ci_high"] for row in result["statistics"]["summary"])
