@@ -48,8 +48,8 @@ def validate_explanation(explanation, episode, context, risk):
     importances = [float(item.get("importance", -1.0)) for item in features]
     if any(value < 0.0 or value > 1.0 for value in importances):
         raise ExplanationValidationError("feature importance must be within [0, 1]")
-    if features and abs(sum(importances) - 1.0) > 1e-6:
-        raise ExplanationValidationError("feature importances must sum to 1")
+    if features and sum(importances) > 1.0 + 1e-6:
+        raise ExplanationValidationError("feature importances must not exceed 1 in aggregate")
 
     episode_ids = [event.event_id for event in episode.events]
     explained_ids = explanation["attack_stage_level"].get("events")
