@@ -29,6 +29,7 @@ class V5Contract:
         "GET /v2/datasets",
         "GET /v2/benchmark",
         "POST /v2/experiment",
+        "GET /v2/experiment/{job_id}",
         "POST /v1/analyze",
     )
     pipeline: tuple[str, ...] = (
