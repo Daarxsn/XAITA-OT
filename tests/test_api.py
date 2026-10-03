@@ -178,3 +178,80 @@ def test_experiment_rejects_unknown_detector(monkeypatch):
     response = client.post("/v2/experiment", json={"dataset": "TON-IoT", "detector": "unknown", "seed": 42})
     assert response.status_code == 400
     assert "Unknown detector" in response.json()["detail"]
+
+
+def _fake_run():
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        experiment_id="exp-1", dataset="TON-IoT", seed=42, started_at="2026-10-04T00:00:00Z",
+        duration_seconds=0.2, rows=10, windows=4,
+        metrics={"cnn_lstm": {"f1": 0.9}},
+    )
+
+
+def test_experiment_lifecycle_completed_and_status(monkeypatch, tmp_path):
+    monkeypatch.setattr(api, "API_KEY", None)
+    monkeypatch.setattr(api, "DATASET_PATHS", {"TON-IoT": str(tmp_path)})
+    (tmp_path / "sample.csv").write_text("timestamp,label\n2026-01-01,0\n", encoding="utf-8")
+    monkeypatch.setattr(api, "run_detection", lambda *args, **kwargs: _fake_run())
+    with api._experiment_lifecycle_lock:
+        api._experiment_jobs.clear()
+
+    response = client.post("/v2/experiment", json={"dataset": "TON-IoT", "detector": "CNN-LSTM", "seed": 42})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["schema_version"] == "XAITA-OT-V2-RUN-1.3"
+    assert body["job_id"]
+    status = client.get(f"/v2/experiment/{body['job_id']}")
+    assert status.status_code == 200
+    assert status.json()["job"]["status"] == "completed"
+
+
+def test_experiment_duplicate_running_job_is_rejected(monkeypatch, tmp_path):
+    monkeypatch.setattr(api, "API_KEY", None)
+    monkeypatch.setattr(api, "DATASET_PATHS", {"TON-IoT": str(tmp_path)})
+    (tmp_path / "sample.csv").write_text("timestamp,label\n2026-01-01,0\n", encoding="utf-8")
+    with api._experiment_lifecycle_lock:
+        api._experiment_jobs.clear()
+        api._experiment_jobs["job-running"] = {
+            "job_id": "job-running", "lifecycle_key": "TON-IoT:cnn_lstm:42", "status": "running",
+            "dataset": "TON-IoT", "detector": "cnn_lstm", "seed": 42,
+        }
+    response = client.post("/v2/experiment", json={"dataset": "TON-IoT", "detector": "CNN-LSTM", "seed": 42})
+    assert response.status_code == 409
+    assert response.json()["detail"]["job_id"] == "job-running"
+
+
+def test_experiment_failure_becomes_terminal_job(monkeypatch, tmp_path):
+    monkeypatch.setattr(api, "API_KEY", None)
+    monkeypatch.setattr(api, "DATASET_PATHS", {"TON-IoT": str(tmp_path)})
+    (tmp_path / "sample.csv").write_text("timestamp,label\n2026-01-01,0\n", encoding="utf-8")
+    def fail(*args, **kwargs):
+        raise RuntimeError("controlled failure")
+    monkeypatch.setattr(api, "run_detection", fail)
+    with api._experiment_lifecycle_lock:
+        api._experiment_jobs.clear()
+
+    response = client.post("/v2/experiment", json={"dataset": "TON-IoT", "detector": "CNN-LSTM", "seed": 42})
+    assert response.status_code == 422
+    job_id = next(iter(api._experiment_jobs))
+    assert api._experiment_jobs[job_id]["status"] == "failed"
+    status = client.get(f"/v2/experiment/{job_id}")
+    assert status.status_code == 200
+    assert status.json()["job"]["error_type"] == "RuntimeError"
+
+
+def test_experiment_concurrency_limit_is_explicit(monkeypatch, tmp_path):
+    monkeypatch.setattr(api, "API_KEY", None)
+    monkeypatch.setattr(api, "DATASET_PATHS", {"TON-IoT": str(tmp_path)})
+    (tmp_path / "sample.csv").write_text("timestamp,label\n2026-01-01,0\n", encoding="utf-8")
+    monkeypatch.setattr(api, "MAX_CONCURRENT_EXPERIMENTS", 1)
+    with api._experiment_lifecycle_lock:
+        api._experiment_jobs.clear()
+        api._experiment_jobs["other"] = {
+            "job_id": "other", "lifecycle_key": "TON-IoT:cnn:41", "status": "running",
+            "dataset": "TON-IoT", "detector": "cnn", "seed": 41,
+        }
+    response = client.post("/v2/experiment", json={"dataset": "TON-IoT", "detector": "CNN-LSTM", "seed": 42})
+    assert response.status_code == 429
+    assert response.json()["detail"]["max_concurrent_experiments"] == 1
