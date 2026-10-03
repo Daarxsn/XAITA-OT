@@ -342,3 +342,35 @@ def test_build_statistical_research_report_is_provenance_bound():
     assert report["report"]["seed_count"] == 3
     assert len(report["report"]["fingerprint"]) == 64
     assert "benchmark evidence" in report["evidence"]["verification_boundary"][0]
+
+
+def test_attribution_evaluation_is_deterministic_and_explicit():
+    from xaita_ot.pipeline.real_experiments import evaluate_attribution_cases
+    cases = [{
+        "case_id": "case-1",
+        "hypotheses": ["H1", "H2"],
+        "expected_hypothesis": "H1",
+        "evidence": {
+            "H1": {"DC": 0.95, "BSS": 0.90, "ECS": 0.80, "MAS": 0.85},
+            "H2": {"DC": 0.20, "BSS": 0.30, "ECS": 0.40, "MAS": 0.35},
+        },
+    }]
+    reliabilities = {"DC": 0.7, "BSS": 0.8, "ECS": 0.85, "MAS": 0.65}
+    first = evaluate_attribution_cases(cases, reliabilities=reliabilities)
+    second = evaluate_attribution_cases(cases, reliabilities=reliabilities)
+    assert first["fingerprint"] == second["fingerprint"]
+    assert first["status"] == "completed"
+    assert first["case_count"] == 1
+    assert [x["configuration"] for x in first["summaries"]] == [
+        "DC", "DC+BSS", "DC+BSS+ECS", "DC+BSS+ECS+MAS", "ACFM", "WEF"
+    ]
+    assert all(0.0 <= row["top1_accuracy"] <= 1.0 for row in first["summaries"])
+
+
+def test_attribution_evaluation_rejects_missing_expected_hypothesis():
+    from xaita_ot.pipeline.real_experiments import evaluate_attribution_cases
+    with pytest.raises(ValueError, match="expected_hypothesis"):
+        evaluate_attribution_cases(
+            [{"hypotheses": ["H1"], "evidence": {"H1": {"DC": 0.9}}}],
+            reliabilities={"DC": 0.7},
+        )
