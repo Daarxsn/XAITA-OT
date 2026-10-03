@@ -137,3 +137,49 @@ def test_real_experiment_acceptance_path_persists_validation_then_runs(tmp_path,
     assert payload["experiment"]["dataset"] == "SWaT"
     assert payload["experiment"]["seed"] == 42
     assert payload["reproducibility"]["detector"] == "random_forest"
+
+
+def test_real_experiment_suite_runs_all_four_detectors(tmp_path, monkeypatch):
+    from xaita_ot.pipeline.real_experiments import run_real_experiment_suite
+    path = _write_valid_swat(tmp_path / "swat.csv")
+    calls = []
+    def fake_run_detection(csv_path, dataset, config, seed=None, detector=None):
+        from xaita_ot.pipeline.experiments import ExperimentRun
+        calls.append(detector)
+        return ExperimentRun(
+            experiment_id=f"SWaT-{detector}-42-test", dataset=dataset, seed=seed or 42,
+            started_at="2026-01-01T00:00:00+00:00", duration_seconds=0.01,
+            config={"detector": detector, "split_protocol": "chronological_episode_aware"},
+            rows={"train": 4, "validation": 1, "test": 1},
+            windows={"train": 1, "validation": 1, "test": 1},
+            metrics={detector: {"f1": 1.0}},
+        )
+    monkeypatch.setattr("xaita_ot.pipeline.real_experiments.run_detection", fake_run_detection)
+    payload = run_real_experiment_suite(csv_path=path, dataset="SWaT", config=AppConfig(), seed=42, dataset_root=tmp_path)
+    assert calls == ["random_forest", "cnn", "lstm", "cnn_lstm"]
+    assert payload["suite"]["status"] == "completed"
+    assert payload["suite"]["completed_count"] == 4
+    assert payload["suite"]["failed_count"] == 0
+    assert len(payload["suite"]["fingerprint"]) == 64
+
+
+def test_real_experiment_suite_blocks_invalid_input(tmp_path):
+    from xaita_ot.pipeline.real_experiments import run_real_experiment_suite
+    bad = tmp_path / "bad.csv"
+    bad.write_text("Timestamp,Attack State,sensor\n2026-01-01 00:00:01,Normal,\nnot-a-time,Attack,2\n", encoding="utf-8")
+    with pytest.raises(DatasetValidationError, match="suite execution is blocked"):
+        run_real_experiment_suite(csv_path=bad, dataset="SWaT", config=AppConfig(), seed=42, dataset_root=tmp_path)
+
+
+def test_real_experiment_suite_retains_detector_failure(tmp_path, monkeypatch):
+    from xaita_ot.pipeline.real_experiments import run_real_experiment_suite
+    path = _write_valid_swat(tmp_path / "swat.csv")
+    def fake_run_detection(csv_path, dataset, config, seed=None, detector=None):
+        if detector == "lstm":
+            raise RuntimeError("bounded training failure")
+        return _fake_run()
+    monkeypatch.setattr("xaita_ot.pipeline.real_experiments.run_detection", fake_run_detection)
+    payload = run_real_experiment_suite(csv_path=path, dataset="SWaT", config=AppConfig(), seed=42, dataset_root=tmp_path)
+    assert payload["suite"]["status"] == "failed"
+    assert payload["suite"]["completed_count"] == 3
+    assert payload["suite"]["failed_detectors"] == ["lstm"]
