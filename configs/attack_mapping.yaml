@@ -1,5 +1,5 @@
-# Behavior-to-ATT&CK-for-ICS mappings are configuration, not hard-coded actor attribution.
-# Validate the mapping against the ATT&CK release used for a given evaluation.
+# Behavior-to-ATT&CK-for-ICS mappings are contextual evidence, not actor attribution.
+# The reviewed/pinned package metadata lives in configs/cti_package.yaml.
 reconnaissance:
   technique_id: T0846
   name: Remote System Discovery
