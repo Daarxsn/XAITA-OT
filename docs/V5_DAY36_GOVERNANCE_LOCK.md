@@ -59,7 +59,7 @@ The command returns `review_required` and exit code 2 until every required evide
 5. Governance validation fails closed. — **PASS**
 6. Autonomous OT control remains prohibited. — **PASS**
 7. CLI and regression tests cover governance decisions. — **PASS**
-8. Final repository CI is green on the Day 36 lock commit. — **PENDING FINAL CI**
+8. Final repository CI is green on the Day 36 lock commit. — **PASS**
 
 ## Verification boundary
 
