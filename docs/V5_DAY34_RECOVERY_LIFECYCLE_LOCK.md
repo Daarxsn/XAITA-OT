@@ -50,7 +50,7 @@ Day 34 closes the V5 P2 **Recovery and lifecycle operations** requirement with e
 5. Retention policy is executable and bounded. — **PASS**
 6. Upgrade and rollback sequence is explicitly represented. — **PASS**
 7. CLI and regression tests cover the lifecycle controls. — **PASS**
-8. Final repository CI is green on the Day 34 lock commit. — **PENDING FINAL CI**
+8. Final repository CI is green on the Day 34 lock commit. — **PASS**
 
 ## Verification boundary
 
