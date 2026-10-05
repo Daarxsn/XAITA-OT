@@ -159,6 +159,32 @@ configuration digest and a deterministic reproducibility fingerprint. Execution 
 blocked when the input fails the validation gate. Raw benchmark files are never
 written by the command.
 
+## Enterprise interoperability
+
+Day 33 provides versioned, vendor-neutral enterprise handover contracts without claiming vendor certification.
+
+Create a SIEM event from a completed CTI artifact:
+
+```powershell
+xaita siem-export --cti artifacts/smoke_cti.json --out artifacts/enterprise/siem_event.json
+```
+
+Create a STIX 2.1 CTI export envelope:
+
+```powershell
+xaita cti-export --cti artifacts/smoke_cti.json --out artifacts/enterprise/cti_export.json
+```
+
+Create an immutable audit event:
+
+```powershell
+xaita audit-event --action cti.export --actor analyst --outcome success --correlation-id corr-001 --out artifacts/enterprise/audit_event.json
+```
+
+The SIEM contract preserves detection confidence separately from attribution belief/plausibility and retains provenance and human-review boundaries. The CTI contract wraps the existing STIX 2.1 bundle. The audit contract records actor, action, outcome, correlation ID and deterministic event identity.
+
+These are interoperability envelopes, not claims of certification or compatibility with a particular SIEM, SOAR, TIP, STIX consumer, vendor API, customer environment or production OT deployment.
+
 ## Dataset policy
 
 Actual SWaT, BATADAL and TON-IoT benchmark files must be supplied by the researcher under their applicable dataset terms. Do not place proprietary or restricted benchmark files in source control.
