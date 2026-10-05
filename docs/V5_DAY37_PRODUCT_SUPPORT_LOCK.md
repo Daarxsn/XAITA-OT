@@ -32,7 +32,7 @@ Day 37 closes the V5 P2 **Product support** requirement with an executable maint
 5. Coordinated disclosure is explicitly enabled. — **PASS**
 6. Support policy has executable validation and regression tests. — **PASS**
 7. Upgrade support is linked to verified backup/rollback procedures. — **PASS**
-8. Final repository CI is green on the Day 37 lock commit. — **PENDING FINAL CI**
+8. Final repository CI is green on the Day 37 lock commit. — **PASS**
 
 ## Verification boundary
 
