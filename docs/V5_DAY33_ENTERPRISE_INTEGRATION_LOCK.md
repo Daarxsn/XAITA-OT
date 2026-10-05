@@ -32,7 +32,7 @@ Day 33 closes the V5 P1 **Enterprise integrations** requirement with explicit, d
 5. Invalid enterprise payloads fail closed. — **PASS**
 6. CLI entry points are covered by regression tests. — **PASS**
 7. No vendor-specific interoperability or certification claim is made. — **PASS**
-8. Final repository CI is green on the Day 33 lock commit. — **PENDING FINAL CI**
+8. Final repository CI is green on the Day 33 lock commit. — **PASS**
 
 ## Verification boundary
 
