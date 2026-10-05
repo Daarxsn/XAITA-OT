@@ -1,0 +1,158 @@
+"""Safe backup, recovery, retention and upgrade/rollback lifecycle primitives."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import shutil
+import tarfile
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+SCHEMA_VERSION = "XAITA-OT-LIFECYCLE-BACKUP-1.0"
+PLAN_SCHEMA = "XAITA-OT-LIFECYCLE-PLAN-1.0"
+DEFAULT_EXCLUDES = {".git", ".venv", "__pycache__", ".pytest_cache"}
+DEFAULT_RAW_PREFIX = Path("data/raw")
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _files(root: Path) -> list[Path]:
+    found = []
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(root)
+        if any(part in DEFAULT_EXCLUDES for part in rel.parts):
+            continue
+        if rel.parts[:2] == DEFAULT_RAW_PREFIX.parts:
+            continue
+        found.append(rel)
+    return sorted(found)
+
+
+def build_backup_manifest(root: str | Path) -> dict[str, Any]:
+    base = Path(root).resolve()
+    if not base.is_dir():
+        raise ValueError(f"backup root is not a directory: {base}")
+    files = [
+        {"path": rel.as_posix(), "sha256": _sha256(base / rel), "size": (base / rel).stat().st_size}
+        for rel in _files(base)
+    ]
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "root_name": base.name,
+        "excluded": sorted(DEFAULT_EXCLUDES | {"data/raw"}),
+        "files": files,
+    }
+
+
+def create_backup(root: str | Path, output: str | Path) -> Path:
+    base = Path(root).resolve()
+    destination = Path(output).resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    manifest = build_backup_manifest(base)
+    with tempfile.TemporaryDirectory() as temp:
+        stage = Path(temp) / "xaita-backup"
+        stage.mkdir()
+        (stage / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+        for item in manifest["files"]:
+            source = base / item["path"]
+            target = stage / item["path"]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+        with tarfile.open(destination, "w:gz") as archive:
+            archive.add(stage, arcname="xaita-backup")
+    return destination
+
+
+def read_backup_manifest(backup: str | Path) -> dict[str, Any]:
+    with tarfile.open(backup, "r:gz") as archive:
+        try:
+            member = archive.getmember("xaita-backup/manifest.json")
+        except KeyError as exc:
+            raise ValueError("backup is missing xaita-backup/manifest.json") from exc
+        with archive.extractfile(member) as handle:
+            if handle is None:
+                raise ValueError("backup manifest cannot be read")
+            return json.loads(handle.read().decode("utf-8"))
+
+
+def verify_backup(backup: str | Path) -> dict[str, Any]:
+    manifest = read_backup_manifest(backup)
+    if manifest.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError("unsupported lifecycle backup schema")
+    failures = []
+    with tarfile.open(backup, "r:gz") as archive:
+        names = set(archive.getnames())
+        for item in manifest.get("files", []):
+            member = f"xaita-backup/{item['path']}"
+            if member not in names:
+                failures.append(f"missing:{item['path']}")
+                continue
+            with archive.extractfile(member) as handle:
+                if handle is None:
+                    failures.append(f"unreadable:{item['path']}")
+                    continue
+                digest = hashlib.sha256(handle.read()).hexdigest()
+            if digest != item["sha256"]:
+                failures.append(f"checksum:{item['path']}")
+    return {"schema_version": SCHEMA_VERSION, "verified": not failures, "file_count": len(manifest.get("files", [])), "failures": failures}
+
+
+def restore_backup(backup: str | Path, staging_root: str | Path) -> Path:
+    destination = Path(staging_root).resolve()
+    if destination.exists() and any(destination.iterdir()):
+        raise ValueError("restore destination must be empty; restore never overwrites a live root")
+    destination.mkdir(parents=True, exist_ok=True)
+    verification = verify_backup(backup)
+    if not verification["verified"]:
+        raise ValueError("refusing restore from failed backup verification")
+    with tarfile.open(backup, "r:gz") as archive:
+        for item in archive.getmembers():
+            if not item.name.startswith("xaita-backup/") or item.name.endswith("/manifest.json"):
+                continue
+            rel = Path(item.name).relative_to("xaita-backup")
+            target = destination / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            source = archive.extractfile(item)
+            if source is not None:
+                target.write_bytes(source.read())
+    return destination
+
+
+def prune_backups(directory: str | Path, *, keep: int = 5) -> list[Path]:
+    if keep < 1:
+        raise ValueError("keep must be at least 1")
+    base = Path(directory)
+    backups = sorted(base.glob("xaita-backup-*.tar.gz"), key=lambda p: p.stat().st_mtime, reverse=True)
+    removed = backups[keep:]
+    for path in removed:
+        path.unlink()
+    return removed
+
+
+def build_lifecycle_plan(*, current_revision: str, target_revision: str, backup_path: str, rollback_revision: str | None = None) -> dict[str, Any]:
+    if not current_revision.strip() or not target_revision.strip() or not backup_path.strip():
+        raise ValueError("current_revision, target_revision and backup_path are required")
+    return {
+        "schema_version": PLAN_SCHEMA,
+        "current_revision": current_revision,
+        "target_revision": target_revision,
+        "rollback_revision": rollback_revision or current_revision,
+        "backup_path": backup_path,
+        "pre_upgrade": ["create_backup", "verify_backup", "record_current_revision"],
+        "upgrade": ["deploy_target_revision", "run_health_check", "run_smoke_check"],
+        "rollback": ["stop_new_revision", "restore_verified_backup_to_staging", "redeploy_previous_revision", "run_health_check"],
+        "retention": {"policy": "retain newest backups; prune only after verification", "default_keep": 5},
+        "autonomous_ot_action": False,
+    }
