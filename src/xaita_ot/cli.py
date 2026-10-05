@@ -265,6 +265,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.cmd == "siem-export":
             payload = json.loads(Path(args.cti).read_text(encoding="utf-8"))
+            payload = payload[0] if isinstance(payload, list) else payload
             event = build_siem_event(payload, source=args.source)
             path = write_integration_json(event, args.out)
             print(json.dumps({"status": "completed", "event_id": event["event_id"], "result": str(path)}, sort_keys=True))
@@ -272,6 +273,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.cmd == "cti-export":
             payload = json.loads(Path(args.cti).read_text(encoding="utf-8"))
+            payload = payload[0] if isinstance(payload, list) else payload
             export = build_cti_export(payload)
             path = write_integration_json(export, args.out)
             print(json.dumps({"status": "completed", "export_sha256": export["export_sha256"], "result": str(path)}, sort_keys=True))
