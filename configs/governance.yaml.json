@@ -1,0 +1,46 @@
+{
+  "schema_version": "XAITA-OT-GOVERNANCE-1.0",
+  "project": {
+    "license": "research-and-controlled-evaluation",
+    "commercial_use": "review_required",
+    "production_use": "review_required",
+    "redistribution": "review_required",
+    "security_review_required_for_production": true
+  },
+  "datasets": {
+    "SWaT": {
+      "status": "review_required",
+      "access": "request/download from iTrust",
+      "source": "https://itrust.sutd.edu.sg/",
+      "license_control": "Verify current iTrust terms before redistribution or commercial use.",
+      "benchmark_evidence": "closed_until_local_manifest_and_current_terms_are_recorded"
+    },
+    "BATADAL": {
+      "status": "review_required",
+      "access": "organizer-controlled dataset access",
+      "source": "https://www.batadal.net/",
+      "license_control": "Obtain organizer authorization/credentials and retain supplied usage terms with the experiment record.",
+      "benchmark_evidence": "closed_until_attack_list_hashes_versions_and_alignment_are_verified"
+    },
+    "TON-IoT": {
+      "status": "review_required",
+      "access": "UNSW Research download",
+      "source": "https://research.unsw.edu.au/projects/toniot-datasets",
+      "license_control": "Retain the applicable academic/public-use terms and obtain permission before commercial/company deployment or redistribution.",
+      "benchmark_evidence": "closed_until_local_manifest_and_applicable_terms_are_recorded"
+    }
+  },
+  "deployment": {
+    "customer_production": "review_required",
+    "required_evidence": [
+      "dataset_terms_recorded",
+      "dependency_license_review_complete",
+      "project_license_review_complete",
+      "security_review_complete",
+      "customer_ot_segmentation_review_complete",
+      "approved_data_ownership_and_permissions",
+      "approved_retention_and_audit_policy"
+    ],
+    "autonomous_ot_control": "prohibited"
+  }
+}
