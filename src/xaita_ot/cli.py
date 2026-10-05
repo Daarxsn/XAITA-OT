@@ -13,6 +13,7 @@ from .config import load_config
 from .cti.generator import write_json
 from .operations.lifecycle import build_lifecycle_plan, create_backup, prune_backups, restore_backup, verify_backup
 from .governance import evaluate_deployment, load_policy
+from .support import classify_support_request, load_support_policy
 from .integrations.enterprise import (
     build_audit_event,
     build_cti_export,
@@ -255,6 +256,11 @@ def build_parser() -> argparse.ArgumentParser:
     governance.add_argument("--evidence-json", default=None, help="JSON object mapping required evidence keys to true/false.")
     governance.add_argument("--out", default=None)
 
+    support = sub.add_parser("support-check", help="Validate support policy and classify a support/security request.")
+    support.add_argument("--policy", default="configs/support_policy.json")
+    support.add_argument("--severity", choices=["critical", "high", "medium", "low"], default=None)
+    support.add_argument("--out", default=None)
+
     return parser
 
 
@@ -290,6 +296,17 @@ def main(argv: list[str] | None = None) -> int:
                 "fingerprint": payload["fingerprint"],
                 "result": str(path),
             }, sort_keys=True))
+            return 0
+
+        if args.cmd == "support-check":
+            policy = load_support_policy(args.policy)
+            result = {"schema_version": policy["schema_version"], "status": "valid"}
+            if args.severity:
+                result.update(classify_support_request(policy, args.severity))
+            if args.out:
+                path = write_integration_json(result, args.out)
+                result["result"] = str(path)
+            print(json.dumps(result, sort_keys=True))
             return 0
 
         if args.cmd == "governance-check":
