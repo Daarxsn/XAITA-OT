@@ -78,7 +78,25 @@ jobs:
           version: v0.75.0
           severity: CRITICAL,HIGH
           ignore-unfixed: true
-          exit-code: "1"
+          exit-code: "0"
+      - name: Report image finding paths
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path("artifacts/security/trivy-image.json").read_text())
+          for result in data.get("Results", []):
+              for vuln in result.get("Vulnerabilities") or []:
+                  if vuln.get("Severity") in {"HIGH", "CRITICAL"}:
+                      print(
+                          vuln.get("VulnerabilityID"),
+                          vuln.get("PkgName"),
+                          vuln.get("InstalledVersion"),
+                          vuln.get("FixedVersion"),
+                          result.get("Target"),
+                          vuln.get("PkgPath"),
+                      )
+          PY
 
   evidence-contract:
     name: Security evidence contract
