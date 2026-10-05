@@ -16,3 +16,17 @@ The repository is a **working research/engineering prototype baseline** with a c
 8. Establish incident response, model rollback, audit retention, backup and disaster recovery procedures.
 9. Complete legal/licensing review for datasets, dependencies and commercial distribution.
 10. Establish product support, upgrade and vulnerability-disclosure processes.
+
+## Governance gate
+
+Before customer/commercial deployment, run:
+
+```powershell
+xaita governance-check
+```
+
+The governance gate remains `review_required` until the required evidence is explicitly recorded. The canonical policy is `configs/governance.yaml.json` and covers dataset terms, project licensing, dependency licensing, security review, customer OT segmentation, data ownership/permissions, and retention/audit controls.
+
+The repository does not grant dataset licenses or customer deployment authorization. SWaT, BATADAL and TON-IoT remain subject to their respective provider/access terms. Legal and licensing approval must be obtained from the applicable rights holder or authorized reviewer before commercial use, redistribution or customer deployment.
+
+Autonomous OT control remains prohibited.
