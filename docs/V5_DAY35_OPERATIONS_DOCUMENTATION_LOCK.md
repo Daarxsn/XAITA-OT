@@ -63,7 +63,7 @@ A live URL is intentionally required before the workflow claims live operational
 4. Live deployment acceptance cannot be claimed without an approved deployment URL. — **PASS**
 5. Recovery/rollback procedure is linked to the troubleshooting flow. — **PASS**
 6. Regression tests cover the acceptance contract. — **PASS**
-7. Final repository CI is green on the Day 35 lock commit. — **PENDING FINAL CI**
+7. Final repository CI is green on the Day 35 lock commit. — **PASS**
 
 ## Verification boundary
 
