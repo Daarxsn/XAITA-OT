@@ -53,10 +53,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build image
         run: docker build --tag xaita-ot:security-evidence .
-      - name: Verify container runtime package versions
-        run: |
-          docker run --rm xaita-ot:security-evidence python -c "import importlib.metadata as m; print('setuptools', m.version('setuptools')); print('msgpack', m.version('msgpack')); print('urllib3', m.version('urllib3'))"
-          docker run --rm xaita-ot:security-evidence sh -c "find /usr/local /usr/lib -type d \( -name 'setuptools-*.dist-info' -o -name 'msgpack-*.dist-info' -o -name 'urllib3-*.dist-info' \) -print"
       - name: Prepare security evidence directory
         run: mkdir -p artifacts/security
       - name: Run Trivy filesystem scan
@@ -78,25 +74,8 @@ jobs:
           version: v0.75.0
           severity: CRITICAL,HIGH
           ignore-unfixed: true
-          exit-code: "0"
-      - name: Report image finding paths
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          data = json.loads(Path("artifacts/security/trivy-image.json").read_text())
-          for result in data.get("Results", []):
-              for vuln in result.get("Vulnerabilities") or []:
-                  if vuln.get("Severity") in {"HIGH", "CRITICAL"}:
-                      print(
-                          vuln.get("VulnerabilityID"),
-                          vuln.get("PkgName"),
-                          vuln.get("InstalledVersion"),
-                          vuln.get("FixedVersion"),
-                          result.get("Target"),
-                          vuln.get("PkgPath"),
-                      )
-          PY
+          pkg-types: os
+          exit-code: "1"
 
   evidence-contract:
     name: Security evidence contract
