@@ -11,7 +11,7 @@ Day 32 closes the V5 P1 **Security evidence** requirement with executable SAST, 
 - Dedicated V5 Security Evidence GitHub Actions workflow.
 - Bandit Python SAST gate, restricted to high-severity/high-confidence findings for the repository acceptance threshold.
 - pip-audit installed-dependency vulnerability gate.
-- Trivy repository/filesystem HIGH/CRITICAL gate using the verified v0.36.0 action revision.
+- Trivy repository/filesystem HIGH/CRITICAL gate using the verified v0.75.0 scanner; container-image vulnerability scope is OS packages, while Python library vulnerabilities remain covered by the dedicated pip-audit gate.
 - Trivy built-container HIGH/CRITICAL gate with unfixed findings explicitly handled.
 - Explicit workflow read/security-event permissions.
 - Bandit policy configuration in `pyproject.toml`.
