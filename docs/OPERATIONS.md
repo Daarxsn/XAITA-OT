@@ -42,6 +42,40 @@ Raw research datasets under `data/raw` are excluded by default. Backup verificat
 
 For production use, store backups independently from the application host, apply access controls, maintain multiple approved copies, and validate environment-specific recovery procedures and RTO/RPO requirements. These repository-local helpers do not constitute disaster-recovery certification.
 
+## Independent-user acceptance
+
+Run the repository and disposable acceptance workflow before handover:
+
+```powershell
+python scripts/v5_user_acceptance.py
+```
+
+For machine-readable evidence:
+
+```powershell
+python scripts/v5_user_acceptance.py --json
+```
+
+For an approved staging/production deployment, supply the approved deployment URL:
+
+```powershell
+python scripts/v5_user_acceptance.py --base-url https://<approved-deployment> --json
+```
+
+The workflow intentionally does not claim live acceptance when no deployment URL is supplied. The live probe checks health, readiness, dashboard response, request correlation, baseline security headers, dataset status, system status and authentication boundaries.
+
+### Troubleshooting order
+
+1. Run the preflight and inspect all error checks.
+2. Verify `/health`.
+3. Verify `/ready` and dashboard availability.
+4. Verify request correlation via `X-Request-ID`.
+5. Verify baseline security headers.
+6. Verify authentication/RBAC behavior.
+7. Verify dataset readiness and `/v2/system`.
+8. Run the disposable E2E smoke to isolate application behavior from deployment-specific behavior.
+9. For post-upgrade regressions, use the verified Day 34 backup/restore and rollback workflow.
+
 ## Production checklist
 
 - [ ] Dataset and telemetry ownership/permissions approved
