@@ -12,6 +12,7 @@ from . import __version__
 from .config import load_config
 from .cti.generator import write_json
 from .operations.lifecycle import build_lifecycle_plan, create_backup, prune_backups, restore_backup, verify_backup
+from .governance import evaluate_deployment, load_policy
 from .integrations.enterprise import (
     build_audit_event,
     build_cti_export,
@@ -249,6 +250,11 @@ def build_parser() -> argparse.ArgumentParser:
     lifecycle_plan.add_argument("--rollback-revision", default=None)
     lifecycle_plan.add_argument("--out", default="artifacts/backups/lifecycle_plan.json")
 
+    governance = sub.add_parser("governance-check", help="Validate governance policy and deployment evidence.")
+    governance.add_argument("--policy", default="configs/governance.yaml.json")
+    governance.add_argument("--evidence-json", default=None, help="JSON object mapping required evidence keys to true/false.")
+    governance.add_argument("--out", default=None)
+
     return parser
 
 
@@ -285,6 +291,16 @@ def main(argv: list[str] | None = None) -> int:
                 "result": str(path),
             }, sort_keys=True))
             return 0
+
+        if args.cmd == "governance-check":
+            policy = load_policy(args.policy)
+            evidence = json.loads(Path(args.evidence_json).read_text(encoding="utf-8")) if args.evidence_json else {}
+            result = evaluate_deployment(policy, evidence)
+            if args.out:
+                path = write_integration_json(result, args.out)
+                result["result"] = str(path)
+            print(json.dumps(result, sort_keys=True))
+            return 0 if result["status"] == "approved" else 2
 
         if args.cmd == "backup":
             path = create_backup(args.root, args.out)
