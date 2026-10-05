@@ -74,7 +74,7 @@ jobs:
           version: v0.75.0
           severity: CRITICAL,HIGH
           ignore-unfixed: true
-          pkg-types: os
+          vuln-type: os
           exit-code: "1"
 
   evidence-contract:
