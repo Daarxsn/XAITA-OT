@@ -1,0 +1,60 @@
+{
+  "schema_version": "XAITA-OT-SUPPORT-1.0",
+  "project": "XAITA-OT",
+  "support": {
+    "channel": "GitHub Issues for reproducible non-sensitive defects; private security reporting for vulnerabilities",
+    "supported_release_window": "current main plus the latest tagged release",
+    "maintenance_review": "monthly",
+    "security_review": "on reported vulnerability and before production/customer deployment",
+    "upgrade_policy": "security fixes may require an upgrade to a supported release; backup and rollback procedures are required before upgrades",
+    "sla": "none",
+    "availability_commitment": "none"
+  },
+  "severity": {
+    "critical": {
+      "definition": "Confirmed vulnerability with plausible impact to confidentiality, integrity or availability of a deployed analytics service or security boundary.",
+      "acknowledgement_target": "1 business day",
+      "triage_target": "2 business days"
+    },
+    "high": {
+      "definition": "Significant security or reliability defect requiring prioritized remediation.",
+      "acknowledgement_target": "2 business days",
+      "triage_target": "5 business days"
+    },
+    "medium": {
+      "definition": "Material defect with bounded security, reliability or functionality impact.",
+      "acknowledgement_target": "3 business days",
+      "triage_target": "10 business days"
+    },
+    "low": {
+      "definition": "Low-impact defect, documentation issue or improvement request.",
+      "acknowledgement_target": "5 business days",
+      "triage_target": "next maintenance review"
+    }
+  },
+  "vulnerability_disclosure": {
+    "public_issue_for_sensitive_vulnerability": false,
+    "include": [
+      "affected_version_or_commit",
+      "impact_summary",
+      "reproduction_steps_or_minimal_proof",
+      "affected_component",
+      "known_mitigations"
+    ],
+    "do_not_include": [
+      "credentials",
+      "production secrets",
+      "customer-sensitive telemetry",
+      "personal data",
+      "unnecessary weaponized exploit material"
+    ],
+    "coordinated_disclosure": true,
+    "credit": "with reporter permission"
+  },
+  "deployment_boundary": {
+    "production_ot_support": "environment-specific review required",
+    "customer_sla": "requires separate written agreement",
+    "security_certification": "not provided by this repository",
+    "autonomous_ot_control": "prohibited"
+  }
+}
