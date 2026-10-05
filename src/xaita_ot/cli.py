@@ -11,6 +11,7 @@ from pathlib import Path
 from . import __version__
 from .config import load_config
 from .cti.generator import write_json
+from .operations.lifecycle import build_lifecycle_plan, create_backup, prune_backups, restore_backup, verify_backup
 from .integrations.enterprise import (
     build_audit_event,
     build_cti_export,
@@ -226,6 +227,28 @@ def build_parser() -> argparse.ArgumentParser:
     audit_event.add_argument("--details-json", default=None)
     audit_event.add_argument("--out", default="artifacts/enterprise/audit_event.json")
 
+    backup = sub.add_parser("backup", help="Create a verified repository backup excluding raw research datasets.")
+    backup.add_argument("--root", default=".")
+    backup.add_argument("--out", default="artifacts/backups/xaita-backup.tar.gz")
+
+    backup_verify = sub.add_parser("backup-verify", help="Verify backup manifest and file checksums.")
+    backup_verify.add_argument("--backup", required=True)
+
+    backup_restore = sub.add_parser("backup-restore", help="Restore a verified backup into an empty staging directory.")
+    backup_restore.add_argument("--backup", required=True)
+    backup_restore.add_argument("--staging", required=True)
+
+    backup_prune = sub.add_parser("backup-prune", help="Retain only the newest lifecycle backups.")
+    backup_prune.add_argument("--directory", default="artifacts/backups")
+    backup_prune.add_argument("--keep", type=int, default=5)
+
+    lifecycle_plan = sub.add_parser("lifecycle-plan", help="Create a deterministic upgrade/rollback plan.")
+    lifecycle_plan.add_argument("--current-revision", required=True)
+    lifecycle_plan.add_argument("--target-revision", required=True)
+    lifecycle_plan.add_argument("--backup", required=True)
+    lifecycle_plan.add_argument("--rollback-revision", default=None)
+    lifecycle_plan.add_argument("--out", default="artifacts/backups/lifecycle_plan.json")
+
     return parser
 
 
@@ -261,6 +284,37 @@ def main(argv: list[str] | None = None) -> int:
                 "fingerprint": payload["fingerprint"],
                 "result": str(path),
             }, sort_keys=True))
+            return 0
+
+        if args.cmd == "backup":
+            path = create_backup(args.root, args.out)
+            print(json.dumps({"status": "completed", "backup": str(path)}, sort_keys=True))
+            return 0
+
+        if args.cmd == "backup-verify":
+            result = verify_backup(args.backup)
+            print(json.dumps(result, sort_keys=True))
+            return 0 if result["verified"] else 2
+
+        if args.cmd == "backup-restore":
+            path = restore_backup(args.backup, args.staging)
+            print(json.dumps({"status": "completed", "staging": str(path)}, sort_keys=True))
+            return 0
+
+        if args.cmd == "backup-prune":
+            removed = prune_backups(args.directory, keep=args.keep)
+            print(json.dumps({"status": "completed", "removed": [str(p) for p in removed]}, sort_keys=True))
+            return 0
+
+        if args.cmd == "lifecycle-plan":
+            plan = build_lifecycle_plan(
+                current_revision=args.current_revision,
+                target_revision=args.target_revision,
+                backup_path=args.backup,
+                rollback_revision=args.rollback_revision,
+            )
+            path = write_integration_json(plan, args.out)
+            print(json.dumps({"status": "completed", "result": str(path)}, sort_keys=True))
             return 0
 
         if args.cmd == "siem-export":
