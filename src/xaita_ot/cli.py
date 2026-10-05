@@ -11,6 +11,12 @@ from pathlib import Path
 from . import __version__
 from .config import load_config
 from .cti.generator import write_json
+from .integrations.enterprise import (
+    build_audit_event,
+    build_cti_export,
+    build_siem_event,
+    write_json as write_integration_json,
+)
 from .io.dataset_validation import DatasetValidationError, build_manifest, write_manifest
 from .pipeline.demo import demo_events, make_demo_csv
 from .pipeline.real_experiments import (
@@ -192,6 +198,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="Experiment configuration YAML path.",
     )
 
+    siem_export = sub.add_parser(
+        "siem-export",
+        help="Build a vendor-neutral SIEM event from a completed CTI JSON artifact.",
+    )
+    siem_export.add_argument("--cti", required=True, help="Completed XAITA-OT CTI JSON path.")
+    siem_export.add_argument("--out", default="artifacts/enterprise/siem_event.json")
+    siem_export.add_argument("--source", default="xaita-ot")
+
+    cti_export = sub.add_parser(
+        "cti-export",
+        help="Wrap a completed CTI artifact in the XAITA-OT STIX 2.1 export contract.",
+    )
+    cti_export.add_argument("--cti", required=True, help="Completed XAITA-OT CTI JSON path.")
+    cti_export.add_argument("--out", default="artifacts/enterprise/cti_export.json")
+
+    audit_event = sub.add_parser(
+        "audit-event",
+        help="Create an interoperable immutable audit-event envelope.",
+    )
+    audit_event.add_argument("--action", required=True)
+    audit_event.add_argument("--actor", required=True)
+    audit_event.add_argument("--outcome", required=True)
+    audit_event.add_argument("--correlation-id", required=True)
+    audit_event.add_argument("--incident-id", default=None)
+    audit_event.add_argument("--timestamp", default=None)
+    audit_event.add_argument("--details-json", default=None)
+    audit_event.add_argument("--out", default="artifacts/enterprise/audit_event.json")
+
     return parser
 
 
@@ -227,6 +261,35 @@ def main(argv: list[str] | None = None) -> int:
                 "fingerprint": payload["fingerprint"],
                 "result": str(path),
             }, sort_keys=True))
+            return 0
+
+        if args.cmd == "siem-export":
+            payload = json.loads(Path(args.cti).read_text(encoding="utf-8"))
+            event = build_siem_event(payload, source=args.source)
+            path = write_integration_json(event, args.out)
+            print(json.dumps({"status": "completed", "event_id": event["event_id"], "result": str(path)}, sort_keys=True))
+            return 0
+
+        if args.cmd == "cti-export":
+            payload = json.loads(Path(args.cti).read_text(encoding="utf-8"))
+            export = build_cti_export(payload)
+            path = write_integration_json(export, args.out)
+            print(json.dumps({"status": "completed", "export_sha256": export["export_sha256"], "result": str(path)}, sort_keys=True))
+            return 0
+
+        if args.cmd == "audit-event":
+            details = json.loads(args.details_json) if args.details_json else {}
+            event = build_audit_event(
+                action=args.action,
+                actor=args.actor,
+                outcome=args.outcome,
+                correlation_id=args.correlation_id,
+                incident_id=args.incident_id,
+                timestamp=args.timestamp,
+                details=details,
+            )
+            path = write_integration_json(event, args.out)
+            print(json.dumps({"status": "completed", "event_id": event["event_id"], "result": str(path)}, sort_keys=True))
             return 0
 
         if args.cmd == "experiment-manifest":
