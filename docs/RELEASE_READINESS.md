@@ -30,3 +30,16 @@ The governance gate remains `review_required` until the required evidence is exp
 The repository does not grant dataset licenses or customer deployment authorization. SWaT, BATADAL and TON-IoT remain subject to their respective provider/access terms. Legal and licensing approval must be obtained from the applicable rights holder or authorized reviewer before commercial use, redistribution or customer deployment.
 
 Autonomous OT control remains prohibited.
+
+## Product support and vulnerability disclosure
+
+The canonical support policy is `configs/support_policy.json` and is validated with:
+
+```powershell
+xaita support-check
+xaita support-check --severity critical
+```
+
+Sensitive vulnerabilities must use the private security-reporting path described in `SECURITY.md`, not a public issue. The policy defines severity, acknowledgement and triage targets but does not create a contractual SLA or remediation guarantee.
+
+Maintenance is reviewed monthly. Security fixes may require an upgrade to a supported release; use the verified Day 34 backup and rollback workflow before upgrades. Customer-specific support, SLAs and production commitments require separate written agreement and environment-specific review.
