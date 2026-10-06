@@ -133,7 +133,7 @@ def main():
     }
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     Path(args.out).write_text(json.dumps(_json_safe(result), indent=2, allow_nan=False, default=str), encoding="utf-8")
-    print(json.dumps(result, indent=2, allow_nan=False, default=str))
+    print(json.dumps(_json_safe(result), indent=2, allow_nan=False, default=str))
 
 
 if __name__ == "__main__":
