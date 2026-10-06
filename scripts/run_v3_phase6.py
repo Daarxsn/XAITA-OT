@@ -25,6 +25,8 @@ def main():
     seeds = args.seeds if args.seeds is not None else [42, 43, 44]
     result = run_phase6_from_phase4(run_phase4, paths, cfg, seeds=seeds, confidence=args.confidence)
     artifacts = write_phase6_artifacts(result, args.out)
+    if result.get("status") != "PASS" or result["statistics"]["observations"] != expected_obs:
+        raise SystemExit("V3 Phase 6 statistical acceptance: FAIL")
     expected_obs = 3 * len(seeds) * 6
     acceptance = {
         "phase": "V3.6",
