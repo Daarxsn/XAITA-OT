@@ -55,6 +55,7 @@ def run_detection(csv_path: str | Path, dataset: str, config: AppConfig, seed: i
         raise ValueError(f"{dataset} labels must be binary 0/1 after dataset adaptation")
     df[config.attack_label_column] = labels.astype(int)
     if len(df) < max(20, config.model.window_size * 3):
+
         raise ValueError(f'Insufficient usable rows for {dataset}: {len(df)}')
     if df.attrs.get('timestamp_semantics') == 'synthetic_event_order':
         train, val, test = group_stratified_split(df, train=config.experiment.train_fraction, val=config.experiment.validation_fraction, label_col=config.attack_label_column, seed=run_seed); split_protocol='group_stratified'
