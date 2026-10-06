@@ -50,7 +50,8 @@ def generate_cti(incident_id, detection, episode, context, attribution, xai, ris
       'risk': risk,
       'provenance': provenance,
       'provenance_manifest': provenance_manifest,
-      'provenance_digest': provenance_hash,\n      'analyst_trace': analyst_trace,
+      'provenance_digest': provenance_hash,
+      'analyst_trace': analyst_trace,
       'provenance_links': {
           'observations': observation_ids,
           'detections': provenance,
