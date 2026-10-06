@@ -50,9 +50,13 @@ def confidence_bins(y, p, bins: int = 10) -> list[dict]:
 
 
 def reliability_summary(y, p, bins: int = 10) -> dict:
-    """Compute ECE, Brier score and confidence-bin data."""
+    """Compute ECE, Brier score and confidence-bin data without silently altering scores."""
     y = np.asarray(y).astype(int)
-    p = np.clip(np.asarray(p, dtype=float), 0.0, 1.0)
+    p = np.asarray(p, dtype=float)
+    if len(y) != len(p) or not len(y):
+        raise ValueError("labels and probabilities must be non-empty and aligned")
+    if not np.isin(y, [0, 1]).all() or not np.isfinite(p).all() or np.any((p < 0.0) | (p > 1.0)):
+        raise ValueError("labels must be binary and probabilities must be finite in [0, 1]")
     return {
         "ece": float(expected_calibration_error(y, p, bins)),
         "brier": float(brier_score_loss(y, p)),
@@ -115,7 +119,9 @@ def _window_context_scores(train_df: pd.DataFrame, test_df: pd.DataFrame, train_
 def fuse_wef_acfm(y, detector_p, contextual: dict[str, np.ndarray], reliabilities=None, support_threshold=.60, conflict_threshold=.35) -> dict:
     """Compare WEF point confidence with ACFM interval-midpoint confidence."""
     y = np.asarray(y).astype(int)
-    detector_p = np.clip(np.asarray(detector_p, dtype=float), 0.0, 1.0)
+    detector_p = np.asarray(detector_p, dtype=float)
+    if not np.isfinite(detector_p).all() or np.any((detector_p < 0.0) | (detector_p > 1.0)):
+        raise ValueError("detector probabilities must be finite and in [0, 1]")
     n = len(y)
     if len(detector_p) != n or any(len(v) != n for v in contextual.values()):
         raise ValueError("fusion evidence arrays must align with labels")
