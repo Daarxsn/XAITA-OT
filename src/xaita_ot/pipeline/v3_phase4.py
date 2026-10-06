@@ -53,8 +53,8 @@ def _metrics(y, p):
 
 def _window_evidence(train_df, test_df, window_size, label_col="label"):
     """Generate frozen train-referenced evidence vectors for test windows."""
-    numeric_train = train_df.select_dtypes(include=[np.number]).drop(columns=[label_col], errors="ignore")
-    numeric_test = test_df.select_dtypes(include=[np.number]).drop(columns=[label_col], errors="ignore")
+    numeric_train = OTPreprocessor._numeric_features(train_df, label_col)
+    numeric_test = OTPreprocessor._numeric_features(test_df, label_col)
     common = [c for c in numeric_train.columns if c in numeric_test.columns]
     if not common:
         raise ValueError("ablation requires shared numeric telemetry")
