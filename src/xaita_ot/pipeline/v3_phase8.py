@@ -116,7 +116,17 @@ def _table8(phase3):
         for r in phase3.get("runs",[]):
             s=r.get("detector",{}) if key=="detector" else r.get("fusion",{}).get(key,{})
             runs.append(s)
-        rows.append({"Configuration":label,"Attribution Metric":key,"ECE ↓":_nanmean([x.get("ece") for x in runs]),"Mean Belief":_nanmean([x.get("belief_mean") for x in runs]),"Mean Plausibility":_nanmean([x.get("plausibility_mean") for x in runs]),"Interval Width":_nanmean([x.get("interval_width") for x in runs])})
+        if key == "WEF":
+            mean_belief = _nanmean([x.get("score_mean") for x in runs])
+            mean_plausibility = mean_belief
+            mean_width = 0.0 if mean_belief is not None else None
+        elif key == "ACFM":
+            mean_belief = _nanmean([x.get("belief_mean") for x in runs])
+            mean_plausibility = _nanmean([x.get("plausibility_mean") for x in runs])
+            mean_width = _nanmean([x.get("interval_width_mean") for x in runs])
+        else:
+            mean_belief = mean_plausibility = mean_width = None
+        rows.append({"Configuration":label,"Attribution Metric":key,"ECE ↓":_nanmean([x.get("ece") for x in runs]),"Mean Belief":mean_belief,"Mean Plausibility":mean_plausibility,"Interval Width":mean_width})
     return rows
 
 
