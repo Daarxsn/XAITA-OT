@@ -80,9 +80,7 @@ def fit_threshold_train_only(y_train, scores_train) -> float:
 
 def fit_bss_reference_train_only(train_df: pd.DataFrame, label_col="label") -> dict:
     """Fit a frozen behavioral reference profile from TRAIN telemetry only."""
-    numeric = train_df.select_dtypes(include=[np.number]).copy()
-    if label_col in numeric:
-        numeric = numeric.drop(columns=[label_col])
+    numeric = OTPreprocessor._numeric_features(train_df, label_col)
     if numeric.empty:
         raise ValueError("BSS reference requires numeric telemetry features")
     medians = numeric.median().fillna(0.0)
