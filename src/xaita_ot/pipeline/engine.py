@@ -84,7 +84,7 @@ class XAITAEngine:
                 fi = xai_feature_importance or feature_importance_linearized(matrix, feature_names)
             else:
                 fi = xai_feature_importance or feature_importance_linearized(np.zeros((1, 1, 1), dtype=np.float32), ["unknown"])
-            xai = build_explanation(ep.events[0], ep, ctx, risk, fi)
+            xai = build_explanation(ep.events[0], ep, ctx, risk, fi, attribution=best, detection_confidence=dc)
             validate_explanation(xai, ep, ctx, risk)
             xai["fingerprint"] = explanation_fingerprint(xai)
             detection = {"event_ids": [e.event_id for e in ep.events], "mean_detection_confidence": dc}
