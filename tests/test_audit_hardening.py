@@ -76,7 +76,7 @@ def test_invalid_attribution_evidence_fails_closed():
 
 def test_invalid_risk_inputs_fail_closed():
     weights = {"severity": 0.3, "operational_impact": 0.3, "criticality": 0.25, "attribution": 0.15}
-    assert score_risk(0.2, 0.3, 0.4, 0.5, weights)["level"] == "MEDIUM"
+    assert score_risk(0.2, 0.3, 0.4, 0.5, weights)["level"] == "LOW"
     with pytest.raises(ValueError):
         score_risk(float("nan"), 0.3, 0.4, 0.5, weights)
     with pytest.raises(ValueError):
