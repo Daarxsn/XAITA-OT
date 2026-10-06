@@ -62,6 +62,7 @@ def reliability_summary(y, p, bins: int = 10) -> dict:
         "ece": float(expected_calibration_error(y, p, bins)),
         "brier": float(brier_score_loss(y, p)),
         "bins": confidence_bins(y, p, bins),
+        "probabilities": p,
     }
 
 

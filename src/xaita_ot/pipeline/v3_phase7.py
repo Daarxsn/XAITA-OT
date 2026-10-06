@@ -138,7 +138,7 @@ def build_case(csv_path: str | Path, dataset: str, cfg: AppConfig, seed: int = 4
             "H3": benign_evidence,
         }
         assessment = assess(
-            [h.name for h in hypotheses],
+            [h.hypothesis_id for h in hypotheses],
             evidence_by_hypothesis,
             reliabilities,
             .60,

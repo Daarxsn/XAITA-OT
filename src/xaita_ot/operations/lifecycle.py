@@ -7,7 +7,6 @@ import json
 import shutil
 import tarfile
 import tempfile
-import stat
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -144,7 +143,7 @@ def _validate_archive_members(archive: tarfile.TarFile, manifest: dict[str, Any]
             continue
         if rel_name not in expected:
             raise ValueError(f"unexpected archive member: {member.name}")
-        if not member.isfile() or member.issym() or member.islnk() or not stat.S_ISREG(member.mode):
+        if not member.isfile() or member.issym() or member.islnk():
             raise ValueError(f"backup contains non-regular member: {member.name}")
         actual_files.add(rel_name)
     missing = expected - actual_files

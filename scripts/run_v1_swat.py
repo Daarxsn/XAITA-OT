@@ -1,6 +1,7 @@
 """Execute the complete V1 SWaT path: observation -> detection -> BTAE -> attribution -> XAI -> risk -> CTI."""
 import argparse
 import json
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,6 +17,19 @@ from xaita_ot.pipeline.evaluation import chronological_split, binary_metrics, ex
 from xaita_ot.models.trainer import Detector
 from xaita_ot.pipeline.engine import XAITAEngine
 from xaita_ot.explain.shap_xai import shap_feature_importance
+
+
+def _json_safe(value):
+    """Recursively replace non-finite numeric values with JSON null."""
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, (float, np.floating)):
+        return float(value) if math.isfinite(float(value)) else None
+    if isinstance(value, (int, str, bool)) or value is None:
+        return value
+    return value
 
 
 def main():
@@ -118,8 +132,8 @@ def main():
         "incidents": incidents,
     }
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-    Path(args.out).write_text(json.dumps(result, indent=2, allow_nan=False, default=str), encoding="utf-8")
-    print(json.dumps(result, indent=2, allow_nan=False, default=str))
+    Path(args.out).write_text(json.dumps(_json_safe(result), indent=2, allow_nan=False, default=str), encoding="utf-8")
+    print(json.dumps(_json_safe(result), indent=2, allow_nan=False, default=str))
 
 
 if __name__ == "__main__":
