@@ -17,6 +17,7 @@ from ..config import AppConfig
 from ..core.seed import set_seed
 from ..io.adapters import adapt_dataset
 from ..io.telemetry import load_csv, semantic_harmonize
+from ..io.dataset_validation import validate_csv, DatasetValidationError
 from .evaluation import binary_metrics, chronological_split
 from .preprocess import OTPreprocessor
 from .v3_evaluation import _train_predict
@@ -67,8 +68,20 @@ def _prepare_pair(source_df, target_df, cfg):
 
 def evaluate_transfer(source_name, target_name, source_path, target_path, cfg: AppConfig, seeds=None, detectors=("random_forest", "cnn", "lstm", "cnn_lstm")) -> dict:
     seeds = list(cfg.experiment.seeds if seeds is None else seeds)
-    source = adapt_dataset(semantic_harmonize(load_csv(source_path)), source_name)
-    target = adapt_dataset(semantic_harmonize(load_csv(target_path)), target_name)
+    source_validation = validate_csv(source_path, source_name)
+    target_validation = validate_csv(target_path, target_name)
+    if source_validation.validation_status != "pass" or target_validation.validation_status != "pass":
+        raise DatasetValidationError(
+            f"{source_name}->{target_name}: both datasets must pass validation before cross-environment evaluation"
+        )
+    source = adapt_dataset(
+        semantic_harmonize(load_csv(source_path, strict_timestamps=True, sort_and_deduplicate=False)),
+        source_name,
+    )
+    target = adapt_dataset(
+        semantic_harmonize(load_csv(target_path, strict_timestamps=True, sort_and_deduplicate=False)),
+        target_name,
+    )
     train_w, target_w, prep_meta = _prepare_pair(source, target, cfg)
     if len(train_w.X) == 0 or len(target_w.X) == 0:
         raise ValueError(f"{source_name}->{target_name}: empty source-train or target-test windows")
