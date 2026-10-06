@@ -227,15 +227,12 @@ def validate_csv(
             if source_label_column:
                 labels = frame[source_label_column]
                 label_values.update(str(value) for value in labels.dropna().unique())
-                if pd.api.types.is_numeric_dtype(labels):
-                    numeric_labels = pd.to_numeric(labels, errors="coerce")
-                    unknown_label_rows += int((numeric_labels < 0).sum())
-                else:
-                    numeric_labels = pd.to_numeric(labels, errors="coerce")
-                    unknown_label_rows += int((numeric_labels.notna() & (numeric_labels < 0)).sum())
+                numeric_labels = pd.to_numeric(labels, errors="coerce")
+                chunk_unknown = int((numeric_labels.notna() & (numeric_labels < 0)).sum())
+                unknown_label_rows += chunk_unknown
                 attacks = _label_is_attack(labels)
                 attack_rows += int(attacks.sum())
-                normal_rows += int((~attacks).sum()) - unknown_label_rows
+                normal_rows += int((~attacks).sum()) - chunk_unknown
 
     except Exception as exc:
         raise DatasetValidationError(
