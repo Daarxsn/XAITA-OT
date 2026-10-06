@@ -31,7 +31,28 @@ def _json_default(value: Any) -> str:
 
 def provenance_digest(manifest: list[dict[str, Any]]) -> str:
     """Return a stable SHA-256 digest for an ordered provenance manifest."""
+    validate_provenance(manifest)
     return hashlib.sha256(canonical_json(manifest).encode("utf-8")).hexdigest()
+
+
+def _require_text(value: Any, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ProvenanceValidationError(f"{field} must be a non-empty string")
+    return value.strip()
+
+
+def validate_provenance_item(item: dict[str, Any]) -> None:
+    """Validate the complete shape of one provenance lineage item."""
+    if not isinstance(item, dict):
+        raise ProvenanceValidationError("provenance items must be mappings")
+    required = ("evidence_id", "observation_id", "detection_id", "episode_id", "event_id")
+    for field in required:
+        _require_text(item.get(field), field)
+    refs = item.get("context_refs", [])
+    if not isinstance(refs, list):
+        raise ProvenanceValidationError("context_refs must be a list")
+    for ref in refs:
+        _require_text(ref, "context_refs entry")
 
 
 def build_provenance_manifest(episode, context) -> list[dict[str, Any]]:
@@ -87,6 +108,7 @@ def validate_provenance(
         raise ProvenanceValidationError("provenance event order does not match episode event order")
 
     for item in manifest:
+        validate_provenance_item(item)
         if not item.get("observation_id") or not item.get("detection_id") or not item.get("episode_id"):
             raise ProvenanceValidationError("provenance items require observation, detection and episode references")
         if episode_id is not None and item["episode_id"] != episode_id:
