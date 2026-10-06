@@ -24,6 +24,7 @@ from ..core.attribution_baselines import weighted_evidence_fusion
 from ..core.seed import set_seed
 from ..io.adapters import adapt_dataset
 from ..io.telemetry import load_csv, semantic_harmonize
+from ..io.dataset_validation import validate_csv, DatasetValidationError
 from .evaluation import chronological_split, expected_calibration_error
 from .preprocess import OTPreprocessor
 
@@ -161,7 +162,13 @@ def fuse_wef_acfm(y, detector_p, contextual: dict[str, np.ndarray], reliabilitie
 def evaluate_dataset(csv_path: str | Path, dataset: str, cfg: AppConfig, seed: int = 42, bins: int = 10) -> dict:
     """Run calibration evaluation on one environment with train-only preprocessing."""
     set_seed(seed)
-    df = adapt_dataset(semantic_harmonize(load_csv(csv_path)), dataset)
+    validation = validate_csv(csv_path, dataset)
+    if validation.validation_status != "pass":
+        raise DatasetValidationError(f"{dataset}: dataset validation must pass before calibration evaluation")
+    df = adapt_dataset(
+        semantic_harmonize(load_csv(csv_path, strict_timestamps=True, sort_and_deduplicate=False)),
+        dataset,
+    )
     train, _, test = chronological_split(df, cfg.experiment.train_fraction, cfg.experiment.validation_fraction, cfg.attack_label_column, cfg.experiment.episode_aware)
     prep = OTPreprocessor(cfg.model.window_size)
     train_w = prep.fit_transform_train(train, cfg.attack_label_column)
