@@ -11,7 +11,9 @@ def _clamp(value: float) -> float:
     value = float(value)
     if not math.isfinite(value):
         raise AttributionValidationError("evidence values must be finite")
-    return max(0.0, min(1.0, value))
+    if not 0.0 <= value <= 1.0:
+        raise AttributionValidationError("evidence values must be in [0, 1]")
+    return value
 
 
 def assess(hypotheses, evidence, reliabilities, support_threshold=0.60, conflict_threshold=0.35):
