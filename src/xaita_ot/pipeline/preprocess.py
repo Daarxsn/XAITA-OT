@@ -20,6 +20,20 @@ class OTPreprocessor:
     """Leakage-controlled numeric scaling + train-fitted categorical encoding."""
 
     CATEGORICAL_COLUMNS = ("asset", "protocol", "src_ip", "dst_ip")
+    LABEL_ALIASES = {
+        "label", "attack", "attack state", "normal/attack", "att_flag",
+        "attack_label", "type", "normal", "malicious",
+    }
+
+    @classmethod
+    def _numeric_features(cls, df: pd.DataFrame, label_col: str) -> pd.DataFrame:
+        numeric = self._numeric_features(df, label_col)
+        blocked = cls.LABEL_ALIASES | {str(label_col).strip().lower()}
+        drop = [
+            column for column in numeric.columns
+            if str(column).strip().lower() in blocked
+        ]
+        return numeric.drop(columns=drop, errors="ignore")
 
     def __init__(self, window_size: int = 32):
         self.window_size = window_size
@@ -71,8 +85,6 @@ class OTPreprocessor:
         return self._window(X, y, df)
 
     def _window(self, X, y, df) -> WindowedData:
-        if len(X) < self.window_size:
-            raise ValueError(f"Need at least {self.window_size} rows, got {len(X)}")
         if len(X) < self.window_size:
             raise ValueError(f"Need at least {self.window_size} rows, got {len(X)}")
 
