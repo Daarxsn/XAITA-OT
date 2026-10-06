@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 import json
 
 from ..core.provenance import build_provenance_manifest, provenance_digest, validate_provenance
+from ..core.trace import build_analyst_trace
 from .package import cti_package_metadata
 
 
@@ -26,7 +27,7 @@ def generate_cti(incident_id, detection, episode, context, attribution, xai, ris
         }
         for e in episode.events
     ]
-    return {
+    analyst_trace = build_analyst_trace(\n        provenance_manifest, episode_id=episode.episode_id, event_ids=provenance, context=context\n    )\n    return {
       'schema_version': 'XAITA-OT-CTI-1.0',
       'cti_package': cti_package_metadata(),
       'incident_id': incident_id,
@@ -46,7 +47,7 @@ def generate_cti(incident_id, detection, episode, context, attribution, xai, ris
       'risk': risk,
       'provenance': provenance,
       'provenance_manifest': provenance_manifest,
-      'provenance_digest': provenance_hash,
+      'provenance_digest': provenance_hash,\n      'analyst_trace': analyst_trace,
       'provenance_links': {
           'observations': observation_ids,
           'detections': provenance,
