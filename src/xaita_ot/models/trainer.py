@@ -44,9 +44,21 @@ class Detector:
         self.threshold = 0.5
 
     def fit(self, X, y, epochs=8, batch_size=128, lr=1e-3):
-        ds = TensorDataset(torch.from_numpy(X), torch.from_numpy(y.astype(np.float32)))
+        X = np.asarray(X, dtype=np.float32)
+        y = np.asarray(y, dtype=np.float32)
+        if X.ndim != 3 or len(X) != len(y) or not len(X):
+            raise ValueError("training data must be non-empty with shapes [N, T, F] and [N]")
+        if not np.isfinite(X).all() or not np.isfinite(y).all():
+            raise ValueError("training data must be finite")
+        if not np.isin(y, [0.0, 1.0]).all():
+            raise ValueError("training labels must be binary 0/1")
+        if np.unique(y).size < 2:
+            raise ValueError("training requires both normal (0) and attack (1) classes")
+        if epochs <= 0 or batch_size <= 0 or lr <= 0:
+            raise ValueError("epochs, batch_size and lr must be positive")
+        ds = TensorDataset(torch.from_numpy(X), torch.from_numpy(y))
         loader = DataLoader(ds, batch_size=batch_size, shuffle=True)
-        pos = max(1, int(y.sum())); neg = max(1, len(y) - pos)
+        pos = int(y.sum()); neg = len(y) - pos
         weight = torch.tensor([neg / pos], device=self.device)
         loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=weight)
         opt = torch.optim.AdamW(self.model.parameters(), lr=lr, weight_decay=1e-4)
@@ -68,6 +80,10 @@ class Detector:
         return np.concatenate(logits) if logits else np.array([])
 
     def evaluate(self, X, y):
+        X = np.asarray(X, dtype=np.float32)
+        y = np.asarray(y).astype(int)
+        if len(X) != len(y) or not np.isfinite(X).all():
+            raise ValueError("evaluation data must be aligned and finite")
         p = self.predict_proba(X); pred = (p >= self.threshold).astype(int)
         pr, re, f1, _ = precision_recall_fscore_support(y, pred, average='binary', zero_division=0)
         auc = roc_auc_score(y, p) if len(np.unique(y)) > 1 else float('nan')
@@ -80,4 +96,14 @@ class Detector:
 
     def load(self, path):
         obj = torch.load(path, map_location=self.device, weights_only=False)
-        self.model.load_state_dict(obj['state_dict']); self.threshold = obj.get('threshold', 0.5); return self
+        if not isinstance(obj, dict) or not isinstance(obj.get('state_dict'), dict):
+            raise ValueError("invalid detector checkpoint")
+        threshold = float(obj.get('threshold', 0.5))
+        if not 0.0 <= threshold <= 1.0:
+            raise ValueError("checkpoint threshold must be in [0, 1]")
+        architecture = obj.get('architecture')
+        if architecture is not None and architecture != self.architecture:
+            raise ValueError(f"checkpoint architecture '{architecture}' does not match '{self.architecture}'")
+        self.model.load_state_dict(obj['state_dict'])
+        self.threshold = threshold
+        return self
