@@ -30,7 +30,13 @@ def _normalize_detector_name(name: str) -> str:
 
 def run_detection(csv_path: str | Path, dataset: str, config: AppConfig, seed: int | None = None, detector: str | None = None) -> ExperimentRun:
     started = time.perf_counter(); run_seed = config.seed if seed is None else seed; set_seed(run_seed)
-    df = adapt_dataset(semantic_harmonize(load_csv(csv_path, require_timestamp=False)), dataset)
+    raw = load_csv(
+        csv_path,
+        require_timestamp=False,
+        strict_timestamps=False,
+        sort_and_deduplicate=False,
+    )
+    df = adapt_dataset(semantic_harmonize(raw), dataset)
     if 'timestamp' not in df.columns:
         raise ValueError("Missing required columns: ['timestamp']")
     if config.attack_label_column not in df.columns:
