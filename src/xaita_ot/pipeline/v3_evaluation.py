@@ -67,6 +67,10 @@ def fit_threshold_train_only(y_train, scores_train) -> float:
     scores_train = np.asarray(scores_train, dtype=float)
     if len(y_train) != len(scores_train) or not len(y_train):
         raise ValueError("training labels and scores must be non-empty and aligned")
+    if not np.isfinite(scores_train).all() or np.any((scores_train < 0.0) | (scores_train > 1.0)):
+        raise ValueError("training scores must be finite probabilities in [0, 1]")
+    if not np.isin(y_train, [0, 1]).all():
+        raise ValueError("training labels must be binary 0/1")
     candidates = np.unique(np.clip(scores_train, 0.0, 1.0))
     candidates = np.unique(np.r_[0.0, candidates, 0.5, 1.0])
     best = (0.5, -1.0)
@@ -181,6 +185,12 @@ def reproducibility_audit(df: pd.DataFrame, cfg, label_col="label", seed=42) -> 
 
 def confidence_bins(y, p, bins=10) -> list[dict]:
     y, p = np.asarray(y).astype(int), np.asarray(p, dtype=float)
+    if len(y) != len(p) or not len(y):
+        raise ValueError("labels and probabilities must be non-empty and aligned")
+    if not 1 <= int(bins) <= 100:
+        raise ValueError("bins must be between 1 and 100")
+    if not np.isin(y, [0, 1]).all() or not np.isfinite(p).all() or np.any((p < 0.0) | (p > 1.0)):
+        raise ValueError("labels must be binary and probabilities must be finite in [0, 1]")
     edges = np.linspace(0, 1, bins + 1)
     out = []
     for i, (lo, hi) in enumerate(zip(edges[:-1], edges[1:])):
@@ -199,6 +209,10 @@ def calibration_summary(y, p, bins=10) -> dict:
 
 def _train_predict(train_wd, test_wd, cfg, architecture, seed):
     set_seed(seed)
+    if len(train_wd.X) == 0 or len(test_wd.X) == 0:
+        raise ValueError("model execution requires non-empty train and test windows")
+    if len(np.unique(train_wd.y)) < 2:
+        raise ValueError("model training requires both normal (0) and attack (1) classes")
     if architecture == "random_forest":
         clf = RandomForestClassifier(n_estimators=120, random_state=seed, n_jobs=-1, class_weight="balanced")
         clf.fit(train_wd.X.reshape(len(train_wd.X), -1), train_wd.y)
@@ -251,6 +265,8 @@ def evidence_ablation(evidence, hypotheses, reliabilities, support_threshold=.60
 def sensitivity_curve(evidence, hypotheses, reliabilities, parameter, values) -> list[dict]:
     """Sweep supported attribution parameters and record best-hypothesis interval."""
     from ..core.attribution import assess
+    if parameter not in {"evidence_reliability", "bss_weight", "attribution_threshold"}:
+        raise ValueError(f"unsupported sensitivity parameter: {parameter}")
     rows = []
     for value in values:
         rel = dict(reliabilities)
@@ -259,13 +275,17 @@ def sensitivity_curve(evidence, hypotheses, reliabilities, parameter, values) ->
         elif parameter == "bss_weight": rel["BSS"] = float(value)
         elif parameter == "attribution_threshold": threshold = float(value)
         assessment = assess(hypotheses, evidence, rel, threshold, .35)
-        best = max(assessment, key=lambda x: x["belief"])
-        rows.append({"parameter": parameter, "value": float(value), "best_hypothesis": best["hypothesis"], "belief": float(best["belief"]), "plausibility": float(best["plausibility"]), "interval_width": float(best["interval_width"])})
+        best = max(assessment, key=lambda x: x.belief)
+        rows.append({"parameter": parameter, "value": float(value), "best_hypothesis": best.hypothesis, "belief": float(best.belief), "plausibility": float(best.plausibility), "interval_width": float(best.interval_width)})
     return rows
 
 
 def mean_std_ci(values, confidence=.95) -> dict:
     values = np.asarray(values, dtype=float)
+    if not 0.0 < float(confidence) < 1.0:
+        raise ValueError("confidence must be between 0 and 1")
+    if values.size and not np.isfinite(values).all():
+        raise ValueError("statistical values must be finite")
     n = len(values)
     mean = float(np.mean(values)) if n else float("nan")
     std = float(np.std(values, ddof=1)) if n > 1 else 0.0
@@ -280,6 +300,8 @@ def mean_std_ci(values, confidence=.95) -> dict:
 def paired_effect(a, b) -> dict:
     """Paired difference, Cohen's dz and paired t-test for matched runs."""
     a, b = np.asarray(a, dtype=float), np.asarray(b, dtype=float)
+    if a.size and (not np.isfinite(a).all() or not np.isfinite(b).all()):
+        raise ValueError("paired statistical values must be finite")
     if len(a) != len(b) or len(a) < 2:
         return {"n": int(min(len(a), len(b))), "mean_difference": None, "cohens_dz": None, "p_value": None}
     d = a - b
