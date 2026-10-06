@@ -28,14 +28,12 @@ from .evaluation import chronological_split
 from .preprocess import OTPreprocessor
 
 ATTACK_MAPPINGS = {
-    "network": [{"technique_id": "T1071", "name": "Application Layer Protocol", "tactic": "Command and Control"}],
-    "command": [{"technique_id": "T1059", "name": "Command and Scripting Interpreter", "tactic": "Execution"}],
-    "credential": [{"technique_id": "T1078", "name": "Valid Accounts", "tactic": "Defense Evasion / Persistence"}],
-    "scan": [{"technique_id": "T1046", "name": "Network Service Scanning", "tactic": "Discovery"}],
-    "dos": [{"technique_id": "T1499", "name": "Endpoint Denial of Service", "tactic": "Impact"}],
-    "exfil": [{"technique_id": "T1041", "name": "Exfiltration Over C2 Channel", "tactic": "Exfiltration"}],
-    "attack": [{"technique_id": "T1071", "name": "Application Layer Protocol", "tactic": "Command and Control"}],
+    "network": [{"technique_id": "T0869", "name": "Standard Application Layer Protocol", "tactic": "Command and Control"}],
+    "command": [{"technique_id": "T0855", "name": "Unauthorized Command Message", "tactic": "Execution"}],
+    "scan": [{"technique_id": "T0846", "name": "Remote System Discovery", "tactic": "Discovery"}],
+    "attack": [{"technique_id": "T0855", "name": "Unauthorized Command Message", "tactic": "Execution"}],
 }
+
 
 
 def _id(prefix: str, *parts) -> str:
