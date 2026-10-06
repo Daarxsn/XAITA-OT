@@ -11,7 +11,10 @@ def normalize_labels(df: pd.DataFrame, candidates=('label','Label','Normal/Attac
         return out
     vals = out[source]
     if pd.api.types.is_numeric_dtype(vals):
-        out['label'] = (vals.astype(float) > 0).astype(int)
+        numeric = pd.to_numeric(vals, errors="coerce")
+        if numeric.isna().any():
+            raise ValueError(f"Label column '{source}' contains non-numeric values that cannot be normalized")
+        out['label'] = (numeric > 0).astype(int)
         return out
     text = vals.astype(str).str.strip().str.lower()
     benign = {'normal', 'benign', '0', '0.0', 'false', 'no', '', 'nan', 'none', 'null'}
