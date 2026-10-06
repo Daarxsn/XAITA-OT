@@ -132,9 +132,17 @@ def validate_explanation(explanation, episode, context, risk):
 
 
 def explanation_fingerprint(explanation):
-    """Return a stable digest of an already-validated explanation."""
+    """Return a stable digest of an already-validated, JSON-native explanation."""
+    if not isinstance(explanation, dict):
+        raise ExplanationValidationError("explanation must be a mapping")
     try:
-        payload = json.dumps(explanation, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
-    except (TypeError, ValueError) as exc:
-        raise ExplanationValidationError("explanation is not deterministically serializable") from exc
+        payload = json.dumps(
+            explanation,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ExplanationValidationError("explanation is not deterministically JSON-serializable") from exc
     return hashlib.sha256(payload).hexdigest()
