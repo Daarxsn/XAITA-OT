@@ -33,8 +33,15 @@ DATASET_INFO = [
 
 
 def _load_json(path: Path) -> dict | None:
-    if not path.exists(): return None
-    return json.loads(path.read_text(encoding="utf-8"))
+    if not path.exists():
+        return None
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Invalid JSON artifact: {path}") from exc
+    if not isinstance(value, dict):
+        raise ValueError(f"Expected JSON object artifact: {path}")
+    return value
 
 
 def _nanmean(values):
