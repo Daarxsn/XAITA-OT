@@ -35,7 +35,7 @@ def perturbation_fidelity(predict_fn, X, importances, top_k=1, baseline=0.0):
         raise ValueError("predict_fn must return one score per sample")
     if not np.isfinite(original).all() or not np.isfinite(changed).all():
         raise ValueError("predict_fn returned non-finite scores")
-    return float(np.mean(np.abs(original - changed)))
+    return validate_fidelity_score(float(np.mean(np.abs(original - changed))))
 
 
 def explanation_stability(values_a, values_b):
@@ -47,4 +47,20 @@ def explanation_stability(values_a, values_b):
     if not np.isfinite(a).all() or not np.isfinite(b).all():
         raise ValueError("explanation vectors must be finite")
     denom = np.linalg.norm(a) * np.linalg.norm(b)
-    return float(np.dot(a, b) / denom) if denom else 1.0
+    return validate_stability_score(float(np.dot(a, b) / denom) if denom else 1.0)
+
+
+def validate_fidelity_score(score: float) -> float:
+    """Validate and normalize a perturbation-fidelity score."""
+    value = float(score)
+    if not np.isfinite(value) or value < 0.0:
+        raise ValueError("fidelity score must be finite and non-negative")
+    return value
+
+
+def validate_stability_score(score: float) -> float:
+    """Validate a cosine-similarity explanation stability score."""
+    value = float(score)
+    if not np.isfinite(value) or not -1.0 <= value <= 1.0:
+        raise ValueError("stability score must be finite and within [-1, 1]")
+    return value
