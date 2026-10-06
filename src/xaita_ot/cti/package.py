@@ -12,7 +12,11 @@ PINNED_FRAMEWORK_VERSION = "19.2"
 
 
 def _root() -> Path:
-    return Path(os.environ.get("XAITA_OT_ROOT", Path.cwd()))
+    configured = os.environ.get("XAITA_OT_ROOT")
+    if configured:
+        return Path(configured).resolve()
+    candidate = Path(__file__).resolve().parents[3]
+    return candidate if (candidate / "configs").is_dir() else Path.cwd().resolve()
 
 
 def load_cti_package(path: str | Path | None = None) -> dict:
