@@ -28,6 +28,10 @@ def main():
     detectors = tuple(args.detectors) if args.detectors else ("random_forest", "cnn", "lstm", "cnn_lstm")
     result = cross_environment_phase2(paths, cfg, seeds=args.seeds, detectors=detectors)
     write_phase2_artifacts(result, args.out)
+    if result.get("status") not in {None, "PASS"}:
+        raise SystemExit("V3 Phase 2 cross-environment acceptance: FAIL")
+    if result.get("pair_count") != 6:
+        raise SystemExit(f"V3 Phase 2 acceptance failed: expected 6 transfers, got {result.get('pair_count')}")
     print("V3 Phase 2 cross-environment acceptance: PASS")
     print(f"Transfers: {result['pair_count']}/6")
     print(f"Detectors: {', '.join(detectors)}")
