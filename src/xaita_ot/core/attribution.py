@@ -1,6 +1,7 @@
 from dataclasses import asdict
 import math
 from .schemas import AttributionAssessment
+from .evidence import validate_attribution_evidence
 
 
 class AttributionValidationError(ValueError):
