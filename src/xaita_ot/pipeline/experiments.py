@@ -31,10 +31,25 @@ def _normalize_detector_name(name: str) -> str:
 def run_detection(csv_path: str | Path, dataset: str, config: AppConfig, seed: int | None = None, detector: str | None = None) -> ExperimentRun:
     started = time.perf_counter(); run_seed = config.seed if seed is None else seed; set_seed(run_seed)
     df = adapt_dataset(semantic_harmonize(load_csv(csv_path, require_timestamp=False)), dataset)
-    if 'timestamp' not in df.columns: raise ValueError("Missing required columns: ['timestamp']")
+    if 'timestamp' not in df.columns:
+        raise ValueError("Missing required columns: ['timestamp']")
+    if config.attack_label_column not in df.columns:
+        raise ValueError(f"Missing required label column: '{config.attack_label_column}'")
     df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce', utc=True)
-    df = df.dropna(subset=['timestamp']).drop_duplicates().sort_values('timestamp').reset_index(drop=True)
-    if len(df) < max(20, config.model.window_size * 3): raise ValueError(f'Insufficient usable rows for {dataset}: {len(df)}')
+    if df['timestamp'].isna().any():
+        raise ValueError(f"{dataset} contains invalid timestamps; run validate-data and fix the source CSV")
+    if df['timestamp'].duplicated().any():
+        raise ValueError(f"{dataset} contains duplicate timestamps; refusing to alter benchmark semantics")
+    if not df['timestamp'].is_monotonic_increasing:
+        raise ValueError(f"{dataset} timestamps are not sorted; refusing to reorder benchmark semantics")
+    if df[config.attack_label_column].isna().any():
+        raise ValueError(f"{dataset} contains missing labels; refusing to impute benchmark labels")
+    labels = pd.to_numeric(df[config.attack_label_column], errors='coerce')
+    if labels.isna().any() or not labels.isin([0, 1]).all():
+        raise ValueError(f"{dataset} labels must be binary 0/1 after dataset adaptation")
+    df[config.attack_label_column] = labels.astype(int)
+    if len(df) < max(20, config.model.window_size * 3):
+        raise ValueError(f'Insufficient usable rows for {dataset}: {len(df)}')
     if df.attrs.get('timestamp_semantics') == 'synthetic_event_order':
         train, val, test = group_stratified_split(df, train=config.experiment.train_fraction, val=config.experiment.validation_fraction, label_col=config.attack_label_column, seed=run_seed); split_protocol='group_stratified'
     else:
