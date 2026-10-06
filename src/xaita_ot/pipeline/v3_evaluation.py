@@ -15,6 +15,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import f1_score
 
 from ..core.seed import set_seed
+from ..core.schemas import DetectionEvent
 from ..io.telemetry import load_csv, semantic_harmonize
 from ..io.adapters import adapt_dataset
 from .evaluation import chronological_split, binary_metrics, expected_calibration_error, _positive_probability
