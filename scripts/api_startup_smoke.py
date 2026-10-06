@@ -52,7 +52,8 @@ def main() -> int:
             raise RuntimeError(f"API did not become ready: {last_error}\n{output}")
 
         status, body = request("/ready")
-        assert status == 200 and body["status"] == "ready", body
+        if not (status == 200 and body.get("status") == "ready"):
+            raise RuntimeError(f"/ready failed: HTTP {status}: {body}")
         print(f"/ready: {body}")
 
         event = {
@@ -64,7 +65,8 @@ def main() -> int:
             "features": {"flow_rate": 1.0},
         }
         status, body = request("/v1/analyze", [event])
-        assert status == 200 and "incidents" in body, body
+        if not (status == 200 and "incidents" in body):
+            raise RuntimeError(f"/v1/analyze failed: HTTP {status}: {body}")
         print(f"/v1/analyze: {body}")
         print("API startup smoke: PASS")
         return 0
