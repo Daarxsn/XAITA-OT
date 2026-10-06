@@ -42,10 +42,14 @@ def shap_feature_importance(model, background, samples, feature_names, top_k=8):
     values = np.asarray(values)
     if values.ndim == 4 and values.shape[-1] == 1:
         values = values[..., 0]
-    if values.ndim != 3:
+    if values.ndim != 3 or values.shape[-1] != len(feature_names) or values.shape[0] != len(samples):
         raise RuntimeError(f"Unexpected SHAP output shape: {values.shape}")
+    if not np.isfinite(values).all():
+        raise RuntimeError("SHAP returned non-finite attribution values")
     importance = np.mean(np.abs(values), axis=(0, 1))
-    total = float(importance.sum()) or 1.0
+    total = float(importance.sum())
+    if not np.isfinite(total) or total <= 0.0:
+        return []
     order = np.argsort(importance)[::-1][:top_k]
     return [
         {"feature": feature_names[i], "index": int(i), "importance": float(importance[i] / total), "mean_abs_shap": float(importance[i])}
