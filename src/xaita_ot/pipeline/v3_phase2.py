@@ -33,9 +33,7 @@ TRANSFER_PAIRS = (
 
 def canonical_transfer_features(df: pd.DataFrame, label_col="label") -> pd.DataFrame:
     """Project arbitrary numeric telemetry into shared domain-invariant features."""
-    numeric = df.select_dtypes(include=[np.number]).copy()
-    if label_col in numeric:
-        numeric = numeric.drop(columns=[label_col])
+    numeric = OTPreprocessor._numeric_features(df, label_col)
     if numeric.empty:
         raise ValueError("cross-environment evaluation requires numeric telemetry")
     numeric = numeric.replace([np.inf, -np.inf], np.nan)
