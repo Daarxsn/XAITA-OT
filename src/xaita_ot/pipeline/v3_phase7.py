@@ -23,6 +23,7 @@ from ..core.schemas import DetectionEvent, AttributionHypothesis, CTIProduct
 from ..core.seed import set_seed
 from ..io.adapters import adapt_dataset
 from ..io.telemetry import load_csv, semantic_harmonize
+from ..io.dataset_validation import validate_csv, DatasetValidationError
 from .evaluation import chronological_split
 from .preprocess import OTPreprocessor
 
@@ -87,11 +88,22 @@ def _evidence(events: list[DetectionEvent]) -> tuple[dict[str, float], dict[str,
 def build_case(csv_path: str | Path, dataset: str, cfg: AppConfig, seed: int = 42, top_n: int = 1) -> dict:
     """Select and reconstruct the highest-confidence attack episode(s)."""
     set_seed(seed)
-    df = adapt_dataset(semantic_harmonize(load_csv(csv_path)), dataset)
+    validation = validate_csv(csv_path, dataset)
+    if validation.validation_status != "pass":
+        raise DatasetValidationError(f"{dataset}: dataset validation must pass before case-study execution")
+    df = adapt_dataset(
+        semantic_harmonize(load_csv(csv_path, strict_timestamps=True, sort_and_deduplicate=False)),
+        dataset,
+    )
     train, _, test = chronological_split(df, cfg.experiment.train_fraction, cfg.experiment.validation_fraction, "label", cfg.experiment.episode_aware)
     prep = OTPreprocessor(cfg.model.window_size)
     train_w = prep.fit_transform_train(train, "label"); test_w = prep.transform(test, "label")
-    if len(train_w.X) == 0 or len(test_w.X) == 0 or len(np.unique(train_w.y)) < 2:
+    if (
+        len(train_w.X) == 0
+        or len(test_w.X) == 0
+        or len(np.unique(train_w.y)) < 2
+        or len(np.unique(test_w.y)) < 2
+    ):
         raise ValueError(f"{dataset}: case study requires non-empty two-class training/test windows")
     clf = RandomForestClassifier(n_estimators=120, random_state=seed, n_jobs=1, class_weight="balanced")
     flat_train = train_w.X.reshape(len(train_w.X), -1); flat_test = test_w.X.reshape(len(test_w.X), -1)
