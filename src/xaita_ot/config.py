@@ -1,6 +1,7 @@
 from pathlib import Path
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 import yaml
+import math
 
 
 class ModelConfig(BaseModel):
@@ -28,11 +29,19 @@ class CorrelationConfig(BaseModel):
         required = {"temporal", "asset", "protocol", "communication", "sequence", "behavior"}
         if set(value) != required:
             raise ValueError(f"correlation weights must contain exactly {sorted(required)}")
-        if any(v < 0 for v in value.values()):
-            raise ValueError("correlation weights must be non-negative")
-        if abs(sum(value.values()) - 1.0) > 1e-6:
+        if any(not math.isfinite(float(v)) or float(v) < 0 for v in value.values()):
+            raise ValueError("correlation weights must be finite and non-negative")
+        if abs(sum(float(v) for v in value.values()) - 1.0) > 1e-6:
             raise ValueError("correlation weights must sum to 1.0")
-        return value
+        return {str(k): float(v) for k, v in value.items()}
+
+    @model_validator(mode="after")
+    def validate_correlation_parameters(self):
+        if not math.isfinite(self.temporal_window_seconds) or self.temporal_window_seconds <= 0:
+            raise ValueError("temporal_window_seconds must be finite and positive")
+        if not math.isfinite(self.threshold) or not 0.0 <= self.threshold <= 1.0:
+            raise ValueError("correlation threshold must be finite and in [0, 1]")
+        return self
 
 
 class AttributionConfig(BaseModel):
@@ -51,11 +60,49 @@ class AttributionConfig(BaseModel):
         "H3": {"DC": 0.85, "BSS": 0.80, "ECS": 0.70, "EC": 0.75, "MAS": 0.80},
     })
 
+    @field_validator("reliability")
+    @classmethod
+    def reliability_valid(cls, value):
+        required = {"DC", "BSS", "ECS", "EC", "MAS"}
+        if set(value) != required:
+            raise ValueError(f"attribution reliability must contain exactly {sorted(required)}")
+        if any(not math.isfinite(float(v)) or not 0.0 <= float(v) <= 1.0 for v in value.values()):
+            raise ValueError("attribution reliability values must be finite and in [0, 1]")
+        return {str(k): float(v) for k, v in value.items()}
+
+    @field_validator("methods")
+    @classmethod
+    def methods_valid(cls, value):
+        allowed = {"DC", "DC+BSS", "DC+BSS+ECS", "DC+BSS+ECS+MAS", "WEF", "ACFM"}
+        if not value or len(value) != len(set(value)) or not set(value).issubset(allowed):
+            raise ValueError("attribution methods must be unique supported configurations")
+        return value
+
+    @model_validator(mode="after")
+    def thresholds_valid(self):
+        if not 0.0 < self.conflict_threshold < self.support_threshold < 1.0:
+            raise ValueError("attribution thresholds must satisfy 0 < conflict < support < 1")
+        if not math.isfinite(self.ambiguity_margin) or not 0.0 <= self.ambiguity_margin < 1.0:
+            raise ValueError("ambiguity_margin must be finite and in [0, 1)")
+        return self
+
 
 class RiskConfig(BaseModel):
     weights: dict[str, float] = Field(default_factory=lambda: {
         "severity": 0.30, "operational_impact": 0.30, "criticality": 0.25, "attribution": 0.15
     })
+
+    @field_validator("weights")
+    @classmethod
+    def risk_weights_valid(cls, value):
+        required = {"severity", "operational_impact", "criticality", "attribution"}
+        if set(value) != required:
+            raise ValueError(f"risk weights must contain exactly {sorted(required)}")
+        if any(not math.isfinite(float(v)) or not 0.0 <= float(v) <= 1.0 for v in value.values()):
+            raise ValueError("risk weights must be finite and in [0, 1]")
+        if abs(sum(float(v) for v in value.values()) - 1.0) > 1e-6:
+            raise ValueError("risk weights must sum to 1.0")
+        return {str(k): float(v) for k, v in value.items()}
 
 
 class ExperimentConfig(BaseModel):
@@ -76,6 +123,25 @@ class ExperimentConfig(BaseModel):
         if value not in {"f1", "balanced_accuracy"}:
             raise ValueError("threshold_metric must be 'f1' or 'balanced_accuracy'")
         return value
+
+    @field_validator("seeds")
+    @classmethod
+    def seeds_valid(cls, value):
+        if not value or len(value) != len(set(value)) or any(int(seed) < 0 for seed in value):
+            raise ValueError("experiment seeds must be unique non-negative integers")
+        return [int(seed) for seed in value]
+
+    @model_validator(mode="after")
+    def validate_experiment_parameters(self):
+        if not 0.0 < self.train_fraction < 1.0 or not 0.0 < self.validation_fraction < 1.0:
+            raise ValueError("train_fraction and validation_fraction must be in (0, 1)")
+        if self.train_fraction + self.validation_fraction >= 1.0:
+            raise ValueError("train_fraction and validation_fraction must sum to less than 1")
+        if self.max_rf_train_windows <= 0 or self.max_neural_train_windows <= 0:
+            raise ValueError("training window limits must be positive")
+        if self.rf_n_jobs == 0 or self.xai_background_samples <= 0 or self.xai_explanation_samples <= 0:
+            raise ValueError("rf_n_jobs cannot be zero and XAI sample limits must be positive")
+        return self
 
 
 class AppConfig(BaseModel):
