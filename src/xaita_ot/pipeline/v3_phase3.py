@@ -91,8 +91,8 @@ def reliability_diagram(y, probabilities: dict[str, np.ndarray], out_path: str |
 
 def _window_context_scores(train_df: pd.DataFrame, test_df: pd.DataFrame, train_w, window_size: int, label_col="label") -> dict[str, np.ndarray]:
     """Build deterministic contextual evidence from train-fitted numeric baselines."""
-    train_num = train_df.select_dtypes(include=[np.number]).drop(columns=[label_col], errors="ignore")
-    test_num = test_df.select_dtypes(include=[np.number]).drop(columns=[label_col], errors="ignore")
+    train_num = OTPreprocessor._numeric_features(train_df, label_col)
+    test_num = OTPreprocessor._numeric_features(test_df, label_col)
     if train_num.empty or test_num.empty:
         raise ValueError("calibration evidence requires numeric telemetry")
     common = [c for c in train_num.columns if c in test_num.columns]
