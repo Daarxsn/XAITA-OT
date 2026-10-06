@@ -13,9 +13,17 @@ DEFAULT_TECHNIQUES = {
 }
 
 
+def _project_root() -> Path:
+    configured = os.environ.get("XAITA_OT_ROOT")
+    if configured:
+        return Path(configured).resolve()
+    candidate = Path(__file__).resolve().parents[3]
+    return candidate if (candidate / "configs").is_dir() else Path.cwd().resolve()
+
+
 def load_attack_map(path=None):
     if path is None:
-        root = Path(os.environ.get("XAITA_OT_ROOT", Path.cwd()))
+        root = _project_root()
         p = root / "configs" / "attack_mapping.yaml"
     else:
         p = Path(path)
