@@ -5,6 +5,7 @@ from pathlib import Path
 from xaita_ot.config import load_config
 from xaita_ot.core.seed import set_seed
 from xaita_ot.io.telemetry import load_csv, semantic_harmonize
+from xaita_ot.io.adapters import adapt_dataset
 from xaita_ot.pipeline.preprocess import OTPreprocessor
 from xaita_ot.pipeline.evaluation import chronological_split, train_baselines
 
@@ -12,6 +13,7 @@ from xaita_ot.pipeline.evaluation import chronological_split, train_baselines
 def main():
     p = argparse.ArgumentParser(description="Run a leakage-aware XAITA-OT detection evaluation")
     p.add_argument('--csv', required=True)
+    p.add_argument('--dataset', choices=['SWaT','BATADAL','TON-IoT'], default=None, help='Optional benchmark family for canonical adaptation.')
     p.add_argument('--config', default='configs/default.yaml')
     p.add_argument('--out', default='artifacts/evaluation.json')
     args = p.parse_args()
@@ -19,6 +21,8 @@ def main():
     cfg = load_config(args.config)
     set_seed(cfg.seed)
     df = semantic_harmonize(load_csv(args.csv))
+    if args.dataset:
+        df = adapt_dataset(df, args.dataset)
     tr, va, te = chronological_split(
         df,
         train=cfg.experiment.train_fraction,
@@ -30,6 +34,10 @@ def main():
     train_wd = prep.fit_transform_train(tr, cfg.attack_label_column)
     val_wd = prep.transform(va, cfg.attack_label_column)
     test_wd = prep.transform(te, cfg.attack_label_column)
+    if len(train_wd.X) == 0 or len(test_wd.X) == 0:
+        raise RuntimeError('evaluation requires non-empty train and test windows')
+    if len(set(train_wd.y.tolist())) < 2 or len(set(test_wd.y.tolist())) < 2:
+        raise RuntimeError('evaluation requires both normal and attack classes in train and test windows')
     result = {
         'dataset_rows': {'train': len(tr), 'validation': len(va), 'test': len(te)},
         'window_counts': {'train': len(train_wd.X), 'validation': len(val_wd.X), 'test': len(test_wd.X)},
