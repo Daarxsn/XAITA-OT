@@ -31,6 +31,7 @@ from .pipeline.real_experiments import (
     build_experiment_manifest,
     evaluate_attribution_cases,
     run_real_experiment_statistical_matrix,
+    ATTRIBUTION_CONFIGURATIONS,
     run_real_experiment_suite,
     write_result_envelope,
 )
