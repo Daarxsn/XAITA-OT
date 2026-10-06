@@ -142,7 +142,21 @@ def fuse_wef_acfm(y, detector_p, contextual: dict[str, np.ndarray], reliabilitie
         acfm[i] = float(np.clip((a.belief + a.plausibility) / 2.0, 0.0, 1.0))
     return {
         "WEF": {"probabilities": wef, **reliability_summary(y, wef)},
-        "ACFM": {"probabilities": acfm, "belief": belief, "plausibility": plausibility, **reliability_summary(y, acfm)},
+        "ACFM": {
+            "probabilities": acfm,
+            "belief": belief,
+            "plausibility": plausibility,
+            "belief_mean": float(np.mean(belief)),
+            "plausibility_mean": float(np.mean(plausibility)),
+            "interval_width": plausibility - belief,
+            "interval_width_mean": float(np.mean(plausibility - belief)),
+            **reliability_summary(y, acfm),
+        },
+        "WEF": {
+            "probabilities": wef,
+            "score_mean": float(np.mean(wef)),
+            **reliability_summary(y, wef),
+        },
         "reliabilities": reliabilities,
         "acfm_point_estimate": "midpoint of belief/plausibility interval; used only for calibration comparison",
     }
