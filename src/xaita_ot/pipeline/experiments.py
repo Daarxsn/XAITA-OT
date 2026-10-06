@@ -62,6 +62,10 @@ def run_detection(csv_path: str | Path, dataset: str, config: AppConfig, seed: i
     else:
         train, val, test = chronological_split(df, train=config.experiment.train_fraction, val=config.experiment.validation_fraction, label_col=config.attack_label_column, episode_aware=config.experiment.episode_aware); split_protocol='chronological_episode_aware'
     prep=OTPreprocessor(config.model.window_size); train_w=prep.fit_transform_train(train, config.attack_label_column); val_w=prep.transform(val, config.attack_label_column); test_w=prep.transform(test, config.attack_label_column)
+    if len(train_w.X) == 0 or len(val_w.X) == 0 or len(test_w.X) == 0:
+        raise ValueError(f"{dataset} produced an empty train/validation/test window set")
+    if np.unique(train_w.y).size < 2 or np.unique(test_w.y).size < 2:
+        raise ValueError(f"{dataset} requires both normal and attack classes in train and test windows")
     detector_key = _normalize_detector_name(detector) if detector else None
     metrics=train_baselines(train_w,val_w,test_w,config,seed=run_seed,detectors=[detector_key] if detector_key else None)
     duration=time.perf_counter()-started; now=datetime.now(timezone.utc)
