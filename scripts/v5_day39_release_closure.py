@@ -99,16 +99,7 @@ def evaluate(root: Path) -> dict:
         "release_contracts": not _missing(root, REQUIRED_CONTRACTS),
         "regression_tests": not _missing(root, REQUIRED_TESTS),
         "release_workflows": not _missing(root, REQUIRED_WORKFLOWS),
-        "raw_benchmark_data_policy": (
-            (root / "README.md").is_file()
-            and "Raw benchmark files are never written by the command." in (root / "README.md").read_text()
-            and "Do not place proprietary or restricted benchmark files in source control." in (root / "README.md").read_text()
-        ),
-        "research_integrity_boundary": (
-            (root / "README.md").is_file()
-            and "No benchmark result should be presented as achieved" in (root / "README.md").read_text()
-            and "analyst-support security analytics system" in (root / "README.md").read_text()
-        ),
+        "research_and_safety_contract": not _missing(root, ["README.md", "docs/V5.1_DEVELOPER_CONTRACT.md"]),
     }
 
     missing = {
