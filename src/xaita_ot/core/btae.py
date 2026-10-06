@@ -1,3 +1,4 @@
+import math
 import numpy as np
 from .schemas import DetectionEvent, AttackEpisode
 
@@ -31,16 +32,32 @@ def _components(a: DetectionEvent, b: DetectionEvent, temporal_window: float) ->
     }
 
 
+def _validated_weights(weights=None) -> dict[str, float]:
+    value = dict(weights or DEFAULT_WEIGHTS)
+    required = set(DEFAULT_WEIGHTS)
+    if set(value) != required:
+        raise ValueError(f"correlation weights must contain exactly {sorted(required)}")
+    if any(not math.isfinite(float(v)) or float(v) < 0.0 for v in value.values()):
+        raise ValueError("correlation weights must be finite and non-negative")
+    if abs(sum(float(v) for v in value.values()) - 1.0) > 1e-6:
+        raise ValueError("correlation weights must sum to 1.0")
+    return {key: float(value[key]) for key in sorted(required)}
+
+
 def event_relation(a: DetectionEvent, b: DetectionEvent, temporal_window: float, weights=None) -> float:
+    if not math.isfinite(float(temporal_window)) or float(temporal_window) <= 0.0:
+        raise ValueError("temporal_window must be finite and positive")
     components = _components(a, b, temporal_window)
-    weights = weights or DEFAULT_WEIGHTS
-    return sum(float(weights.get(k, 0.0)) * components[k] for k in components)
+    weights = _validated_weights(weights)
+    return sum(weights[k] * components[k] for k in components)
 
 
 def relation_detail(a: DetectionEvent, b: DetectionEvent, temporal_window: float, weights=None) -> dict:
+    if not math.isfinite(float(temporal_window)) or float(temporal_window) <= 0.0:
+        raise ValueError("temporal_window must be finite and positive")
     components = _components(a, b, temporal_window)
-    weights = weights or DEFAULT_WEIGHTS
-    strength = sum(float(weights.get(k, 0.0)) * components[k] for k in components)
+    weights = _validated_weights(weights)
+    strength = sum(weights[k] * components[k] for k in components)
     return {
         "source_event": a.event_id,
         "target_event": b.event_id,
@@ -55,6 +72,10 @@ def relation_detail(a: DetectionEvent, b: DetectionEvent, temporal_window: float
 
 
 def reconstruct(events: list[DetectionEvent], threshold: float = 0.55, temporal_window: float = 60.0, weights=None) -> list[AttackEpisode]:
+    if not 0.0 <= float(threshold) <= 1.0:
+        raise ValueError("correlation threshold must be in [0, 1]")
+    if not math.isfinite(float(temporal_window)) or float(temporal_window) <= 0.0:
+        raise ValueError("temporal_window must be finite and positive")
     events = sorted(events, key=lambda e: e.timestamp)
     episodes = []
     current, strengths, edges = [], [], []
