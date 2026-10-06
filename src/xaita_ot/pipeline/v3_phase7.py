@@ -50,6 +50,10 @@ def _risk(detector_confidence: float, correlation: float, belief: float, plausib
 
 def _xai(detector, X, feature_names, top_k=8) -> dict:
     importances = np.asarray(detector.feature_importances_, dtype=float)
+    if importances.ndim != 1 or not np.isfinite(importances).all():
+        raise ValueError("detector feature importances must be finite")
+    if top_k <= 0:
+        raise ValueError("top_k must be positive")
     if importances.sum() <= 0:
         return {"method": "RandomForest feature importance", "features": [], "fidelity_note": "Global model importance; not a causal explanation."}
     order = np.argsort(importances)[::-1][:top_k]
@@ -114,7 +118,22 @@ def build_case(csv_path: str | Path, dataset: str, cfg: AppConfig, seed: int = 4
             AttributionHypothesis("H2", "Insider or compromised account", "Activity involving otherwise known OT assets or identities.", {"asset_continuity": .6}),
             AttributionHypothesis("H3", "Misconfiguration or benign anomaly", "Non-adversarial explanation for anomalous process behavior.", {"low_detection": .5}),
         ]
-        assessment = assess([h.name for h in hypotheses], {"External/remote actor": attack_evidence, "Insider or compromised account": {"DC": attack_evidence["DC"], "ECS": attack_evidence["ECS"], "MAS": attack_evidence["MAS"]}, "Misconfiguration or benign anomaly": benign_evidence}, reliabilities, .60, .35)
+        evidence_by_hypothesis = {
+            "H1": attack_evidence,
+            "H2": {
+                "DC": attack_evidence["DC"],
+                "ECS": attack_evidence["ECS"],
+                "MAS": attack_evidence["MAS"],
+            },
+            "H3": benign_evidence,
+        }
+        assessment = assess(
+            [h.name for h in hypotheses],
+            evidence_by_hypothesis,
+            reliabilities,
+            .60,
+            .35,
+        )
         best = assessment[0]
         attack_map = _map_attack(ep.stages, ep.events[0].protocol)
         feature_names = [f"window_feature_{i}" for i in range(flat_train.shape[1])]
