@@ -26,8 +26,9 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _files(root: Path) -> list[Path]:
+def _files(root: Path, extra_excludes: set[Path] | None = None) -> list[Path]:
     found = []
+    extra_excludes = {Path(item) for item in (extra_excludes or set())}
     for path in root.rglob("*"):
         if not path.is_file():
             continue
@@ -36,23 +37,26 @@ def _files(root: Path) -> list[Path]:
             continue
         if rel.parts[:2] == DEFAULT_RAW_PREFIX.parts:
             continue
+        if any(rel == excluded or excluded in rel.parents for excluded in extra_excludes):
+            continue
         found.append(rel)
     return sorted(found)
 
 
-def build_backup_manifest(root: str | Path) -> dict[str, Any]:
+def build_backup_manifest(root: str | Path, extra_excludes: set[Path] | None = None) -> dict[str, Any]:
     base = Path(root).resolve()
     if not base.is_dir():
         raise ValueError(f"backup root is not a directory: {base}")
+    extra_excludes = {Path(item) for item in (extra_excludes or set())}
     files = [
         {"path": rel.as_posix(), "sha256": _sha256(base / rel), "size": (base / rel).stat().st_size}
-        for rel in _files(base)
+        for rel in _files(base, extra_excludes)
     ]
     return {
         "schema_version": SCHEMA_VERSION,
         "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "root_name": base.name,
-        "excluded": sorted(DEFAULT_EXCLUDES | {"data/raw"}),
+        "excluded": sorted(DEFAULT_EXCLUDES | {"data/raw"} | {item.as_posix() for item in extra_excludes}),
         "files": files,
     }
 
@@ -61,7 +65,14 @@ def create_backup(root: str | Path, output: str | Path) -> Path:
     base = Path(root).resolve()
     destination = Path(output).resolve()
     destination.parent.mkdir(parents=True, exist_ok=True)
-    manifest = build_backup_manifest(base)
+    extra_excludes = set()
+    try:
+        output_parent = destination.parent.relative_to(base)
+    except ValueError:
+        output_parent = None
+    if output_parent is not None:
+        extra_excludes.add(output_parent)
+    manifest = build_backup_manifest(base, extra_excludes=extra_excludes)
     with tempfile.TemporaryDirectory() as temp:
         stage = Path(temp) / "xaita-backup"
         stage.mkdir()
@@ -99,7 +110,21 @@ def _safe_member_path(name: str) -> Path:
 
 
 def _validate_archive_members(archive: tarfile.TarFile, manifest: dict[str, Any]) -> None:
-    expected = {"manifest.json"} | {str(item["path"]) for item in manifest.get("files", [])}
+    if not isinstance(manifest.get("files"), list):
+        raise ValueError("backup manifest files must be a list")
+    manifest_paths = []
+    for item in manifest["files"]:
+        if not isinstance(item, dict) or not isinstance(item.get("path"), str):
+            raise ValueError("backup manifest contains an invalid file entry")
+        rel = Path(item["path"])
+        if rel.is_absolute() or ".." in rel.parts or not item.get("sha256") or len(str(item["sha256"])) != 64:
+            raise ValueError("backup manifest contains an unsafe file entry")
+        if rel.as_posix() in manifest_paths:
+            raise ValueError(f"duplicate manifest path: {rel.as_posix()}")
+        if "size" in item and (not isinstance(item["size"], int) or item["size"] < 0):
+            raise ValueError(f"invalid manifest size for {rel.as_posix()}")
+        manifest_paths.append(rel.as_posix())
+    expected = {"manifest.json"} | set(manifest_paths)
     actual_files = set()
     seen_members = set()
     for member in archive.getmembers():
