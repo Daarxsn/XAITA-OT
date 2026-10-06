@@ -27,7 +27,10 @@ def generate_cti(incident_id, detection, episode, context, attribution, xai, ris
         }
         for e in episode.events
     ]
-    analyst_trace = build_analyst_trace(\n        provenance_manifest, episode_id=episode.episode_id, event_ids=provenance, context=context\n    )\n    return {
+    analyst_trace = build_analyst_trace(
+        provenance_manifest, episode_id=episode.episode_id, event_ids=provenance, context=context
+    )
+    return {
       'schema_version': 'XAITA-OT-CTI-1.0',
       'cti_package': cti_package_metadata(),
       'incident_id': incident_id,
