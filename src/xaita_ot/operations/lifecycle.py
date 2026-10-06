@@ -7,6 +7,7 @@ import json
 import shutil
 import tarfile
 import tempfile
+import stat
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -87,24 +88,49 @@ def read_backup_manifest(backup: str | Path) -> dict[str, Any]:
             return json.loads(handle.read().decode("utf-8"))
 
 
+def _safe_member_path(name: str) -> Path:
+    prefix = "xaita-backup/"
+    if not name.startswith(prefix):
+        raise ValueError(f"unexpected archive member: {name}")
+    rel = Path(name[len(prefix):])
+    if not rel.parts or rel.is_absolute() or ".." in rel.parts:
+        raise ValueError(f"unsafe archive member path: {name}")
+    return rel
+
+
+def _validate_archive_members(archive: tarfile.TarFile, manifest: dict[str, Any]) -> None:
+    expected = {"manifest.json"} | {str(item["path"]) for item in manifest.get("files", [])}
+    actual = set()
+    for member in archive.getmembers():
+        rel = _safe_member_path(member.name)
+        rel_name = rel.as_posix()
+        if rel_name not in expected:
+            raise ValueError(f"unexpected archive member: {member.name}")
+        if not member.isfile() or member.issym() or member.islnk() or not stat.S_ISREG(member.mode):
+            raise ValueError(f"backup contains non-regular member: {member.name}")
+        actual.add(rel_name)
+    missing = expected - actual
+    if missing:
+        raise ValueError(f"backup is missing expected members: {sorted(missing)}")
+
+
 def verify_backup(backup: str | Path) -> dict[str, Any]:
     manifest = read_backup_manifest(backup)
     if manifest.get("schema_version") != SCHEMA_VERSION:
         raise ValueError("unsupported lifecycle backup schema")
     failures = []
     with tarfile.open(backup, "r:gz") as archive:
-        names = set(archive.getnames())
+        _validate_archive_members(archive, manifest)
         for item in manifest.get("files", []):
             member = f"xaita-backup/{item['path']}"
-            if member not in names:
-                failures.append(f"missing:{item['path']}")
-                continue
             with archive.extractfile(member) as handle:
                 if handle is None:
                     failures.append(f"unreadable:{item['path']}")
                     continue
-                digest = hashlib.sha256(handle.read()).hexdigest()
-            if digest != item["sha256"]:
+                digest = hashlib.sha256()
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            if digest.hexdigest() != item["sha256"]:
                 failures.append(f"checksum:{item['path']}")
     return {"schema_version": SCHEMA_VERSION, "verified": not failures, "file_count": len(manifest.get("files", [])), "failures": failures}
 
@@ -118,15 +144,21 @@ def restore_backup(backup: str | Path, staging_root: str | Path) -> Path:
     if not verification["verified"]:
         raise ValueError("refusing restore from failed backup verification")
     with tarfile.open(backup, "r:gz") as archive:
+        manifest = read_backup_manifest(backup)
+        _validate_archive_members(archive, manifest)
         for item in archive.getmembers():
-            if not item.name.startswith("xaita-backup/") or item.name.endswith("/manifest.json"):
+            rel = _safe_member_path(item.name)
+            if rel == Path("manifest.json"):
                 continue
-            rel = Path(item.name).relative_to("xaita-backup")
-            target = destination / rel
+            target = (destination / rel).resolve()
+            if target != destination and destination not in target.parents:
+                raise ValueError(f"unsafe restore target: {item.name}")
             target.parent.mkdir(parents=True, exist_ok=True)
             source = archive.extractfile(item)
             if source is not None:
-                target.write_bytes(source.read())
+                with target.open("wb") as output:
+                    for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                        output.write(chunk)
     return destination
 
 
