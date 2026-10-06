@@ -100,23 +100,31 @@ def _safe_member_path(name: str) -> Path:
 
 def _validate_archive_members(archive: tarfile.TarFile, manifest: dict[str, Any]) -> None:
     expected = {"manifest.json"} | {str(item["path"]) for item in manifest.get("files", [])}
-    actual = set()
+    actual_files = set()
+    seen_members = set()
     for member in archive.getmembers():
+        if member.name in seen_members:
+            raise ValueError(f"duplicate archive member: {member.name}")
+        seen_members.add(member.name)
         if member.name == "xaita-backup":
             if not member.isdir():
                 raise ValueError("backup root member must be a directory")
             continue
         rel = _safe_member_path(member.name)
         rel_name = rel.as_posix()
+        if member.isdir():
+            prefix = rel_name.rstrip("/") + "/"
+            if not any(name.startswith(prefix) for name in expected):
+                raise ValueError(f"unexpected archive directory: {member.name}")
+            continue
         if rel_name not in expected:
             raise ValueError(f"unexpected archive member: {member.name}")
         if not member.isfile() or member.issym() or member.islnk() or not stat.S_ISREG(member.mode):
             raise ValueError(f"backup contains non-regular member: {member.name}")
-        actual.add(rel_name)
-    missing = expected - actual
+        actual_files.add(rel_name)
+    missing = expected - actual_files
     if missing:
         raise ValueError(f"backup is missing expected members: {sorted(missing)}")
-
 
 def verify_backup(backup: str | Path) -> dict[str, Any]:
     manifest = read_backup_manifest(backup)
