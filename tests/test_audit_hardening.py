@@ -152,3 +152,24 @@ def test_create_backup_excludes_its_output_directory(tmp_path):
         names = archive.getnames()
     assert "xaita-backup/safe.txt" in names
     assert not any("artifacts/backups/" in name and name != "xaita-backup/" for name in names)
+
+
+def test_phase7_attribution_preserves_hypothesis_identity():
+    from pathlib import Path
+    from xaita_ot.config import AppConfig
+    from xaita_ot.pipeline.v3_phase7 import build_case
+    root = Path(__file__).resolve().parents[1]
+    cfg = AppConfig()
+    cfg.model.window_size = 4
+    result = build_case(root / "data/demo/swat_like.csv", "SWaT", cfg, seed=42, top_n=1)
+    case = result["cases"][0]
+    hypothesis_ids = {item["hypothesis"] for item in case["attribution_hypotheses"]}
+    assert hypothesis_ids == {"H1", "H2", "H3"}
+    assert case["acfm"]["best_hypothesis"]["hypothesis"] in hypothesis_ids
+
+
+def test_config_rejects_invalid_weight_and_fraction_inputs():
+    with pytest.raises(ValueError):
+        AppConfig.model_validate({"risk": {"weights": {"severity": 0.4, "operational_impact": 0.3, "criticality": 0.2, "attribution": 0.2}}})
+    with pytest.raises(ValueError):
+        AppConfig.model_validate({"experiment": {"train_fraction": 0.9, "validation_fraction": 0.2}})
