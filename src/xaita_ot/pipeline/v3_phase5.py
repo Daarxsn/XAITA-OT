@@ -14,6 +14,7 @@ from ..core.attribution import assess
 from ..core.seed import set_seed
 from ..io.adapters import adapt_dataset
 from ..io.telemetry import load_csv, semantic_harmonize
+from ..io.dataset_validation import validate_csv, DatasetValidationError
 from .evaluation import chronological_split
 from .preprocess import OTPreprocessor
 
@@ -28,7 +29,9 @@ BASE_RELIABILITY = {"DC": 1.0, "BSS": 0.80, "ECS": 0.85, "EC": 0.80, "MAS": 0.65
 
 
 def _metrics(y, p):
-    y = np.asarray(y).astype(int); p = np.clip(np.asarray(p, dtype=float), 0, 1)
+    y = np.asarray(y).astype(int); p = np.asarray(p, dtype=float)
+    if len(y) != len(p) or not np.isfinite(p).all() or np.any((p < 0) | (p > 1)):
+        raise ValueError("sensitivity probabilities must be finite and in [0, 1]")
     pred = (p >= 0.5).astype(int)
     pr, re, f1, _ = precision_recall_fscore_support(y, pred, average="binary", zero_division=0)
     fp = ((pred == 1) & (y == 0)).sum(); tn = ((pred == 0) & (y == 0)).sum()
@@ -100,7 +103,13 @@ def _parameter_score(detector_p, evidence, parameter, value, timestamps):
 
 
 def evaluate_dataset(csv_path, dataset, cfg: AppConfig, seed=42):
-    df = adapt_dataset(semantic_harmonize(load_csv(csv_path)), dataset)
+    validation = validate_csv(csv_path, dataset)
+    if validation.validation_status != "pass":
+        raise DatasetValidationError(f"{dataset}: dataset validation must pass before sensitivity evaluation")
+    df = adapt_dataset(
+        semantic_harmonize(load_csv(csv_path, strict_timestamps=True, sort_and_deduplicate=False)),
+        dataset,
+    )
     train, _, test = chronological_split(df, cfg.experiment.train_fraction, cfg.experiment.validation_fraction, "label", cfg.experiment.episode_aware)
     prep = OTPreprocessor(cfg.model.window_size)
     train_w = prep.fit_transform_train(train, "label"); test_w = prep.transform(test, "label")
