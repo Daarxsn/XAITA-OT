@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .. import __version__
 from ..config import load_config
 from ..core.schemas import DetectionEvent
+from ..io.dataset_validation import validate_csv
 from ..pipeline.engine import XAITAEngine
 from ..pipeline.experiments import attribution_configurations, run_detection
 
@@ -403,6 +404,16 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
     started = time.monotonic()
     try:
         csv_path = _find_dataset_csv(path, payload.dataset)
+        validation = validate_csv(csv_path, payload.dataset, root=path)
+        if validation.validation_status != "pass":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": f"{payload.dataset} dataset validation did not pass",
+                    "validation_status": validation.validation_status,
+                    "manifest": validation.as_dict(),
+                },
+            )
         run = run_detection(csv_path, payload.dataset, load_config(), seed=payload.seed, detector=detector_key)
         duration = round(time.monotonic() - started, 3)
         if duration > EXPERIMENT_TIMEOUT_SECONDS:
