@@ -102,6 +102,10 @@ def _validate_archive_members(archive: tarfile.TarFile, manifest: dict[str, Any]
     expected = {"manifest.json"} | {str(item["path"]) for item in manifest.get("files", [])}
     actual = set()
     for member in archive.getmembers():
+        if member.name == "xaita-backup":
+            if not member.isdir():
+                raise ValueError("backup root member must be a directory")
+            continue
         rel = _safe_member_path(member.name)
         rel_name = rel.as_posix()
         if rel_name not in expected:
@@ -147,6 +151,8 @@ def restore_backup(backup: str | Path, staging_root: str | Path) -> Path:
         manifest = read_backup_manifest(backup)
         _validate_archive_members(archive, manifest)
         for item in archive.getmembers():
+            if item.name == "xaita-backup":
+                continue
             rel = _safe_member_path(item.name)
             if rel == Path("manifest.json"):
                 continue
