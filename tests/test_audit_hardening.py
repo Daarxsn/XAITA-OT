@@ -133,3 +133,24 @@ def test_stix_bundle_is_deterministic_for_fixed_cti():
     second = to_stix_bundle(cti)
     assert first == second
     assert first["id"].startswith("bundle--")
+
+
+def test_create_backup_excludes_its_output_directory(tmp_path):
+    root = tmp_path / "root"
+    backup_dir = root / "artifacts" / "backups"
+    backup_dir.mkdir(parents=True)
+    (root / "safe.txt").write_text("safe", encoding="utf-8")
+    (backup_dir / "old.tar.gz").write_bytes(b"old")
+    backup = backup_dir / "new.tar.gz"
+    create_backup(root, backup)
+    manifest = json.loads(
+        next(
+            item.read_bytes().decode("utf-8")
+            for item in [backup]
+            if item.exists()
+        ).split("xaita-backup/manifest.json", 1)[0]
+    ) if False else None
+    with tarfile.open(backup, "r:gz") as archive:
+        names = archive.getnames()
+    assert "xaita-backup/safe.txt" in names
+    assert not any("artifacts/backups/" in name and name != "xaita-backup/" for name in names)
