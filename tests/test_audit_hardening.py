@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from xaita_ot.config import AppConfig
+
 from xaita_ot.core.attribution import AttributionValidationError, assess
 from xaita_ot.core.risk import score_risk
 from xaita_ot.pipeline.evaluation import (
