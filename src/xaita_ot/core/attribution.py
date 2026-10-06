@@ -1,4 +1,5 @@
 from dataclasses import asdict
+import math
 from .schemas import AttributionAssessment
 
 
@@ -7,7 +8,10 @@ class AttributionValidationError(ValueError):
 
 
 def _clamp(value: float) -> float:
-    return max(0.0, min(1.0, float(value)))
+    value = float(value)
+    if not math.isfinite(value):
+        raise AttributionValidationError("evidence values must be finite")
+    return max(0.0, min(1.0, value))
 
 
 def assess(hypotheses, evidence, reliabilities, support_threshold=0.60, conflict_threshold=0.35):
@@ -22,11 +26,19 @@ def assess(hypotheses, evidence, reliabilities, support_threshold=0.60, conflict
         raise ValueError("thresholds must satisfy 0 < conflict < support < 1")
     assessments = []
     seen = set()
+    if not hypotheses:
+        raise AttributionValidationError("at least one hypothesis is required")
+    if not isinstance(evidence, dict) or not isinstance(reliabilities, dict):
+        raise AttributionValidationError("evidence and reliabilities must be mappings")
+    for source, reliability in reliabilities.items():
+        _clamp(reliability)
     for hypothesis in hypotheses:
         if hypothesis in seen:
             raise AttributionValidationError(f"duplicate hypothesis: {hypothesis}")
         seen.add(hypothesis)
         vals = evidence.get(hypothesis, {})
+        if not isinstance(vals, dict):
+            raise AttributionValidationError(f"evidence for hypothesis {hypothesis} must be a mapping")
         supporting, conflicting, unresolved = [], [], []
         support_mass = conflict_mass = total_reliability = 0.0
         for source in sorted(vals):
