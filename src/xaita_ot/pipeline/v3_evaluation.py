@@ -17,7 +17,7 @@ from sklearn.metrics import f1_score
 from ..core.seed import set_seed
 from ..io.telemetry import load_csv, semantic_harmonize
 from ..io.adapters import adapt_dataset
-from .evaluation import chronological_split, binary_metrics, expected_calibration_error
+from .evaluation import chronological_split, binary_metrics, expected_calibration_error, _positive_probability
 from .preprocess import OTPreprocessor
 from ..models.trainer import Detector
 
@@ -28,12 +28,13 @@ def _episode_ids(labels) -> np.ndarray:
     episode = 0
     active = False
     for i, label in enumerate(labels):
-        if label and not active:
-            episode += 1
-            active = True
-        elif not label:
+        if label:
+            if not active:
+                episode += 1
+                active = True
+            ids[i] = episode
+        else:
             active = False
-        ids[i] = episode
     return ids
 
 
@@ -202,7 +203,7 @@ def _train_predict(train_wd, test_wd, cfg, architecture, seed):
     if architecture == "random_forest":
         clf = RandomForestClassifier(n_estimators=120, random_state=seed, n_jobs=-1, class_weight="balanced")
         clf.fit(train_wd.X.reshape(len(train_wd.X), -1), train_wd.y)
-        return clf.predict_proba(test_wd.X.reshape(len(test_wd.X), -1))[:, 1]
+        return _positive_probability(clf, test_wd.X.reshape(len(test_wd.X), -1))
     detector = Detector(train_wd.X.shape[-1], cfg.model, architecture=architecture)
     detector.fit(train_wd.X, train_wd.y, cfg.model.epochs, cfg.model.batch_size, cfg.model.learning_rate)
     return detector.predict_proba(test_wd.X)
@@ -308,7 +309,7 @@ def make_case_study(csv_path, dataset, cfg, seed=None) -> dict:
         events.append({"event_id": f"case-{j+1}", "timestamp": row[cfg.timestamp_column], "asset": str(row.get("asset", "PLC-UNKNOWN")), "protocol": str(row.get("protocol", "modbus")), "label": "detected_activity", "detection_confidence": float(p[idx]), "features": {}})
     if not events:
         raise ValueError("case-study selection produced no test events")
-    return {"dataset": dataset, "seed": run_seed, "selection": {"event_count": len(events), "selection_rule": "top detector-scored test windows"}, "result": XAITAEngine(cfg).analyze(events)}
+    return {"dataset": dataset, "seed": run_seed, "selection": {"event_count": len(events), "selection_rule": "top detector-scored test windows"}, "result": XAITAEngine(cfg).analyze_events(events)}
 
 
 def build_paper_tables(payload: dict, out_dir) -> dict:
