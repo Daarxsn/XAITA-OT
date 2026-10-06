@@ -153,7 +153,9 @@ def _configured_api_keys() -> dict[str, str]:
                 raise RuntimeError("XAITA_API_KEYS_JSON roles must be viewer, analyst or admin with non-empty secrets")
             keys[role_key] = secret
     if API_KEY:
-        keys[API_KEY_ROLE if API_KEY_ROLE in {"viewer", "analyst", "admin"} else "admin"] = API_KEY
+        if API_KEY_ROLE not in {"viewer", "analyst", "admin"}:
+            raise RuntimeError("XAITA_API_KEY_ROLE must be viewer, analyst or admin")
+        keys[API_KEY_ROLE] = API_KEY
     return keys
 
 
