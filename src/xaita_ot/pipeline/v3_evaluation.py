@@ -306,7 +306,17 @@ def make_case_study(csv_path, dataset, cfg, seed=None) -> dict:
     offset = max(0, len(test) - len(test_w.X))
     for j, idx in enumerate(sorted(order)):
         row = test.iloc[min(int(idx) + offset, len(test) - 1)]
-        events.append({"event_id": f"case-{j+1}", "timestamp": row[cfg.timestamp_column], "asset": str(row.get("asset", "PLC-UNKNOWN")), "protocol": str(row.get("protocol", "modbus")), "label": "detected_activity", "detection_confidence": float(p[idx]), "features": {}})
+        events.append(DetectionEvent(
+            event_id=f"case-{j+1}",
+            timestamp=pd.Timestamp(row[cfg.timestamp_column]).to_pydatetime(),
+            asset=str(row.get("asset", "PLC-UNKNOWN")),
+            protocol=str(row.get("protocol", "modbus")),
+            label="attack" if float(p[idx]) >= 0.5 else "normal",
+            detection_confidence=float(p[idx]),
+            features={},
+            source=str(row.get("source", "unknown")),
+            destination=str(row.get("destination", "unknown")),
+        ))
     if not events:
         raise ValueError("case-study selection produced no test events")
     return {"dataset": dataset, "seed": run_seed, "selection": {"event_count": len(events), "selection_rule": "top detector-scored test windows"}, "result": XAITAEngine(cfg).analyze_events(events)}
