@@ -36,13 +36,27 @@ def feature_importance_linearized(X, feature_names, weights=None, top_k=8):
     return [{"feature": feature_names[i], "importance": float(x[i] / denom)} for i in order]
 
 
-def build_explanation(event, episode, context, risk, feature_importance):
+def build_explanation(event, episode, context, risk, feature_importance, attribution=None, detection_confidence=None):
     return {
       'schema_version': EXPLANATION_SCHEMA_VERSION,
       'feature_level': {'question':'Why was the activity detected?','top_features':feature_importance},
       'behavioral_level': {'question':'Why were the events correlated?','factors':['temporal proximity','affected assets','protocol/communication','event ordering']},
       'attack_stage_level': {'question':'How did the attack progress?','events':[e.event_id for e in episode.events],'context':context},
       'risk_level': {'question':'Why was the incident prioritized?','risk_score':risk['score'],'factors':risk['factors']},
+      'attribution_level': {
+          'question': 'What attribution does the evidence support?',
+          'hypothesis': attribution.get('hypothesis') if attribution else None,
+          'belief': attribution.get('belief') if attribution else None,
+          'plausibility': attribution.get('plausibility') if attribution else None,
+          'interval_width': attribution.get('interval_width') if attribution else None,
+          'interpretation': attribution.get('interpretation') if attribution else None,
+          'alternatives': attribution.get('alternatives', []) if attribution else [],
+      },
+      'confidence_semantics': {
+          'detection_confidence': detection_confidence,
+          'attribution_is_evidence_interval': True,
+          'attribution_is_not_calibrated_probability': True,
+      },
     }
 
 
@@ -50,7 +64,7 @@ def validate_explanation(explanation, episode, context, risk):
     """Validate explanation claims against the exact objects used to generate them."""
     if not isinstance(explanation, dict):
         raise ExplanationValidationError("explanation must be a mapping")
-    required = {"schema_version", "feature_level", "behavioral_level", "attack_stage_level", "risk_level"}
+    required = {"schema_version", "feature_level", "behavioral_level", "attack_stage_level", "risk_level", "attribution_level", "confidence_semantics"}
     missing = sorted(required - set(explanation))
     if missing:
         raise ExplanationValidationError(f"missing explanation sections: {', '.join(missing)}")
@@ -73,6 +87,34 @@ def validate_explanation(explanation, episode, context, risk):
         raise ExplanationValidationError("attack-stage explanation event IDs do not match episode evidence")
     if explanation["attack_stage_level"].get("context") != context:
         raise ExplanationValidationError("attack-stage explanation context does not match source context")
+
+    attribution_level = explanation["attribution_level"]
+    if not isinstance(attribution_level, dict):
+        raise ExplanationValidationError("attribution_level must be a mapping")
+    belief = attribution_level.get("belief")
+    plausibility = attribution_level.get("plausibility")
+    width = attribution_level.get("interval_width")
+    if belief is not None or plausibility is not None or width is not None:
+        try:
+            belief = float(belief)
+            plausibility = float(plausibility)
+            width = float(width)
+        except (TypeError, ValueError) as exc:
+            raise ExplanationValidationError("attribution interval values must be numeric") from exc
+        if not all(np.isfinite(v) for v in (belief, plausibility, width)):
+            raise ExplanationValidationError("attribution interval values must be finite")
+        if not 0.0 <= belief <= plausibility <= 1.0:
+            raise ExplanationValidationError("attribution interval must satisfy 0 <= belief <= plausibility <= 1")
+        if abs(width - (plausibility - belief)) > 1e-12:
+            raise ExplanationValidationError("attribution interval width is inconsistent")
+    semantics = explanation["confidence_semantics"]
+    if semantics.get("attribution_is_evidence_interval") is not True:
+        raise ExplanationValidationError("attribution must remain an evidence interval")
+    if semantics.get("attribution_is_not_calibrated_probability") is not True:
+        raise ExplanationValidationError("attribution must not be represented as calibrated probability")
+    dc = semantics.get("detection_confidence")
+    if dc is not None and (not np.isfinite(float(dc)) or not 0.0 <= float(dc) <= 1.0):
+        raise ExplanationValidationError("detection confidence must be within [0, 1]")
 
     risk_level = explanation["risk_level"]
     if not np.isfinite(float(risk_level.get("risk_score", -1.0))):
