@@ -43,8 +43,8 @@ def _metrics(y, p):
 
 
 def _base_evidence(train, test, window_size):
-    numeric_train = train.select_dtypes(include=[np.number]).drop(columns=["label"], errors="ignore")
-    numeric_test = test.select_dtypes(include=[np.number]).drop(columns=["label"], errors="ignore")
+    numeric_train = OTPreprocessor._numeric_features(train, "label")
+    numeric_test = OTPreprocessor._numeric_features(test, "label")
     common = [c for c in numeric_train.columns if c in numeric_test.columns]
     if not common: raise ValueError("sensitivity requires shared numeric telemetry")
     a, b = numeric_train[common].copy(), numeric_test[common].copy()
