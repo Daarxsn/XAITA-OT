@@ -13,7 +13,12 @@ from pathlib import Path
 
 
 REQUIRED_LOCK_DOCS = [
-    *[f"docs/V5_DAY{i}_LOCK.md" for i in range(4, 10)],
+    "docs/V5_DAY4_LOCK.md",
+    "docs/V5_DAY5_LOCK.md",
+    "docs/V5_DAY6_LOCK.md",
+    "docs/V5_DAY7_OPERATIONAL_LOCK.md",
+    "docs/V5_DAY8_DEPLOYMENT_INTEGRATION_LOCK.md",
+    "docs/V5_DAY9_EVIDENCE_PROVENANCE_LOCK.md",
     "docs/V5_DAY10_ATTRIBUTION_QUALITY_LOCK.md",
     "docs/V5_DAY11_OPERATIONAL_ROBUSTNESS_LOCK.md",
     "docs/V5_DAY12_RELEASE_READINESS_LOCK.md",
