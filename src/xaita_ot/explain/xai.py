@@ -12,12 +12,28 @@ class ExplanationValidationError(ValueError):
 
 
 def feature_importance_linearized(X, feature_names, weights=None, top_k=8):
-    if len(X)==0: return []
-    x=np.mean(np.abs(X),axis=(0,1))
-    if weights is not None: x=x*np.abs(weights)
-    order=np.argsort(x)[::-1][:top_k]
-    denom=float(x.sum()) or 1.0
-    return [{'feature':feature_names[i],'importance':float(x[i]/denom)} for i in order]
+    X = np.asarray(X, dtype=float)
+    if X.ndim != 3:
+        raise ValueError("X must have shape [N, T, F]")
+    if len(X) == 0:
+        return []
+    if X.shape[-1] != len(feature_names):
+        raise ValueError("feature_names length must match the feature dimension")
+    if top_k <= 0:
+        raise ValueError("top_k must be positive")
+    if not np.isfinite(X).all():
+        raise ValueError("X must contain finite values")
+    x = np.mean(np.abs(X), axis=(0, 1))
+    if weights is not None:
+        weights = np.asarray(weights, dtype=float)
+        if weights.shape != x.shape or not np.isfinite(weights).all():
+            raise ValueError("weights must be finite and match the feature dimension")
+        x = x * np.abs(weights)
+    order = np.argsort(x)[::-1][:top_k]
+    denom = float(x.sum())
+    if not np.isfinite(denom) or denom <= 0.0:
+        return []
+    return [{"feature": feature_names[i], "importance": float(x[i] / denom)} for i in order]
 
 
 def build_explanation(event, episode, context, risk, feature_importance):
@@ -46,7 +62,7 @@ def validate_explanation(explanation, episode, context, risk):
     if len(names) != len(features) or len(names) != len(set(names)):
         raise ExplanationValidationError("feature explanations must have unique feature names")
     importances = [float(item.get("importance", -1.0)) for item in features]
-    if any(value < 0.0 or value > 1.0 for value in importances):
+    if any(not np.isfinite(value) or value < 0.0 or value > 1.0 for value in importances):
         raise ExplanationValidationError("feature importance must be within [0, 1]")
     if features and sum(importances) > 1.0 + 1e-6:
         raise ExplanationValidationError("feature importances must not exceed 1 in aggregate")
@@ -59,6 +75,8 @@ def validate_explanation(explanation, episode, context, risk):
         raise ExplanationValidationError("attack-stage explanation context does not match source context")
 
     risk_level = explanation["risk_level"]
+    if not np.isfinite(float(risk_level.get("risk_score", -1.0))):
+        raise ExplanationValidationError("risk explanation score must be finite")
     if float(risk_level.get("risk_score", -1.0)) != float(risk["score"]):
         raise ExplanationValidationError("risk explanation score does not match risk evidence")
     if risk_level.get("factors") != risk["factors"]:
