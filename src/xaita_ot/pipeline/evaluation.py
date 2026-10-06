@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from bisect import bisect_left
 import hashlib
 
 import numpy as np
@@ -19,17 +20,19 @@ class Split:
 
 
 def _binary_episode_ids(labels):
+    """Assign positive rows to an attack episode; normal rows always receive 0."""
     labels = np.asarray(labels).astype(int)
     ids = np.zeros(len(labels), dtype=int)
     episode = 0
     active = False
     for i, label in enumerate(labels):
-        if label and not active:
-            episode += 1
-            active = True
-        elif not label:
+        if label:
+            if not active:
+                episode += 1
+                active = True
+            ids[i] = episode
+        else:
             active = False
-        ids[i] = episode
     return ids
 
 
@@ -103,18 +106,42 @@ def chronological_split(df, train=0.70, val=0.15, label_col="label", episode_awa
         return df.iloc[:a].copy(), df.iloc[a:b].copy(), df.iloc[b:].copy()
     labels = df[label_col].astype(int).to_numpy()
     episodes = _binary_episode_ids(labels)
-    boundaries = [i for i in range(1, n) if episodes[i - 1] != episodes[i]]
+    boundaries = sorted(i for i in range(1, n) if episodes[i - 1] != episodes[i])
     target_a, target_b = n * train, n * (train + val)
-    feasible = [(a, b) for a in boundaries for b in boundaries if a < b]
-    if not feasible:
+    if len(boundaries) < 2:
         a, b = int(target_a), int(target_b)
     else:
-        a, b = min(feasible, key=lambda pair: abs(pair[0] - target_a) + abs(pair[1] - target_b))
+        candidates = []
+        left_a = max(0, bisect_left(boundaries, target_a) - 1)
+        for idx_a in (left_a, left_a + 1):
+            if idx_a >= len(boundaries):
+                continue
+            a = boundaries[idx_a]
+            left_b = max(idx_a + 1, bisect_left(boundaries, target_b))
+            for idx_b in (left_b - 1, left_b):
+                if idx_a < idx_b < len(boundaries):
+                    b = boundaries[idx_b]
+                    candidates.append((a, b))
+        if not candidates:
+            a, b = boundaries[-2], boundaries[-1]
+        else:
+            a, b = min(
+                candidates,
+                key=lambda pair: (
+                    abs(pair[0] - target_a) + abs(pair[1] - target_b),
+                    pair[0],
+                    pair[1],
+                ),
+            )
     return df.iloc[:a].copy(), df.iloc[a:b].copy(), df.iloc[b:].copy()
 
 
 def select_threshold(y, p, metric="f1"):
     y, p = np.asarray(y).astype(int), np.asarray(p, dtype=float)
+    if len(y) != len(p):
+        raise ValueError("labels and probabilities must have equal length")
+    if len(y) and not np.isfinite(p).all():
+        raise ValueError("probabilities must be finite")
     if len(y) == 0 or np.unique(y).size < 2:
         return 0.5
     thresholds = np.unique(np.concatenate(([0.0], p, [1.0])))
@@ -134,8 +161,25 @@ def select_threshold(y, p, metric="f1"):
     return best_threshold
 
 
+def _positive_probability(classifier, X):
+    probabilities = np.asarray(classifier.predict_proba(X), dtype=float)
+    classes = np.asarray(classifier.classes_)
+    if probabilities.ndim != 2 or probabilities.shape[0] != len(X):
+        raise ValueError("classifier returned an invalid probability matrix")
+    positive = np.flatnonzero(classes == 1)
+    if len(positive) == 0:
+        return np.zeros(len(X), dtype=float)
+    return probabilities[:, int(positive[0])]
+
+
 def binary_metrics(y, p, threshold=0.5):
     y, p = np.asarray(y).astype(int), np.asarray(p, dtype=float)
+    if len(y) != len(p):
+        raise ValueError("labels and probabilities must have equal length")
+    if not np.isfinite(p).all():
+        raise ValueError("probabilities must be finite")
+    if not 0.0 <= float(threshold) <= 1.0:
+        raise ValueError("threshold must be in [0, 1]")
     pred = (p >= threshold).astype(int)
     pr, re, f1, _ = precision_recall_fscore_support(y, pred, average="binary", zero_division=0)
     fp = ((pred == 1) & (y == 0)).sum(); tn = ((pred == 0) & (y == 0)).sum()
@@ -144,7 +188,14 @@ def binary_metrics(y, p, threshold=0.5):
 
 
 def expected_calibration_error(y, p, bins=10):
-    y, p = np.asarray(y), np.asarray(p); edges = np.linspace(0, 1, bins + 1); ece = 0.0
+    if int(bins) <= 0:
+        raise ValueError("bins must be positive")
+    y, p = np.asarray(y), np.asarray(p, dtype=float)
+    if len(y) != len(p) or (len(p) and not np.isfinite(p).all()):
+        raise ValueError("labels and probabilities must be finite and aligned")
+    if len(p) and ((p < 0.0).any() or (p > 1.0).any()):
+        raise ValueError("probabilities must be in [0, 1]")
+    edges = np.linspace(0, 1, bins + 1); ece = 0.0
     for lo, hi in zip(edges[:-1], edges[1:]):
         mask = (p >= lo) & (p < (hi if hi < 1 else hi + 1e-9))
         if mask.any(): ece += mask.mean() * abs(y[mask].mean() - p[mask].mean())
@@ -172,8 +223,8 @@ def train_baselines(train_wd, val_wd, test_wd, cfg, seed=None, detectors=None):
         rf_train = _sample_windowed(train_wd, cfg.experiment.max_rf_train_windows, run_seed)
         rf = RandomForestClassifier(n_estimators=120, random_state=run_seed, n_jobs=cfg.experiment.rf_n_jobs, class_weight="balanced")
         rf.fit(rf_train.X.reshape(len(rf_train.X), -1), rf_train.y)
-        rf_val_p = rf.predict_proba(flat_val)[:, 1]; threshold = select_threshold(val_wd.y, rf_val_p, cfg.experiment.threshold_metric)
-        out['random_forest'] = binary_metrics(test_wd.y, rf.predict_proba(flat_te)[:, 1], threshold)
+        rf_val_p = _positive_probability(rf, flat_val); threshold = select_threshold(val_wd.y, rf_val_p, cfg.experiment.threshold_metric)
+        out['random_forest'] = binary_metrics(test_wd.y, _positive_probability(rf, flat_te), threshold)
     if any(x in requested for x in ('cnn','lstm','cnn_lstm')):
         neural_train = _sample_windowed(train_wd, cfg.experiment.max_neural_train_windows, run_seed)
         for architecture in ('cnn','lstm','cnn_lstm'):
