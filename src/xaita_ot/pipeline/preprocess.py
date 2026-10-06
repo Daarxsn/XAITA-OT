@@ -27,7 +27,7 @@ class OTPreprocessor:
 
     @classmethod
     def _numeric_features(cls, df: pd.DataFrame, label_col: str) -> pd.DataFrame:
-        numeric = self._numeric_features(df, label_col)
+        numeric = df.select_dtypes(include=[np.number]).copy()
         blocked = cls.LABEL_ALIASES | {str(label_col).strip().lower()}
         drop = [
             column for column in numeric.columns
@@ -46,7 +46,7 @@ class OTPreprocessor:
         self.encoder_fitted = False
 
     def fit_transform_train(self, df: pd.DataFrame, label_col: str = "label") -> WindowedData:
-        numeric = df.select_dtypes(include=[np.number]).copy()
+        numeric = self._numeric_features(df, label_col)
         if label_col in numeric:
             numeric = numeric.drop(columns=[label_col])
         self.numeric_features = list(numeric.columns)
