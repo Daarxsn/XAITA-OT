@@ -25,6 +25,8 @@ def main():
     paths = {"SWaT": args.swat, "BATADAL": args.batadal, "TON-IoT": args.toniot}
     result = run_phase3(paths, cfg, seeds=args.seeds, bins=args.bins)
     artifacts = write_phase3_artifacts(result, args.out)
+    if result.get("status") != "PASS" or not result.get("runs"):
+        raise SystemExit("V3 Phase 3 calibration acceptance: FAIL")
     acceptance = {
         "phase": "V3.3",
         "definition_of_complete": "implemented + executed + functional + verified",
