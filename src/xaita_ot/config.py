@@ -158,6 +158,11 @@ class AppConfig(BaseModel):
 
 def load_config(path: str | Path = "configs/default.yaml") -> AppConfig:
     p = Path(path)
+    if not p.is_absolute() and not p.exists():
+        project_root = Path(__file__).resolve().parents[2]
+        candidate = project_root / p
+        if candidate.exists():
+            p = candidate
     if not p.exists():
         return AppConfig()
     raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
