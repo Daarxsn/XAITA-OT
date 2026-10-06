@@ -60,6 +60,7 @@ class CSVValidation:
     label_values: list[str]
     attack_rows: int
     normal_rows: int
+    unknown_label_rows: int
     validation_status: str
 
     def as_dict(self) -> dict[str, Any]:
@@ -82,6 +83,7 @@ class CSVValidation:
             "label_values": self.label_values,
             "attack_rows": self.attack_rows,
             "normal_rows": self.normal_rows,
+            "unknown_label_rows": self.unknown_label_rows,
             "validation_status": self.validation_status,
         }
 
@@ -188,6 +190,7 @@ def validate_csv(
     label_values: set[str] = set()
     attack_rows = 0
     normal_rows = 0
+    unknown_label_rows = 0
     effective_timestamp_column = source_timestamp_column
 
     try:
@@ -224,9 +227,15 @@ def validate_csv(
             if source_label_column:
                 labels = frame[source_label_column]
                 label_values.update(str(value) for value in labels.dropna().unique())
+                if pd.api.types.is_numeric_dtype(labels):
+                    numeric_labels = pd.to_numeric(labels, errors="coerce")
+                    unknown_label_rows += int((numeric_labels < 0).sum())
+                else:
+                    numeric_labels = pd.to_numeric(labels, errors="coerce")
+                    unknown_label_rows += int((numeric_labels.notna() & (numeric_labels < 0)).sum())
                 attacks = _label_is_attack(labels)
                 attack_rows += int(attacks.sum())
-                normal_rows += int((~attacks).sum())
+                normal_rows += int((~attacks).sum()) - unknown_label_rows
 
     except Exception as exc:
         raise DatasetValidationError(
@@ -243,6 +252,7 @@ def validate_csv(
         and duplicate_timestamps == 0
         and bool(monotonic)
         and missing_cells == 0
+        and unknown_label_rows == 0
     )
 
     return CSVValidation(
@@ -263,6 +273,7 @@ def validate_csv(
         label_values=sorted(label_values),
         attack_rows=attack_rows,
         normal_rows=normal_rows,
+        unknown_label_rows=unknown_label_rows,
         validation_status="pass" if ready else "review",
     )
 
