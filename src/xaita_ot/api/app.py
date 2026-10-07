@@ -381,7 +381,7 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
     if not path:
         raise HTTPException(status_code=409, detail=f"{payload.dataset} dataset is not configured on this deployment")
     if not Path(path).exists():
-        raise HTTPException(status_code=409, detail=f"{payload.dataset} dataset path is configured but unavailable")
+        raise HTTPException(status_code=409, detail={"message": f"{payload.dataset} dataset path is configured but unavailable", "path": str(path), "hint": "Mount the dataset directory or provide a local/private ZIP via the dataset archive environment settings."})
 
     lifecycle_key = f"{payload.dataset}:{detector_key}:{payload.seed}"
     with _experiment_lifecycle_lock:
