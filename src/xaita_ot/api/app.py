@@ -20,6 +20,7 @@ from .. import __version__
 from ..config import load_config
 from ..core.schemas import DetectionEvent
 from ..io.dataset_validation import validate_csv
+from ..io.dataset_archive import preflight_archive
 from ..pipeline.engine import XAITAEngine
 from ..pipeline.experiments import attribution_configurations, run_detection
 
@@ -338,6 +339,46 @@ def dashboard_summary(xaita_api_key: str | None = Header(default=None, alias="X-
         "security": {"authentication_required": REQUIRE_AUTH or bool(_configured_api_keys()), "authentication_configured": _auth_ready(), "force_https": FORCE_HTTPS},
         "safety_boundary": "Analyst-support only; no autonomous PLC/RTU/SCADA control action.",
     }
+
+
+@app.get("/v2/datasets/preflight")
+def dataset_preflight(xaita_api_key: str | None = Header(default=None, alias="X-XAITA-API-Key"), authorization: str | None = Header(default=None), legacy_api_key: str | None = Header(default=None, alias="xaita-api-key")):
+    _check_api_key(xaita_api_key, authorization, legacy_api_key, "viewer")
+    archive_candidates = []
+    configured_archive = os.environ.get("XAITA_DATASET_ARCHIVE", "").strip()
+    if configured_archive:
+        archive_candidates.append(Path(configured_archive))
+    archive_candidates.extend([
+        ROOT / "datasets.zip",
+        ROOT / "data" / "datasets.zip",
+        Path("/app/datasets.zip"),
+        Path("/app/data/datasets.zip"),
+    ])
+    archive = next((p for p in dict.fromkeys(archive_candidates) if p.is_file()), None)
+    dataset_items = {name: _dataset_status(path) for name, path in DATASET_PATHS.items()}
+    payload = {
+        "schema_version": "XAITA-OT-V5-DATASET-PREFLIGHT-API-1.0",
+        "archive": None,
+        "datasets": dataset_items,
+        "all_ready": all(item["ready"] for item in dataset_items.values()),
+    }
+    if archive is not None:
+        report = preflight_archive(archive)
+        payload["archive"] = report["archive"]
+        payload["datasets"] = {
+            name: {
+                **dataset_items[name],
+                "archive_present": report["datasets"][name]["present"],
+                "archive_ready": report["datasets"][name]["ready"],
+                "archive_file_count": report["datasets"][name]["file_count"],
+                "archive_validated_files": report["datasets"][name]["validated_files"],
+                "archive_review_files": report["datasets"][name]["review_files"],
+                "archive_reason": report["datasets"][name].get("reason"),
+            }
+            for name in DATASET_PATHS
+        }
+        payload["all_ready"] = report["all_ready"]
+    return payload
 
 
 @app.get("/v2/datasets")
