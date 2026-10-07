@@ -59,3 +59,22 @@ python run_api.py
 `run_api.py` prepares available private/mounted archives before starting FastAPI. Missing datasets remain explicitly unavailable rather than being represented as benchmark evidence.
 
 For Docker/Compose, mount the private archive into the container and set `XAITA_DATASET_ARCHIVE=/app/datasets.zip`. Raw datasets and archives remain outside source control. The API exposes all three dataset families, but an experiment is executable only when the selected dataset contains validated CSV data.
+
+
+## Day 47 archive preflight
+
+Before starting model training, verify a private project ZIP non-destructively:
+
+```powershell
+xaita preflight-dataset-archive --archive datasets.zip --out artifacts/dataset_preflight.json
+```
+
+The command extracts each supported dataset family only into a temporary directory, validates its CSVs with the same real-data validator used by experiments, records the archive SHA-256 and reports readiness for SWaT, BATADAL and TON-IoT. It never modifies `data/raw` or the working tree.
+
+Exit codes:
+
+- `0`: all three dataset families are present and validation-ready.
+- `2`: one or more families are missing or require review.
+- `1`: the archive could not be inspected.
+
+A `ready` result is a dataset-integrity/readiness gate, not model-performance evidence.
