@@ -351,3 +351,26 @@ def test_dataset_preflight_reads_private_project_archive(tmp_path, monkeypatch):
     assert body["all_ready"] is True
     assert all(item["archive_ready"] for item in body["datasets"].values())
     assert not any((tmp_path / "data" / "raw").rglob("*.csv"))
+
+
+def test_experiment_materializes_private_archive_when_runtime_path_is_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr(api, "API_KEY", None)
+    dataset_root = tmp_path / "data" / "raw" / "ton_iot"
+    archive = tmp_path / "datasets.zip"
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr(
+            "TON-IoT.csv",
+            "date,time,label,x\n2026-01-01,00:00:00,0,1\n2026-01-01,00:00:01,1,2\n",
+        )
+    monkeypatch.setenv("XAITA_DATASET_ARCHIVE", str(archive))
+    monkeypatch.setattr(api, "DATASET_PATHS", {"TON-IoT": str(dataset_root)})
+    monkeypatch.setattr(api, "run_detection", lambda *args, **kwargs: _fake_run())
+    with api._experiment_lifecycle_lock:
+        api._experiment_jobs.clear()
+
+    response = client.post(
+        "/v2/experiment",
+        json={"dataset": "TON-IoT", "detector": "CNN-LSTM", "seed": 42},
+    )
+    assert response.status_code == 200
+    assert (dataset_root / "TON-IoT.csv").is_file()
