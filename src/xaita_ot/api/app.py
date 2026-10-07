@@ -363,7 +363,20 @@ def dataset_preflight(xaita_api_key: str | None = Header(default=None, alias="X-
         "all_ready": all(item["ready"] for item in dataset_items.values()),
     }
     if archive is not None:
-        report = preflight_archive(archive)
+        try:
+            report = preflight_archive(archive)
+        except Exception as exc:
+            payload["archive"] = {
+                "path": str(archive),
+                "size_bytes": archive.stat().st_size,
+                "sha256": None,
+                "member_count": None,
+                "ready": False,
+                "error_type": type(exc).__name__,
+                "reason": "Private dataset archive could not be preflighted.",
+            }
+            payload["all_ready"] = False
+            return payload
         payload["archive"] = report["archive"]
         payload["datasets"] = {
             name: {
