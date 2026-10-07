@@ -309,3 +309,45 @@ def test_reviewed_cti_package_is_pinned_and_digested():
     assert package["review_status"] == "reviewed"
     assert set(package["mappings"]) == {"reconnaissance", "protocol", "unauthorized_command", "process_deviation"}
     assert len(cti_package_digest(package)) == 64
+
+import zipfile
+
+def test_dataset_preflight_reports_mounted_and_archive_state(tmp_path, monkeypatch):
+    monkeypatch.setattr(api, "API_KEY", None)
+    monkeypatch.setattr(api, "ROOT", tmp_path)
+    paths = {}
+    for key, folder in (("SWaT", "swat"), ("BATADAL", "batadal"), ("TON-IoT", "ton_iot")):
+        path = tmp_path / "data" / "raw" / folder
+        path.mkdir(parents=True)
+        paths[key] = str(path)
+    monkeypatch.setattr(api, "DATASET_PATHS", paths)
+    response = client.get("/v2/datasets/preflight")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["schema_version"] == "XAITA-OT-V5-DATASET-PREFLIGHT-API-1.0"
+    assert body["archive"] is None
+    assert body["all_ready"] is False
+    assert set(body["datasets"]) == {"SWaT", "BATADAL", "TON-IoT"}
+
+
+def test_dataset_preflight_reads_private_project_archive(tmp_path, monkeypatch):
+    monkeypatch.setattr(api, "API_KEY", None)
+    monkeypatch.setattr(api, "ROOT", tmp_path)
+    paths = {
+        "SWaT": str(tmp_path / "data" / "raw" / "swat"),
+        "BATADAL": str(tmp_path / "data" / "raw" / "batadal"),
+        "TON-IoT": str(tmp_path / "data" / "raw" / "ton_iot"),
+    }
+    monkeypatch.setattr(api, "DATASET_PATHS", paths)
+    archive = tmp_path / "datasets.zip"
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr("SWaT/swat.csv", "Timestamp,Attack State,x\n2026-01-01 00:00:00,Normal,1\n2026-01-01 00:00:01,Attack,2\n")
+        z.writestr("BATADAL/batadal.csv", "DATETIME,ATT_FLAG,x\n01/01/2026 00:00:00,0,1\n01/01/2026 00:00:01,1,2\n")
+        z.writestr("TON-IoT/ton.csv", "date,time,label,x\n2026-01-01,00:00:00,0,1\n2026-01-01,00:00:01,1,2\n")
+    response = client.get("/v2/datasets/preflight")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["archive"]["sha256"]
+    assert body["all_ready"] is True
+    assert all(item["archive_ready"] for item in body["datasets"].values())
+    assert not any((tmp_path / "data" / "raw").rglob("*.csv"))
