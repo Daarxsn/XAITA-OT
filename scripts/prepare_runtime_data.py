@@ -97,12 +97,12 @@ def safe_extract(
 
 def _archive_contains_dataset(member_names: list[str], dataset: str) -> bool:
     tokens = DATASETS[dataset]["tokens"]
-    return any(
-        token in DATASETS[dataset]["tokens"]
-        for name in member_names
-        for token in _normalized_parts(name)
-    )
-
+    for name in member_names:
+        parts = _normalized_parts(name)
+        stem = Path(name).stem.strip().lower().replace("-", "_")
+        if any(token in parts or stem == token or stem.startswith(f"{token}_") for token in tokens):
+            return True
+    return False
 
 def _matching_members(bundle: zipfile.ZipFile, dataset: str, *, allow_all: bool) -> list[zipfile.ZipInfo]:
     infos = bundle.infolist()
