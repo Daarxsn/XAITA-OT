@@ -17,3 +17,5 @@ experiments/runs/**
 results/predictions/**
 results/metrics/**
 results/figures/**
+
+# Private benchmark archives: never commit raw dataset bundles.\n*.zip\n
