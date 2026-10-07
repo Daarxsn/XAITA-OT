@@ -54,7 +54,7 @@ def sha256(path: Path) -> str:
 def _parts(name: str) -> list[str]:
     return [
         part.strip().lower().replace("-", "_")
-        for part in Path(name.replace("\", "/")).parts
+        for part in Path(name.replace("\\", "/")).parts
         if part not in {"", "."}
     ]
 
