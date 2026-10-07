@@ -48,3 +48,19 @@ def test_prepare_dataset_rejects_missing_archive_without_mutating_root(tmp_path,
     assert source == "unavailable"
     assert destination.is_dir()
     assert not any(destination.iterdir())
+
+
+def test_prepare_dataset_accepts_root_level_toniot_network_file(tmp_path, monkeypatch):
+    archive = tmp_path / "datasets.zip"
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr(
+            "train_test_network.csv",
+            "ts,label,x\n2026-01-01 00:00:00,0,1\n2026-01-01 00:00:01,1,2\n",
+        )
+    destination = tmp_path / "ton_iot"
+    monkeypatch.setenv("XAITA_DATASET_ARCHIVE", str(archive))
+    from xaita_ot.io.dataset_archive import prepare_dataset
+    root, source = prepare_dataset("TON-IoT", root=destination)
+    assert root == destination
+    assert source.startswith("archive:")
+    assert (destination / "train_test_network.csv").is_file()
