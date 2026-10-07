@@ -20,7 +20,7 @@ from .. import __version__
 from ..config import load_config
 from ..core.schemas import DetectionEvent
 from ..io.dataset_validation import validate_csv
-from ..io.dataset_archive import preflight_archive
+from ..io.dataset_archive import prepare_dataset, preflight_archive
 from ..pipeline.engine import XAITAEngine
 from ..pipeline.experiments import attribution_configurations, run_detection
 
@@ -421,8 +421,30 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
     path = DATASET_PATHS[payload.dataset]
     if not path:
         raise HTTPException(status_code=409, detail=f"{payload.dataset} dataset is not configured on this deployment")
-    if not Path(path).exists():
-        raise HTTPException(status_code=409, detail={"message": f"{payload.dataset} dataset path is configured but unavailable", "path": str(path), "hint": "Mount the dataset directory or provide a local/private ZIP via the dataset archive environment settings."})
+    try:
+        prepared_path, source = prepare_dataset(payload.dataset, root=path)
+        DATASET_PATHS[payload.dataset] = str(prepared_path)
+        path = str(prepared_path)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": f"{payload.dataset} dataset could not be prepared",
+                "path": str(path),
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+                "hint": "Provide a mounted dataset directory or a valid private datasets.zip archive.",
+            },
+        ) from exc
+    if source == "unavailable" or not Path(path).exists():
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": f"{payload.dataset} dataset is not available",
+                "path": str(path),
+                "hint": "Mount the dataset directory or provide a valid private datasets.zip archive.",
+            },
+        )
 
     lifecycle_key = f"{payload.dataset}:{detector_key}:{payload.seed}"
     with _experiment_lifecycle_lock:
