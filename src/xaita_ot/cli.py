@@ -21,6 +21,7 @@ from .integrations.enterprise import (
     write_json as write_integration_json,
 )
 from .io.dataset_validation import DatasetValidationError, build_manifest, write_manifest
+from scripts.prepare_runtime_data import preflight_archive
 from .pipeline.demo import demo_events, make_demo_csv
 from .pipeline.real_experiments import (
     REAL_EXPERIMENT_DATASETS,
@@ -72,6 +73,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=3000,
         help="Number of rows to generate (must be positive).",
     )
+
+    preflight = sub.add_parser(
+        "preflight-dataset-archive",
+        help="Inspect a private project ZIP and validate SWaT, BATADAL and TON-IoT without modifying the working tree.",
+    )
+    preflight.add_argument("--archive", required=True, help="Private ZIP archive containing one or more dataset families.")
+    preflight.add_argument("--out", default=None, help="Optional JSON preflight report path.")
 
     validate = sub.add_parser(
         "validate-data",
@@ -529,6 +537,17 @@ def main(argv: list[str] | None = None) -> int:
                 "result": str(path),
             }, sort_keys=True))
             return 0
+
+        if args.cmd == "preflight-dataset-archive":
+            payload = preflight_archive(Path(args.archive), Path(args.out) if args.out else None)
+            print(json.dumps({
+                "status": "ready" if payload["all_ready"] else "review",
+                "archive_sha256": payload["archive"]["sha256"],
+                "all_ready": payload["all_ready"],
+                "datasets": payload["datasets"],
+                "report": args.out,
+            }, sort_keys=True))
+            return 0 if payload["all_ready"] else 2
 
         if args.cmd == "validate-data":
             output = args.out or f"artifacts/{args.dataset}_real_data_manifest.json"
