@@ -21,7 +21,7 @@ from .integrations.enterprise import (
     write_json as write_integration_json,
 )
 from .io.dataset_validation import DatasetValidationError, build_manifest, write_manifest
-from scripts.prepare_runtime_data import preflight_archive
+from .io.dataset_archive import preflight_archive
 from .pipeline.demo import demo_events, make_demo_csv
 from .pipeline.real_experiments import (
     REAL_EXPERIMENT_DATASETS,
