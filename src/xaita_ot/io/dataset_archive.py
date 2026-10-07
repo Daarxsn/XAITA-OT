@@ -134,7 +134,7 @@ def _archive_candidates(dataset: str) -> list[Path]:
     return list(dict.fromkeys(path for path in values if path.is_file()))
 
 
-def _download_archive(url: str) -> Path:
+def _download_archive(url: str) -> tuple[Path, tempfile.TemporaryDirectory]:
     temp_dir = tempfile.TemporaryDirectory(prefix="xaita-dataset-download-")
     destination = Path(temp_dir.name) / "dataset.zip"
     request = urllib.request.Request(url, headers={"User-Agent": "XAITA-OT-runtime/1.0"})
@@ -144,8 +144,9 @@ def _download_archive(url: str) -> Path:
     except Exception:
         temp_dir.cleanup()
         raise
-    destination._xaita_tempdir = temp_dir  # type: ignore[attr-defined]
-    return destination
+    # The temporary directory must stay alive until the caller finishes reading
+    # the archive. Return it explicitly rather than attaching state to Path.
+    return destination, temp_dir
 
 
 def prepare_dataset(dataset: str, *, root: str | Path | None = None) -> tuple[Path, str]:
@@ -178,7 +179,7 @@ def prepare_dataset(dataset: str, *, root: str | Path | None = None) -> tuple[Pa
 
     url = os.environ.get(spec["url_env"], "").strip()
     if url:
-        archive = _download_archive(url)
+        archive, temp_dir = _download_archive(url)
         try:
             _verify_archive(archive, expected_sha)
             with zipfile.ZipFile(archive) as bundle:
@@ -186,9 +187,7 @@ def prepare_dataset(dataset: str, *, root: str | Path | None = None) -> tuple[Pa
             if _has_csv(destination):
                 return destination, f"url:{url}"
         finally:
-            temp_dir = getattr(archive, "_xaita_tempdir", None)
-            if temp_dir is not None:
-                temp_dir.cleanup()
+            temp_dir.cleanup()
 
     return destination, "unavailable"
 
