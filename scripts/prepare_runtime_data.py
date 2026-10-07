@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import sys
 
-from xaita_ot.io.dataset_archive import DATASETS, prepare_dataset
+from xaita_ot.io.dataset_archive import DATASETS, prepare_dataset, preflight_archive
 
 
 def main() -> int:
