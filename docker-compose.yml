@@ -15,6 +15,8 @@ services:
       XAITA_DATASET_ARCHIVE: ${XAITA_DATASET_ARCHIVE:-/app/datasets.zip}
       XAITA_DATASET_ARCHIVE_SHA256: ${XAITA_DATASET_ARCHIVE_SHA256:-}
     read_only: true
+    volumes:
+      - xaita-dataset-data:/app/data/raw
     tmpfs:
       - /tmp:noexec,nosuid,size=64m
     security_opt:
@@ -32,3 +34,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+
+volumes:
+  xaita-dataset-data:
