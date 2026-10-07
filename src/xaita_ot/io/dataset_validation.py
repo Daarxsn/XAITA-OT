@@ -242,12 +242,26 @@ def validate_csv(
     if rows == 0:
         raise DatasetValidationError(f"{dataset_name}: {source} is empty")
 
+    timestamp_quality_ready = (
+        invalid_timestamps == 0
+        and (
+            dataset_name == "TON-IoT"
+            or (
+                duplicate_timestamps == 0
+                and bool(monotonic)
+            )
+        )
+    )
+
+    timestamp_column_ready = (
+        dataset_name == "TON-IoT"
+        or effective_timestamp_column is not None
+    )
+
     ready = (
-        effective_timestamp_column is not None
+        timestamp_column_ready
         and source_label_column is not None
-        and invalid_timestamps == 0
-        and duplicate_timestamps == 0
-        and bool(monotonic)
+        and timestamp_quality_ready
         and missing_cells == 0
         and unknown_label_rows == 0
     )
