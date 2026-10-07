@@ -23,6 +23,7 @@ from .integrations.enterprise import (
 from .io.dataset_validation import DatasetValidationError, build_manifest, write_manifest
 from .io.dataset_archive import preflight_archive
 from .pipeline.demo import demo_events, make_demo_csv
+from .pipeline.swat_unlabeled import analyze_swat_unlabeled
 from .pipeline.real_experiments import (
     REAL_EXPERIMENT_DATASETS,
     REAL_EXPERIMENT_DETECTORS,
@@ -107,6 +108,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=100000,
         help="CSV rows processed per chunk (must be positive).",
     )
+
+    swat_unlabeled = sub.add_parser(
+        "swat-unlabeled-analysis",
+        help="Run auditable unsupervised anomaly analysis on partial/unlabeled SWaT telemetry.",
+    )
+    swat_unlabeled.add_argument("--root", required=True, help="SWaT telemetry root directory.")
+    swat_unlabeled.add_argument("--out", default="artifacts/swat_unlabeled", help="Output directory.")
+    swat_unlabeled.add_argument("--seed", type=int, default=42)
+    swat_unlabeled.add_argument("--train-fraction", type=float, default=0.70)
+    swat_unlabeled.add_argument("--max-train-rows", type=int, default=20000)
+    swat_unlabeled.add_argument("--n-estimators", type=int, default=200)
 
     real_experiment_suite = sub.add_parser(
         "real-experiment-suite",
@@ -548,6 +560,28 @@ def main(argv: list[str] | None = None) -> int:
                 "report": args.out,
             }, sort_keys=True))
             return 0 if payload["all_ready"] else 2
+
+        if args.cmd == "swat-unlabeled-analysis":
+            payload = analyze_swat_unlabeled(
+                root=args.root,
+                out=args.out,
+                seed=args.seed,
+                train_fraction=args.train_fraction,
+                max_train_rows=args.max_train_rows,
+                n_estimators=args.n_estimators,
+            )
+            print(json.dumps({
+                "status": "completed",
+                "dataset": payload["dataset"],
+                "analysis_mode": payload["analysis_mode"],
+                "ground_truth_used": payload["ground_truth_used"],
+                "unique_csv_count": payload["unique_csv_count"],
+                "total_rows": payload["total_rows"],
+                "total_anomaly_rows": payload["total_anomaly_rows"],
+                "fingerprint": payload["fingerprint"],
+                "summary": payload["summary"],
+            }, sort_keys=True))
+            return 0
 
         if args.cmd == "validate-data":
             output = args.out or f"artifacts/{args.dataset}_real_data_manifest.json"
