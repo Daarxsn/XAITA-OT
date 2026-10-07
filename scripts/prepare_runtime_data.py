@@ -9,8 +9,47 @@ from __future__ import annotations
 
 import os
 import sys
+import zipfile
+from pathlib import Path
 
-from xaita_ot.io.dataset_archive import DATASETS, prepare_dataset, preflight_archive
+from xaita_ot.io.dataset_archive import (
+    DATASETS,
+    _matches_name,
+    _safe_extract_selected,
+    _verify_archive,
+    prepare_dataset,
+    preflight_archive,
+)
+
+
+def _archive_contains_dataset(member_names, dataset):
+    return any(_matches_name(name, dataset) for name in member_names)
+
+
+def _has_csv(root):
+    root = Path(root)
+    return (root.is_file() and root.suffix.lower() == ".csv") or (
+        root.is_dir() and any(root.rglob("*.csv"))
+    )
+
+
+def safe_extract(archive, destination, *, members=None):
+    with zipfile.ZipFile(archive) as bundle:
+        selected = members if members is not None else bundle.infolist()
+        return _safe_extract_selected(bundle, selected, Path(destination))
+
+
+def _prepare_from_archive(archive, dataset, destination, *, expected_sha, dataset_specific):
+    archive = Path(archive)
+    _verify_archive(archive, expected_sha)
+    with zipfile.ZipFile(archive) as bundle:
+        members = bundle.infolist() if dataset_specific else [
+            item for item in bundle.infolist() if _matches_name(item.filename, dataset)
+        ]
+        if not members:
+            return False
+        safe_extract(archive, destination, members=members)
+    return _has_csv(destination)
 
 
 def main() -> int:
