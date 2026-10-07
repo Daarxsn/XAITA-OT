@@ -503,12 +503,20 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
         raise
     except Exception as exc:
         duration = round(time.monotonic() - started, 3)
+        error_type = type(exc).__name__
         with _experiment_lifecycle_lock:
             _experiment_jobs[job_id].update({
                 "status": "failed", "finished_at": datetime.utcnow().isoformat() + "Z",
-                "duration_seconds": duration, "error_type": type(exc).__name__, "error": str(exc),
+                "duration_seconds": duration, "error_type": error_type,
+                "error": "Experiment execution failed; inspect server logs using the request ID.",
             })
-        raise HTTPException(status_code=422, detail={"message": f"{payload.dataset} experiment could not be executed", "error_type": type(exc).__name__, "error": str(exc)}) from exc
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": f"{payload.dataset} experiment could not be executed",
+                "error_type": error_type,
+            },
+        ) from exc
     return {"schema_version": "XAITA-OT-V2-RUN-1.3", "job_id": job_id, "experiment_id": run.experiment_id, "dataset": run.dataset, "detector": payload.detector, "detector_key": detector_key, "seed": run.seed, "started_at": run.started_at, "duration_seconds": run.duration_seconds, "rows": run.rows, "windows": run.windows, "metrics": run.metrics[detector_key], "all_model_metrics": run.metrics, "dataset_file": str(csv_path)}
 
 
