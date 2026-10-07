@@ -78,3 +78,16 @@ Exit codes:
 - `1`: the archive could not be inspected.
 
 A `ready` result is a dataset-integrity/readiness gate, not model-performance evidence.
+
+
+## Day 48 API readiness integration
+
+The dashboard can query:
+
+```
+GET /v2/datasets/preflight
+```
+
+This endpoint combines the live mounted dataset state with the private project archive preflight when a `datasets.zip` is available. The response includes the archive SHA-256 and per-dataset presence/readiness counts. It never extracts the archive into the working tree.
+
+The research dashboard uses this endpoint before a single-run validation. A dataset is shown as **READY** only when the selected dataset is available through the runtime path or is validation-ready in the private archive. Otherwise the run remains fail-closed and the UI reports the readiness state before training starts.
