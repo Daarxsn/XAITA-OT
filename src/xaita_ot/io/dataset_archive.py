@@ -67,10 +67,21 @@ def _matches_name(name: str, dataset: str) -> bool:
     tokens = DATASETS[dataset]["tokens"]
     parts = _parts(name)
     stem = Path(name).stem.strip().lower().replace("-", "_")
-    return any(
+    if any(
         token in parts or stem == token or stem.startswith(f"{token}_")
         for token in tokens
-    )
+    ):
+        return True
+    # Accept common benchmark files when the archive contains the dataset
+    # directory contents without the parent directory name.
+    if dataset == "TON-IoT" and stem in {
+        "train_test_network",
+        "train_test_iot_modbus",
+        "train_test_iot_modbus_1",
+        "train_test_iot_modbus_2",
+    }:
+        return True
+    return False
 
 
 def _matching_members(bundle: zipfile.ZipFile, dataset: str) -> list[zipfile.ZipInfo]:
