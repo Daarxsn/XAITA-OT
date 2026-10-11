@@ -250,7 +250,7 @@ def validate_csv(
                 label_text = labels.astype(str).str.strip().str.lower()
                 missing_labels = labels.isna() | label_text.isin({"", "nan", "none", "null"})
                 numeric_labels = pd.to_numeric(labels, errors="coerce")
-                invalid_numeric_labels = numeric_labels.notna() & (numeric_labels < 0)
+                invalid_numeric_labels = numeric_labels.notna() & ~numeric_labels.isin([0, 1])
                 unknown_label_rows += int(missing_labels.sum() + invalid_numeric_labels.sum())
                 attacks = _label_is_attack(labels)
                 valid_labels = ~missing_labels & ~invalid_numeric_labels
