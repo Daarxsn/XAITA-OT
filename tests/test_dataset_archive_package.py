@@ -64,3 +64,44 @@ def test_prepare_dataset_accepts_root_level_toniot_network_file(tmp_path, monkey
     assert root == destination
     assert source.startswith("archive:")
     assert (destination / "train_test_network.csv").is_file()
+
+
+
+class _FakeDownloadResponse:
+    def __init__(self, body: bytes, headers: dict[str, str] | None = None):
+        self.body = body
+        self.headers = headers or {}
+        self.read_calls = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def read(self, size: int = -1) -> bytes:
+        self.read_calls += 1
+        if size < 0:
+            size = len(self.body)
+        chunk, self.body = self.body[:size], self.body[size:]
+        return chunk
+
+
+def test_download_rejects_declared_oversize_before_reading_body(monkeypatch):
+    from xaita_ot.io import dataset_archive
+
+    response = _FakeDownloadResponse(b"should-not-be-read", {"Content-Length": "100"})
+    monkeypatch.setattr(dataset_archive.urllib.request, "urlopen", lambda *args, **kwargs: response)
+    with pytest.raises(RuntimeError, match="exceeds"):
+        dataset_archive._download_archive("https://example.invalid/datasets.zip", max_bytes=10)
+    assert response.read_calls == 0
+
+
+def test_download_enforces_size_limit_without_content_length(monkeypatch):
+    from xaita_ot.io import dataset_archive
+
+    response = _FakeDownloadResponse(b"x" * 40)
+    monkeypatch.setattr(dataset_archive.urllib.request, "urlopen", lambda *args, **kwargs: response)
+    with pytest.raises(RuntimeError, match="exceeds"):
+        dataset_archive._download_archive("https://example.invalid/datasets.zip", max_bytes=10)
+    assert response.read_calls <= 2
