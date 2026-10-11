@@ -175,3 +175,85 @@ def test_config_rejects_invalid_weight_and_fraction_inputs():
         AppConfig.model_validate({"risk": {"weights": {"severity": 0.4, "operational_impact": 0.3, "criticality": 0.2, "attribution": 0.2}}})
     with pytest.raises(ValueError):
         AppConfig.model_validate({"experiment": {"train_fraction": 0.9, "validation_fraction": 0.2}})
+
+
+
+def test_assessment_validator_rejects_tampered_evidence_payload():
+    from xaita_ot.core.attribution import validate_assessments
+
+    assessments = assess(["H1"], {"H1": {"DC": 0.9}}, {"DC": 0.8})
+    assessments[0].supporting[0]["value"] = 1.5
+    with pytest.raises(AttributionValidationError, match="invalid attribution evidence"):
+        validate_assessments(assessments)
+
+
+def test_detector_rejects_unknown_architecture():
+    from xaita_ot.models.trainer import Detector
+
+    with pytest.raises(ValueError, match="unsupported detector architecture"):
+        Detector(3, AppConfig().model, architecture="cnn_ltsm")
+
+
+def test_detector_load_uses_weights_only_checkpoint(tmp_path):
+    from xaita_ot.models.trainer import Detector
+
+    config = AppConfig().model
+    config.lstm_hidden = 4
+    config.dropout = 0.0
+    original = Detector(3, config, architecture="lstm")
+    original.threshold = 0.37
+    checkpoint = tmp_path / "weights.pt"
+    original.save(checkpoint)
+
+    restored = Detector(3, config, architecture="lstm").load(checkpoint)
+    assert restored.threshold == pytest.approx(0.37)
+
+
+def test_neural_trainer_copies_read_only_window_arrays():
+    import warnings
+    from xaita_ot.models.trainer import Detector
+
+    config = AppConfig().model
+    config.lstm_hidden = 4
+    config.dropout = 0.0
+    values = np.arange(4 * 3 * 2, dtype=np.float32).reshape(4, 3, 2)
+    values.setflags(write=False)
+    labels = np.array([0, 1, 0, 1], dtype=np.float32)
+    model = Detector(2, config, architecture="lstm")
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        model.fit(values, labels, epochs=1, batch_size=2, lr=1e-3)
+    assert not any("NumPy array is not writable" in str(item.message) for item in captured)
+    probabilities = model.predict_proba(values)
+    assert probabilities.shape == (4,)
+    assert np.isfinite(probabilities).all()
+
+
+def test_run_started_at_reflects_start_not_completion(tmp_path, monkeypatch):
+    import time
+    from datetime import datetime
+    from xaita_ot.pipeline import experiments
+
+    count = 240
+    labels = [(i // 20) % 2 for i in range(count)]
+    path = tmp_path / "timing.csv"
+    pd.DataFrame({
+        "timestamp": pd.date_range("2026-01-01", periods=count, freq="s"),
+        "label": labels,
+        "sensor": np.linspace(0.0, 1.0, count),
+    }).to_csv(path, index=False)
+
+    config = AppConfig()
+    config.model.window_size = 4
+
+    def slow_fake_training(*args, **kwargs):
+        time.sleep(0.12)
+        return {"random_forest": {"f1": 0.5}}
+
+    monkeypatch.setattr(experiments, "train_baselines", slow_fake_training)
+    run = experiments.run_detection(path, "SWaT", config, seed=42, detector="random_forest")
+    completed_at = time.time()
+    started_at = datetime.fromisoformat(run.started_at).timestamp()
+    assert started_at < completed_at - 0.08
+    assert run.duration_seconds >= 0.12

@@ -19,6 +19,9 @@ Audited the public `main` snapshot `8ac654cc2267323c49ceb2113b4ef277d39b438b`. C
 - Bind deterministic source-code SHA-256 into real-experiment fingerprints and use strict canonical JSON serialization that rejects NaN/unsupported values.
 - Deduplicate repeated STIX attack-pattern objects, reject naive CTI timestamps and invalid ATT&CK IDs, emit canonical MITRE URLs, return domain-specific errors for malformed provenance, and reject empty correlation-weight mappings.
 - Package artifacts in Docker; escape API-generated strings before dynamic HTML insertion; and fix incident search to consider all table rows.
+- Correct run `started_at` metadata and make experiment identifiers unique below one-second resolution.
+- Reject unknown detector architectures, copy read-only sliding-window arrays before PyTorch tensor creation, require finite positive learning rates, and load checkpoints with safe weights-only deserialization.
+- Enforce full attribution evidence-payload validation inside `validate_assessments`, not only interval bounds and source disjointness.
 - Add regression coverage for the above defects.
 - Make the dashboard's research-prototype/demo-data boundary persistent and visible; fix dataset preflight UI precedence so a failed archive cannot be reported READY just because a mounted path exists, and safely render archives with missing hashes.
 
@@ -44,6 +47,12 @@ Audited the public `main` snapshot `8ac654cc2267323c49ceb2113b4ef277d39b438b`. C
 
 A passing test proves only its asserted behavior. CI on PR #25 is the acceptance gate; do not mark the repository release-ready until these checks pass and the remaining findings are fixed or explicitly accepted with documented limits.
 
+
+## Additional model and evidence hardening
+
+- `Detector.load` uses `weights_only=True`; this intentionally supports the package's tensor-and-primitive checkpoint format. Legacy checkpoints containing arbitrary pickled Python objects are not accepted implicitly.
+- `run_detection.started_at` now records the actual call start, while the experiment identifier includes microseconds to avoid collisions for repeated same-seed runs within one second.
+- `validate_assessments` delegates each assessment to the canonical evidence validator so tampered source values/reliabilities cannot pass validation solely because belief/plausibility remain in range.
 
 ## Paper-result integrity corrections
 
