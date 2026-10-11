@@ -47,10 +47,16 @@ def adapt_batadal(df):
 def adapt_toniot(df):
     out = _adapt(df, ('ts',), ('label','Label','attack','Attack','type'), 'TON-IoT', 'iiot')
     if {'date', 'time'}.issubset(out.columns):
+        # TON-IoT distributions use more than one date spelling. Parse the
+        # combined source fields with day-first semantics instead of forcing a
+        # single format that can silently turn every timestamp into NaT.
+        combined = (
+            out['date'].astype(str).str.strip()
+            + ' '
+            + out['time'].astype(str).str.strip()
+        )
         out['timestamp'] = pd.to_datetime(
-            out['date'].astype(str).str.strip() + ' ' + out['time'].astype(str).str.strip(),
-            format='%d-%b-%y %H:%M:%S',
-            errors='coerce',
+            combined, errors='coerce', dayfirst=True, utc=True
         )
     elif 'timestamp' not in out.columns:
         out['timestamp'] = pd.date_range(start='1970-01-01', periods=len(out), freq='s')

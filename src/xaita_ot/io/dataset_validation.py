@@ -129,7 +129,7 @@ def _parse_timestamp(frame: pd.DataFrame, dataset: str, timestamp_column: str | 
                 + " "
                 + frame[time_column].astype(str).str.strip()
             )
-            return pd.to_datetime(combined, errors="coerce", utc=True), f"{date_column} + {time_column}"
+            return pd.to_datetime(combined, errors="coerce", utc=True, dayfirst=True), f"{date_column} + {time_column}"
     if timestamp_column is None:
         return None, None
     return (

@@ -223,3 +223,22 @@ def test_api_rejects_naive_event_timestamp_and_nonfinite_features():
     }
     with pytest.raises(ValueError, match="finite"):
         EventIn.model_validate(nonfinite)
+
+
+
+def test_toniot_ambiguous_date_time_pair_uses_day_first(tmp_path):
+    from xaita_ot.io.adapters import adapt_dataset
+
+    csv = tmp_path / "toniot-date-time.csv"
+    csv.write_text(
+        "date,time,type,feature\n"
+        "02/07/2021,10:00:00,normal,1\n"
+        "03/07/2021,10:00:01,attack,2\n",
+        encoding="utf-8",
+    )
+    frame = pd.read_csv(csv)
+    adapted = adapt_dataset(frame, "TON-IoT")
+    assert adapted["timestamp"].iloc[0] == pd.Timestamp("2021-07-02 10:00:00", tz="UTC")
+    validation = validate_csv(csv, "TON-IoT", root=tmp_path)
+    assert validation.start_timestamp == "2021-07-02T10:00:00+00:00"
+    assert validation.validation_status == "pass"
