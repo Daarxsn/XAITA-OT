@@ -184,3 +184,42 @@ def test_request_body_limit_middleware_rejects_streamed_oversize_body():
     asyncio.run(middleware(scope, receive, send))
     assert sent[0]["type"] == "http.response.start"
     assert sent[0]["status"] == 413
+
+
+
+def test_multi_asset_consistency_rewards_repeated_known_context():
+    from types import SimpleNamespace
+    from datetime import datetime, timezone
+    from xaita_ot.pipeline.engine import XAITAEngine
+
+    timestamp = datetime(2026, 10, 11, tzinfo=timezone.utc)
+    repeated = SimpleNamespace(events=[
+        SimpleNamespace(asset="PLC-1", protocol="modbus", label="normal", detection_confidence=0.8),
+        SimpleNamespace(asset="PLC-1", protocol="modbus", label="normal", detection_confidence=0.8),
+    ])
+    varied = SimpleNamespace(events=[
+        SimpleNamespace(asset="PLC-1", protocol="modbus", label="normal", detection_confidence=0.8),
+        SimpleNamespace(asset="PLC-2", protocol="opc-ua", label="attack", detection_confidence=0.8),
+    ])
+    assert XAITAEngine._mas(repeated) > XAITAEngine._mas(varied)
+
+
+def test_api_rejects_naive_event_timestamp_and_nonfinite_features():
+    from xaita_ot.api.app import EventIn
+
+    naive = {
+        "event_id": "evt-naive",
+        "timestamp": "2026-10-11T10:00:00",
+        "detection_confidence": 0.8,
+        "features": {"flow": 1.0},
+    }
+    with pytest.raises(ValueError, match="timezone offset"):
+        EventIn.model_validate(naive)
+
+    nonfinite = {
+        **naive,
+        "timestamp": "2026-10-11T10:00:00Z",
+        "features": {"flow": float("nan")},
+    }
+    with pytest.raises(ValueError, match="finite"):
+        EventIn.model_validate(nonfinite)

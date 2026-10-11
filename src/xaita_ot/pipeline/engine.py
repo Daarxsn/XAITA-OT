@@ -1,3 +1,5 @@
+from collections import Counter
+
 import numpy as np
 
 from ..config import AppConfig
@@ -23,8 +25,22 @@ class XAITAEngine:
         assets = [e.asset for e in episode.events]
         protocols = [e.protocol for e in episode.events]
         labels = [e.label for e in episode.events]
-        asset_consistency = len(set(assets)) / len(assets)
-        protocol_consistency = len(set(protocols)) / len(protocols)
+
+        def consistency(values):
+            known = [
+                str(value).strip().lower()
+                for value in values
+                if value is not None
+                and str(value).strip().lower() not in {"", "unknown", "n/a", "none", "null"}
+            ]
+            if not known:
+                return 0.0
+            return max(Counter(known).values()) / len(values)
+
+        # Reward repeated known asset/protocol identities, not diversity. Unknown
+        # values stay in the denominator so missing context lowers confidence.
+        asset_consistency = consistency(assets)
+        protocol_consistency = consistency(protocols)
         behavior_consistency = sum(1 for i in range(1, len(labels)) if labels[i] == labels[i - 1]) / max(1, len(labels) - 1)
         detection_consistency = float(np.mean([e.detection_confidence for e in episode.events]))
         return float(np.clip(0.30 * asset_consistency + 0.20 * protocol_consistency + 0.20 * behavior_consistency + 0.30 * detection_consistency, 0.0, 1.0))

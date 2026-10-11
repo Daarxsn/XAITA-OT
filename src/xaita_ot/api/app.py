@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import datetime, timezone
+import math
 import hmac
 import json
 import logging
@@ -14,7 +15,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .. import __version__
 from ..config import load_config
@@ -311,8 +312,25 @@ class EventIn(BaseModel):
     source: str = Field(default="unknown", min_length=1, max_length=128)
     destination: str = Field(default="unknown", min_length=1, max_length=128)
     label: str = Field(default="unknown", min_length=1, max_length=128)
-    detection_confidence: float = Field(ge=0, le=1)
+    detection_confidence: float = Field(ge=0, le=1, allow_inf_nan=False)
     features: dict[str, float] = Field(default_factory=dict)
+
+    @field_validator("timestamp")
+    @classmethod
+    def timestamp_must_be_timezone_aware(cls, value):
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("timestamp must include a timezone offset")
+        return value.astimezone(timezone.utc)
+
+    @field_validator("features")
+    @classmethod
+    def features_must_be_finite(cls, value):
+        for name, feature_value in value.items():
+            if not str(name).strip():
+                raise ValueError("feature names must be non-empty")
+            if not math.isfinite(float(feature_value)):
+                raise ValueError(f"feature '{name}' must be finite")
+        return value
 
 
 class ExperimentJob(BaseModel):
