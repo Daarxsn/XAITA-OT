@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from datetime import datetime
 import hmac
 import json
@@ -42,6 +43,10 @@ MAX_CONCURRENT_EXPERIMENTS = max(1, int(os.environ.get("XAITA_MAX_CONCURRENT_EXP
 MAX_RETAINED_EXPERIMENT_JOBS = max(100, int(os.environ.get("XAITA_MAX_RETAINED_EXPERIMENT_JOBS", "1000")))
 _experiment_lifecycle_lock = threading.Lock()
 _experiment_jobs: dict[str, dict] = {}
+_experiment_executor = ThreadPoolExecutor(
+    max_workers=MAX_CONCURRENT_EXPERIMENTS,
+    thread_name_prefix="xaita-experiment",
+)
 ENABLE_DOCS = os.environ.get("XAITA_ENABLE_DOCS", "true").lower() == "true"
 FORCE_HTTPS = os.environ.get("XAITA_FORCE_HTTPS", "false").lower() == "true"
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get("XAITA_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") if h.strip()]
@@ -475,10 +480,17 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
 
     lifecycle_key = f"{payload.dataset}:{detector_key}:{payload.seed}"
     with _experiment_lifecycle_lock:
-        active = next((job for job in _experiment_jobs.values() if job["lifecycle_key"] == lifecycle_key and job["status"] == "running"), None)
+        active = next((
+            job for job in _experiment_jobs.values()
+            if job["lifecycle_key"] == lifecycle_key
+            and (job["status"] == "running" or job.get("worker_active", False))
+        ), None)
         if active:
             raise HTTPException(status_code=409, detail={"message": "Equivalent experiment is already running", "job_id": active["job_id"], "status": active["status"]})
-        running_count = sum(1 for job in _experiment_jobs.values() if job["status"] == "running")
+        running_count = sum(
+            1 for job in _experiment_jobs.values()
+            if job["status"] == "running" or job.get("worker_active", False)
+        )
         if running_count >= MAX_CONCURRENT_EXPERIMENTS:
             raise HTTPException(status_code=429, detail={"message": "Experiment concurrency limit reached", "max_concurrent_experiments": MAX_CONCURRENT_EXPERIMENTS})
         job_id = uuid4().hex
@@ -487,13 +499,18 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
             "dataset": payload.dataset, "detector": detector_key, "seed": payload.seed,
             "started_at": datetime.utcnow().isoformat() + "Z", "finished_at": None,
             "duration_seconds": None, "error_type": None, "error": None,
+            "worker_active": False,
         }
         if len(_experiment_jobs) > MAX_RETAINED_EXPERIMENT_JOBS:
-            terminal = [key for key, value in _experiment_jobs.items() if value["status"] != "running"]
+            terminal = [
+                key for key, value in _experiment_jobs.items()
+                if value["status"] != "running" and not value.get("worker_active", False)
+            ]
             for stale_key in terminal[: max(1, len(_experiment_jobs) - MAX_RETAINED_EXPERIMENT_JOBS)]:
                 _experiment_jobs.pop(stale_key, None)
 
     started = time.monotonic()
+    future = None
     try:
         csv_path = _find_dataset_csv(path, payload.dataset)
         validation = validate_csv(csv_path, payload.dataset, root=path)
@@ -509,7 +526,41 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
                     },
                 },
             )
-        run = run_detection(csv_path, payload.dataset, load_config(), seed=payload.seed, detector=detector_key)
+        if time.monotonic() - started >= EXPERIMENT_TIMEOUT_SECONDS:
+            raise HTTPException(
+                status_code=504,
+                detail={
+                    "message": "Experiment exceeded execution deadline before model execution",
+                    "job_id": job_id,
+                    "timeout_seconds": EXPERIMENT_TIMEOUT_SECONDS,
+                },
+            )
+        future = _experiment_executor.submit(
+            run_detection, csv_path, payload.dataset, load_config(),
+            seed=payload.seed, detector=detector_key,
+        )
+
+        def _release_worker_slot(_future):
+            with _experiment_lifecycle_lock:
+                current = _experiment_jobs.get(job_id)
+                if current is not None:
+                    current["worker_active"] = False
+
+        with _experiment_lifecycle_lock:
+            _experiment_jobs[job_id]["worker_active"] = True
+        future.add_done_callback(_release_worker_slot)
+        remaining = max(0.0, EXPERIMENT_TIMEOUT_SECONDS - (time.monotonic() - started))
+        try:
+            run = future.result(timeout=remaining)
+        except FutureTimeoutError as exc:
+            raise HTTPException(
+                status_code=504,
+                detail={
+                    "message": "Experiment exceeded execution deadline",
+                    "job_id": job_id,
+                    "timeout_seconds": EXPERIMENT_TIMEOUT_SECONDS,
+                },
+            ) from exc
         duration = round(time.monotonic() - started, 3)
         if duration > EXPERIMENT_TIMEOUT_SECONDS:
             with _experiment_lifecycle_lock:
@@ -523,6 +574,8 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
             _experiment_jobs[job_id].update({"status": "completed", "finished_at": datetime.utcnow().isoformat() + "Z", "duration_seconds": duration})
     except HTTPException as exc:
         with _experiment_lifecycle_lock:
+            if future is None or future.done():
+                _experiment_jobs[job_id]["worker_active"] = False
             _experiment_jobs[job_id].update({
                 "status": "timed_out" if exc.status_code == 504 else "failed",
                 "finished_at": datetime.utcnow().isoformat() + "Z",
@@ -535,6 +588,8 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
         duration = round(time.monotonic() - started, 3)
         error_type = type(exc).__name__
         with _experiment_lifecycle_lock:
+            if future is None or future.done():
+                _experiment_jobs[job_id]["worker_active"] = False
             _experiment_jobs[job_id].update({
                 "status": "failed", "finished_at": datetime.utcnow().isoformat() + "Z",
                 "duration_seconds": duration, "error_type": error_type,
