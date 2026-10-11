@@ -201,3 +201,17 @@ def test_validator_lists_entirely_empty_columns_without_silently_dropping_them(t
     assert result.validation_status == "pass"
     assert result.empty_columns == ["unused_metadata"]
     assert "all_null_columns_present" in result.validation_warnings
+
+
+def test_placeholder_epoch_day_timestamps_block_benchmark_readiness(tmp_path):
+    path = _write(
+        tmp_path / "placeholder-time.csv",
+        "Timestamp,Attack State,sensor\n"
+        "01/01/1970 07:30:00 AM,Normal,1.0\n"
+        "13/06/2021 07:30:01 AM,Attack,2.0\n"
+        "13/06/2021 07:30:02 AM,Normal,3.0\n",
+    )
+    result = validate_csv(path, "SWaT", tmp_path)
+    assert result.validation_status == "review"
+    assert result.placeholder_timestamps == 1
+    assert "placeholder_timestamps" in result.validation_errors
