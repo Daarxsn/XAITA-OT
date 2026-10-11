@@ -132,6 +132,14 @@ The statistical runner requires at least two unique seeds, executes the Day 23 m
 
 For expensive API experiments, execution is tracked with a process-local lifecycle state. Equivalent dataset/detector/seed requests are rejected while already running, concurrent execution is bounded by `XAITA_MAX_CONCURRENT_EXPERIMENTS`, and each job exposes terminal `completed`, `failed`, or `timed_out` state through `GET /v2/experiment/{job_id}`. The elapsed execution deadline is controlled by `XAITA_EXPERIMENT_TIMEOUT_SECONDS`; the API classifies an over-deadline run safely after execution returns rather than claiming forced process termination. Retained terminal job state is bounded by `XAITA_MAX_RETAINED_EXPERIMENT_JOBS`.
 
+For the dataset-backed Phase 4 C1-C6 comparison, run:
+
+```powershell
+python scripts/run_phase4_attribution.py --swat data/raw/swat/<swat.csv> --batadal data/raw/batadal/<batadal.csv> --toniot data/raw/ton_iot/<toniot.csv> --out artifacts/phase4-attribution --seed 42 --window-size 32 --source-kind unverified
+```
+
+This produces JSON and CSV artifacts for C1 detection-only, C2 DC+BSS, C3 DC+BSS+ECS, C4 DC+BSS+ECS+MAS, C5 WEF and C6 ACFM using the same chronological test windows and a shared Random Forest detection-score baseline. C1 reports detection metrics rather than attribution metrics; WEF is a point estimate and does not claim an uncertainty interval. Ties in hypothesis ranking are counted as abstentions. The source-kind value is a user declaration, not provenance authentication; the runner never marks benchmark claims as approved. CI runs only synthetic fixtures to verify execution/artifact structure, not real benchmark performance.
+
 To evaluate attribution configurations on an explicit researcher-supplied labeled case set:
 
 ```powershell
