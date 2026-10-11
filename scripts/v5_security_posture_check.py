@@ -26,6 +26,10 @@ def main() -> int:
     require(results, "all Linux capabilities dropped", re.search(r"cap_drop:\s*\n\s*- ALL", compose) is not None, "compose drops all capabilities")
     require(results, "temporary filesystem hardened", "tmpfs:" in compose and "noexec,nosuid" in compose, "temporary storage is noexec/nosuid")
     require(results, "request limit propagated", "XAITA_MAX_REQUEST_BYTES" in compose, "compose exposes the API request-size control")
+    launcher = (ROOT / "run_api.py").read_text(encoding="utf-8")
+    require(results, "local API loopback default", 'os.environ.get("XAITA_API_HOST", "127.0.0.1")' in launcher, "direct local launch binds to loopback unless explicitly overridden")
+    require(results, "container host bind explicit", "XAITA_API_HOST=0.0.0.0" in docker and "XAITA_API_HOST: ${XAITA_API_HOST:-0.0.0.0}" in compose, "container networking is explicit instead of changing the local default")
+    require(results, "compose host port loopback-bound", '"127.0.0.1:8080:8080"' in compose, "development API is not published to every host interface by default")
     require(results, "resource controls documented", all(x in env for x in ("XAITA_MAX_EVENTS=", "XAITA_RATE_LIMIT_PER_MINUTE=", "XAITA_MAX_REQUEST_BYTES=")), "all resource controls are documented")
 
     workflow_dir = ROOT / ".github" / "workflows"

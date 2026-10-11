@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 
 WORKDIR /app
-ENV XAITA_OT_ROOT=/app
+ENV XAITA_OT_ROOT=/app XAITA_API_HOST=0.0.0.0
 
 COPY pyproject.toml requirements.txt README.md ./
 COPY src ./src
