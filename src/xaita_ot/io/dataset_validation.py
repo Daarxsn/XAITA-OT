@@ -291,8 +291,8 @@ def validate_csv(
         validation_errors.append("no_usable_feature_columns")
     if missing_cells:
         validation_warnings.append(
-            "missing_cells_present: non-label feature/metadata nulls are counted; "
-            "the training-fitted preprocessing pipeline must handle them"
+            "missing_cells_present: nulls are counted across all columns; "
+            "review feature gaps and document preprocessing before model evaluation"
         )
 
     ready = not validation_errors and timestamp_quality_ready and feature_ready
