@@ -13,22 +13,25 @@ jobs:
   source-package:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout exact handover candidate
+      - name: Checkout repository history
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Create tracked-source archive
+      - name: Create exact-main source archive and repository bundle
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p handover-output
-          REV="$(git rev-parse HEAD)"
-          git archive --format=zip --prefix=XAITA-OT/ HEAD -o handover-output/XAITA-OT-source.zip
+          SOURCE_REV="$(git rev-parse origin/main)"
+          echo "SOURCE_REV=$SOURCE_REV" >> "$GITHUB_ENV"
+          git archive --format=zip --prefix=XAITA-OT/ "$SOURCE_REV" -o handover-output/XAITA-OT-source.zip
+          git bundle create handover-output/XAITA-OT-repository.bundle --all
+          git bundle verify handover-output/XAITA-OT-repository.bundle
           python - <<'PY'
-          import hashlib, json, subprocess, zipfile
+          import hashlib, json, os, subprocess, zipfile
           from pathlib import Path
-          rev = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          rev = os.environ["SOURCE_REV"]
           zpath = Path("handover-output/XAITA-OT-source.zip")
           with zipfile.ZipFile(zpath) as archive:
               names = archive.namelist()
@@ -43,32 +46,39 @@ jobs:
                   "XAITA-OT/data/demo/toniot_like.csv",
               ]
               missing = [name for name in required if name not in names]
-              blocked_raw = [name for name in files if name.startswith("XAITA-OT/data/raw/") and name.lower().endswith(".csv") and "/attack_lists/" not in name]
+              blocked_raw = [
+                  name for name in files
+                  if name.startswith("XAITA-OT/data/raw/")
+                  and name.lower().endswith(".csv")
+                  and "/attack_lists/" not in name
+              ]
               if missing:
                   raise SystemExit("Source package failed required-file check: " + ", ".join(missing))
               if blocked_raw:
-                  raise SystemExit("Raw dataset files unexpectedly tracked in source package: " + ", ".join(blocked_raw[:10]))
+                  raise SystemExit("Raw telemetry unexpectedly tracked in source package: " + ", ".join(blocked_raw[:10]))
               data = {
                   "schema_version": "XAITA-OT-SOURCE-PACKAGE-1.0",
                   "git_revision": rev,
-                  "tracked_file_count": len(files),
                   "archive_sha256": hashlib.sha256(zpath.read_bytes()).hexdigest(),
+                  "repository_bundle_sha256": hashlib.sha256(Path("handover-output/XAITA-OT-repository.bundle").read_bytes()).hexdigest(),
+                  "tracked_file_count": len(files),
                   "included_demo_fixtures": [
                       "data/demo/swat_like.csv",
                       "data/demo/batadal_like.csv",
                       "data/demo/toniot_like.csv",
                       "data/demo/v3_phase2_swat.csv",
                   ],
-                  "raw_benchmarks_included": False,
-                  "raw_data_note": "Full raw benchmark telemetry and private ZIP archives are not included. Only the small tracked BATADAL attack-list metadata is present under data/raw/batadal/attack_lists; actual SWaT, BATADAL and TON-IoT telemetry files must be supplied separately under their applicable dataset terms.",
+                  "raw_benchmarks_included_in_source_archive": False,
+                  "raw_data_note": "Git excludes full raw benchmark telemetry and private dataset ZIPs. The small tracked BATADAL attack-list metadata is included. User-supplied benchmark files are packaged locally as a separate data supplement.",
                   "required_files_check": "pass",
                   "raw_dataset_policy_check": "pass",
+                  "history_bundle_check": "pass",
               }
           Path("handover-output/package-manifest.json").write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           print(json.dumps(data, indent=2))
           PY
 
-      - name: Upload handover source package
+      - name: Upload handover source and repository bundle
         uses: actions/upload-artifact@v4
         with:
           name: XAITA-OT-handover-source
