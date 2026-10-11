@@ -557,6 +557,8 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
         try:
             run = future.result(timeout=remaining)
         except FutureTimeoutError as exc:
+            if future.done():
+                raise
             raise HTTPException(
                 status_code=504,
                 detail={
