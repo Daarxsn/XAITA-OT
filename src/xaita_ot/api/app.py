@@ -23,7 +23,8 @@ from ..core.schemas import DetectionEvent
 from ..io.dataset_validation import validate_csv
 from ..io.dataset_archive import prepare_dataset, preflight_archive
 from ..pipeline.engine import XAITAEngine
-from ..pipeline.experiments import attribution_configurations, run_detection
+from ..pipeline.experiments import attribution_configurations
+from ..operations.experiment_worker import ExperimentTimeoutError, run_detection_with_timeout
 
 VERSION = __version__
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -588,18 +589,32 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
                     "manifest": validation.as_dict(),
                 },
             )
-        run = run_detection(csv_path, payload.dataset, load_config(), seed=payload.seed, detector=detector_key)
+        run = run_detection_with_timeout(
+            csv_path, payload.dataset, load_config(), seed=payload.seed,
+            detector=detector_key, timeout_seconds=EXPERIMENT_TIMEOUT_SECONDS,
+            project_root=ROOT,
+        )
         duration = round(time.monotonic() - started, 3)
-        if duration > EXPERIMENT_TIMEOUT_SECONDS:
-            with _experiment_lifecycle_lock:
-                _experiment_jobs[job_id].update({
-                    "status": "timed_out", "finished_at": datetime.utcnow().isoformat() + "Z",
-                    "duration_seconds": duration, "error_type": "ExperimentTimeout",
-                    "error": f"Experiment exceeded {EXPERIMENT_TIMEOUT_SECONDS:g}s execution deadline",
-                })
-            raise HTTPException(status_code=504, detail={"message": "Experiment exceeded execution deadline", "job_id": job_id, "timeout_seconds": EXPERIMENT_TIMEOUT_SECONDS})
         with _experiment_lifecycle_lock:
             _experiment_jobs[job_id].update({"status": "completed", "finished_at": datetime.utcnow().isoformat() + "Z", "duration_seconds": duration})
+    except ExperimentTimeoutError as exc:
+        duration = round(time.monotonic() - started, 3)
+        with _experiment_lifecycle_lock:
+            _experiment_jobs[job_id].update({
+                "status": "timed_out",
+                "finished_at": datetime.utcnow().isoformat() + "Z",
+                "duration_seconds": duration,
+                "error_type": "ExperimentTimeout",
+                "error": "Isolated experiment worker was terminated at the execution deadline.",
+            })
+        raise HTTPException(
+            status_code=504,
+            detail={
+                "message": "Experiment exceeded its execution deadline; the worker was terminated.",
+                "job_id": job_id,
+                "timeout_seconds": EXPERIMENT_TIMEOUT_SECONDS,
+            },
+        ) from exc
     except HTTPException as exc:
         with _experiment_lifecycle_lock:
             _experiment_jobs[job_id].update({
@@ -612,7 +627,7 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
         raise
     except Exception as exc:
         duration = round(time.monotonic() - started, 3)
-        error_type = type(exc).__name__
+        error_type = getattr(exc, "error_type", type(exc).__name__)
         with _experiment_lifecycle_lock:
             _experiment_jobs[job_id].update({
                 "status": "failed", "finished_at": datetime.utcnow().isoformat() + "Z",

@@ -23,12 +23,18 @@ Audited the public `main` snapshot `8ac654cc2267323c49ceb2113b4ef277d39b438b`. C
 
 ## Findings that remain acceptance items
 
-1. **Execution deadline is not process termination.** The documented lifecycle marks a job `timed_out` only after `run_detection` returns. It does not interrupt a running model fit; hard cancellation would need isolated workers/processes and explicit cancellation tests.
+1. **Experiment deadline is process-enforced.** Detector fitting now runs in an isolated Python worker. If the deadline expires, the worker process tree is terminated and the direct child is reaped before the API marks the job `timed_out` and returns HTTP 504. Dataset preparation/preflight still runs synchronously before this detector-execution deadline begins.
 2. **Readiness is not dataset validation.** `/ready` reports CSV presence. Schema, label, and temporal integrity must be interpreted from preflight validation—not file existence alone.
 3. **Some dashboard content is illustrative.** The detection monitor labels its synthetic stream as demo telemetry, but other static incident and chart content is not a live plant feed. It must be backed by actual API telemetry before claiming live monitoring.
 4. **SWaT A8 supervised metrics remain blocked by labels.** The available A8 archive has no authoritative ground-truth attack labels. Unsupervised flagged-row proportions are not attack rates and cannot establish precision, recall, F1, or AUROC against true attacks.
 5. **MAS profiles require explicit configuration.** The default config leaves `attack_technique_profiles` empty because no defensible hypothesis-specific technique sets are bundled. MAS is explicitly unavailable and omitted from fusion until reference profiles are configured; this avoids inventing ATT&CK alignment ground truth.
 6. **Deployment acceptance is environment-specific.** CI cannot prove every private archive, Windows environment, reverse proxy, production auth setting, or customer OT deployment. Test on the intended deployment environment before release.
+
+## Follow-up after timeout hardening
+
+- A focused process-timeout regression test verifies that a stalled child is terminated within a bounded interval.
+- API regression coverage verifies that timeout results become terminal `timed_out` jobs and return HTTP 504.
+- The timeout applies to detector execution after dataset preparation and validation; synchronous preparation is still outside that execution deadline and remains a future acceptance item for deployments with hostile or unusually large local archives.
 
 ## Verification boundary
 
