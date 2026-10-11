@@ -25,3 +25,5 @@ def test_dashboard_distinguishes_file_presence_from_benchmark_validation():
     assert "dataset files are present; benchmark validation is separate" in html
     assert "VALIDATION NOT RUN" in html
     assert "benchmark validation is separate" in html
+    assert "AVAILABLE · REVIEW" in html
+    assert "does not establish temporal or cross-site generalization" in html
