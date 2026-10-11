@@ -64,6 +64,7 @@ class CSVValidation:
     validation_status: str
     validation_errors: list[str] = field(default_factory=list)
     validation_warnings: list[str] = field(default_factory=list)
+    empty_columns: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -89,6 +90,7 @@ class CSVValidation:
             "validation_status": self.validation_status,
             "validation_errors": self.validation_errors,
             "validation_warnings": self.validation_warnings,
+            "empty_columns": self.empty_columns,
         }
 
 
@@ -208,12 +210,16 @@ def validate_csv(
         )
     ]
     usable_feature_columns: set[str] = set()
+    nonempty_columns: set[str] = set()
 
     try:
         for frame in pd.read_csv(source, chunksize=chunksize, low_memory=False):
             frame.columns = columns
             rows += len(frame)
             missing_cells += int(frame.isna().sum().sum())
+            nonempty_columns.update(
+                column for column in columns if frame[column].notna().any()
+            )
             usable_feature_columns.update(
                 column for column in feature_columns
                 if column in frame.columns and frame[column].notna().any()
@@ -275,6 +281,7 @@ def validate_csv(
 
     validation_errors: list[str] = []
     validation_warnings: list[str] = []
+    empty_columns = sorted(set(columns) - nonempty_columns)
     if not timestamp_column_ready:
         validation_errors.append("missing_timestamp_column")
     if source_label_column is None:
@@ -294,6 +301,8 @@ def validate_csv(
             "missing_cells_present: nulls are counted across all columns; "
             "review feature gaps and document preprocessing before model evaluation"
         )
+    if empty_columns:
+        validation_warnings.append("all_null_columns_present")
 
     ready = not validation_errors and timestamp_quality_ready and feature_ready
 
@@ -319,6 +328,7 @@ def validate_csv(
         validation_status="pass" if ready else "review",
         validation_errors=validation_errors,
         validation_warnings=validation_warnings,
+        empty_columns=empty_columns,
     )
 
 
