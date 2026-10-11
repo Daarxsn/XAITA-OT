@@ -374,3 +374,54 @@ def test_experiment_materializes_private_archive_when_runtime_path_is_missing(mo
     )
     assert response.status_code == 200
     assert (dataset_root / "TON-IoT.csv").is_file()
+
+
+def test_dataset_status_does_not_expose_local_paths_and_clarifies_readiness(tmp_path, monkeypatch):
+    monkeypatch.setattr(api, "API_KEY", None)
+    dataset = tmp_path / "private-dataset"
+    dataset.mkdir()
+    (dataset / "sample.csv").write_text(
+        "timestamp,label\n2026-01-01T00:00:00Z,0\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(api, "DATASET_PATHS", {"SWaT": str(dataset)})
+    response = client.get("/v2/datasets")
+    assert response.status_code == 200
+    body = response.json()["datasets"]["SWaT"]
+    assert body["ready"] is True
+    assert body["files_present"] is True
+    assert body["readiness_basis"] == "file_presence_only"
+    assert body["benchmark_validation_status"] == "not_checked"
+    assert "path" not in body
+    assert str(tmp_path) not in response.text
+
+
+def test_operations_summary_does_not_expose_local_benchmark_path(tmp_path, monkeypatch):
+    monkeypatch.setattr(api, "API_KEY", None)
+    monkeypatch.setattr(api, "ROOT", tmp_path)
+    response = client.get("/v2/ops/summary")
+    assert response.status_code == 200
+    research = response.json()["research"]
+    assert "benchmark_summary_path" not in research
+    assert "benchmark_summary_artifact" in research
+
+
+def test_dataset_preflight_redacts_archive_path(tmp_path, monkeypatch):
+    import zipfile
+
+    monkeypatch.setattr(api, "API_KEY", None)
+    monkeypatch.setattr(api, "ROOT", tmp_path)
+    paths = {}
+    for key, folder in (("SWaT", "swat"), ("BATADAL", "batadal"), ("TON-IoT", "ton_iot")):
+        path = tmp_path / "data" / "raw" / folder
+        path.mkdir(parents=True)
+        paths[key] = str(path)
+    monkeypatch.setattr(api, "DATASET_PATHS", paths)
+    archive = tmp_path / "private-datasets.zip"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("unrelated/readme.txt", "no benchmark files")
+    monkeypatch.setenv("XAITA_DATASET_ARCHIVE", str(archive))
+    response = client.get("/v2/datasets/preflight")
+    assert response.status_code == 200
+    assert response.json()["archive"] is not None
+    assert "path" not in response.json()["archive"]
+    assert str(tmp_path) not in response.text
