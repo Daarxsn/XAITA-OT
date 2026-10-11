@@ -434,13 +434,13 @@ def test_experiment_timeout_returns_terminal_status_without_releasing_active_slo
 
     monkeypatch.setattr(api, "API_KEY", None)
     monkeypatch.setattr(api, "DATASET_PATHS", {"TON-IoT": str(tmp_path)})
-    monkeypatch.setattr(api, "EXPERIMENT_TIMEOUT_SECONDS", 0.2)
+    monkeypatch.setattr(api, "EXPERIMENT_TIMEOUT_SECONDS", 2.0)
     (tmp_path / "sample.csv").write_text(
         "timestamp,label\n2026-01-01T00:00:00Z,0\n", encoding="utf-8"
     )
 
     def slow_run(*args, **kwargs):
-        time.sleep(0.6)
+        time.sleep(3.0)
         return _fake_run()
 
     monkeypatch.setattr(api, "run_detection", slow_run)
@@ -459,4 +459,4 @@ def test_experiment_timeout_returns_terminal_status_without_releasing_active_slo
     assert "worker_active" not in status.json()["job"]
     with api._experiment_lifecycle_lock:
         assert api._experiment_jobs[job_id]["worker_active"] is True
-    time.sleep(0.5)
+    time.sleep(1.1)
