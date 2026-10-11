@@ -73,14 +73,15 @@ def _map_attack(stages: list[str], protocol: str) -> list[dict]:
     return list(unique.values())
 
 
-def _evidence(events: list[DetectionEvent]) -> tuple[dict[str, float], dict[str, float]]:
-    conf = float(np.mean([e.detection_confidence for e in events]))
-    assets = [e.asset for e in events]; protocols = [e.protocol for e in events]
-    asset_cont = float(len(set(assets)) == 1)
-    proto_cont = float(len(set(protocols)) == 1)
-    temporal = float(np.exp(-max(0.0, (events[-1].timestamp - events[0].timestamp).total_seconds()) / 120.0))
-    attack = {"DC": conf, "BSS": temporal, "ECS": asset_cont, "EC": proto_cont, "MAS": float(np.mean([1.0 if e.label.lower() in {"attack", "anomaly", "malicious"} else .25 for e in events]))}
-    return attack, {"DC": 1.0, "BSS": .8, "ECS": .85, "EC": .8, "MAS": .65}
+def _evidence(events: list[DetectionEvent], correlation_strength: float) -> tuple[dict[str, float], dict[str, float]]:
+    """Build only semantically supported evidence; don't label heuristics as BSS/MAS."""
+    if not events:
+        raise ValueError("an episode must contain at least one event")
+    confidence = float(np.mean([event.detection_confidence for event in events]))
+    correlation = float(np.clip(correlation_strength, 0.0, 1.0))
+    # BSS requires a reference behavior profile; MAS requires a hypothesis-specific
+    # ATT&CK technique profile. Neither is fabricated from time span or event labels.
+    return {"DC": confidence, "ECS": correlation}, {"DC": 1.0, "ECS": 0.85}
 
 
 def build_case(csv_path: str | Path, dataset: str, cfg: AppConfig, seed: int = 42, top_n: int = 1) -> dict:
@@ -121,7 +122,8 @@ def build_case(csv_path: str | Path, dataset: str, cfg: AppConfig, seed: int = 4
     selected = sorted(attack_eps, key=lambda e: (max(ev.detection_confidence for ev in e.events), e.correlation_strength), reverse=True)[:top_n]
     cases = []
     for ep in selected:
-        attack_evidence, reliabilities = _evidence(ep.events)
+        attack_map = _map_attack(ep.stages, ep.events[0].protocol)
+        attack_evidence, reliabilities = _evidence(ep.events, ep.correlation_strength)
         benign_evidence = {k: 1.0 - v for k, v in attack_evidence.items()}
         hypotheses = [
             AttributionHypothesis("H1", "External/remote actor", "Activity consistent with a remote or network-originating actor.", {"network": .6}),
@@ -129,14 +131,20 @@ def build_case(csv_path: str | Path, dataset: str, cfg: AppConfig, seed: int = 4
             AttributionHypothesis("H3", "Misconfiguration or benign anomaly", "Non-adversarial explanation for anomalous process behavior.", {"low_detection": .5}),
         ]
         evidence_by_hypothesis = {
-            "H1": attack_evidence,
-            "H2": {
-                "DC": attack_evidence["DC"],
-                "ECS": attack_evidence["ECS"],
-                "MAS": attack_evidence["MAS"],
-            },
-            "H3": benign_evidence,
+            "H1": dict(attack_evidence),
+            "H2": dict(attack_evidence),
+            "H3": dict(benign_evidence),
         }
+        # MAS requires a configured hypothesis-specific reference profile.
+        # When absent, it is omitted rather than fabricated as evidence.
+        from .engine import XAITAEngine
+        for hypothesis_id, hypothesis_evidence in evidence_by_hypothesis.items():
+            reference_techniques = cfg.attribution.attack_technique_profiles.get(hypothesis_id)
+            if reference_techniques:
+                mas = XAITAEngine._mas(attack_map, reference_techniques)
+                if mas is not None:
+                    modifier = cfg.attribution.hypothesis_profiles.get(hypothesis_id, {}).get("MAS", 1.0)
+                    hypothesis_evidence["MAS"] = float(np.clip(mas * modifier, 0.0, 1.0))
         assessment = assess(
             [h.hypothesis_id for h in hypotheses],
             evidence_by_hypothesis,
@@ -145,14 +153,27 @@ def build_case(csv_path: str | Path, dataset: str, cfg: AppConfig, seed: int = 4
             .35,
         )
         best = assessment[0]
-        attack_map = _map_attack(ep.stages, ep.events[0].protocol)
         feature_names = [f"window_feature_{i}" for i in range(flat_train.shape[1])]
         xai = _xai(clf, flat_test, feature_names)
         risk = _risk(max(ev.detection_confidence for ev in ep.events), ep.correlation_strength, best.belief, best.plausibility)
         provenance = [_id("PROV", dataset, seed, ep.episode_id, "telemetry"), _id("PROV", dataset, seed, ep.episode_id, "detection"), _id("PROV", dataset, seed, ep.episode_id, "btae"), _id("PROV", dataset, seed, ep.episode_id, "attribution"), _id("PROV", dataset, seed, ep.episode_id, "xai"), _id("PROV", dataset, seed, ep.episode_id, "risk")]
         cti = CTIProduct(_id("INC", dataset, seed, ep.episode_id), {"confidence": max(ev.detection_confidence for ev in ep.events), "events": [ev.event_id for ev in ep.events]}, {"episode_id": ep.episode_id, "stages": ep.stages, "correlation": ep.correlation_strength}, {"asset": ep.events[0].asset, "protocol": ep.events[0].protocol}, {"best_hypothesis": to_dict(best), "all_hypotheses": [to_dict(a) for a in assessment]}, xai, risk, provenance)
         cases.append({"case_id": _id("CASE", dataset, seed, ep.episode_id), "episode_selection": {"episode_id": ep.episode_id, "selection_basis": "highest detection confidence, then BTAE correlation", "event_count": len(ep.events)}, "attack_sequence": [{"event_id": e.event_id, "timestamp": e.timestamp.isoformat(), "label": e.label, "asset": e.asset, "protocol": e.protocol, "confidence": e.detection_confidence} for e in ep.events], "btae_reconstruction": {"episode_id": ep.episode_id, "correlation_strength": ep.correlation_strength, "stages": ep.stages, "edges": ep.correlation_edges}, "attack_mapping": attack_map, "attribution_hypotheses": [to_dict(a) for a in assessment], "acfm": {"best_hypothesis": to_dict(best), "support_threshold": .60, "conflict_threshold": .35}, "xai": xai, "risk": risk, "cti": {"incident_id": cti.incident_id, "detection": cti.detection, "behavior": cti.behavior, "context": cti.context, "attribution": cti.attribution, "xai": cti.xai, "risk": cti.risk, "provenance": cti.provenance}, "provenance": provenance})
-    return {"phase": "V3.7", "status": "PASS", "dataset": dataset, "seed": seed, "cases": cases, "selection_policy": "attack-containing episodes ranked by maximum detector confidence then BTAE correlation"}
+    return {
+        "phase": "V3.7",
+        "status": "PASS",
+        "paper_grade_attribution": False,
+        "evidence_mode": "partial_evidence_without_reference_BSS",
+        "limitations": [
+            "BSS is unavailable until reference behavior profiles are implemented and supplied.",
+            "MAS is available only for hypotheses with configured ATT&CK reference profiles.",
+            "Generated provenance IDs identify stages but do not, by themselves, prove validated evidence linkage.",
+        ],
+        "dataset": dataset,
+        "seed": seed,
+        "cases": cases,
+        "selection_policy": "attack-containing episodes ranked by maximum detection confidence then BTAE correlation",
+    }
 
 
 def write_case_artifact(result: dict, out_dir: str | Path) -> str:

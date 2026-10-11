@@ -215,7 +215,22 @@ def run_phase3(paths: dict[str, str], cfg: AppConfig, seeds=None, bins: int = 10
     def agg(values):
         a = np.asarray(values, dtype=float)
         return {"mean": float(a.mean()), "std": float(a.std(ddof=1)) if len(a) > 1 else 0.0, "n": int(len(a))}
-    return {"phase": "V3.3", "status": "PASS", "datasets": list(paths), "seeds": seeds, "bins": bins, "runs": results, "ece_summary": {k: agg(v) for k, v in by_method.items()}}
+    return {
+        "phase": "V3.3",
+        "status": "PASS",
+        "paper_grade_attribution_calibration": False,
+        "evidence_mode": "proxy_telemetry_statistics",
+        "limitations": [
+            "WEF/ACFM channels use telemetry-statistic proxies rather than the manuscript-defined BSS/ECS/MAS evidence.",
+            "Fusion scores are compared with binary attack labels; they are not calibrated actor-attribution probabilities.",
+            "Only detector ECE/Brier values should be interpreted as detector calibration results.",
+        ],
+        "datasets": list(paths),
+        "seeds": seeds,
+        "bins": bins,
+        "runs": results,
+        "ece_summary": {k: agg(v) for k, v in by_method.items()},
+    }
 
 
 def write_phase3_artifacts(result: dict, out_dir: str | Path) -> dict[str, str]:

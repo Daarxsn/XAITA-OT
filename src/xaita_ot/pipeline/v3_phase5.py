@@ -135,7 +135,21 @@ def run_phase5(paths: dict[str, str], cfg: AppConfig, seeds=None):
     summary = frame.groupby(["parameter", "value"], as_index=False).agg(
         f1_mean=("f1", "mean"), f1_std=("f1", "std"), precision_mean=("precision", "mean"), recall_mean=("recall", "mean"), fpr_mean=("fpr", "mean"), auroc_mean=("auroc", "mean"), interval_width_mean=("interval_width_mean", "mean"), n=("f1", "size")
     )
-    return {"phase": "V3.5", "status": "PASS", "datasets": list(paths), "seeds": seeds, "parameters": PARAMETER_VALUES, "rows": rows, "summary": summary.to_dict(orient="records"), "run_count": len(rows)}
+    return {
+        "phase": "V3.5",
+        "status": "PASS",
+        "paper_grade_sensitivity": False,
+        "evidence_mode": "proxy_telemetry_statistics",
+        "limitations": [
+            "Sensitivity sweeps operate on proxy telemetry statistics; integrated reference-profile BSS/BTAE/ATT&CK alignment parameters are not being swept.",
+        ],
+        "datasets": list(paths),
+        "seeds": seeds,
+        "parameters": PARAMETER_VALUES,
+        "rows": rows,
+        "summary": summary.to_dict(orient="records"),
+        "run_count": len(rows),
+    }
 
 
 def write_phase5_artifacts(result: dict, out_dir: str | Path):

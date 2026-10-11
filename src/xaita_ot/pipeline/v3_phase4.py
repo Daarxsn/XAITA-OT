@@ -164,7 +164,22 @@ def run_phase4(paths: dict[str, str], cfg: AppConfig, seeds=None) -> dict:
             p = float(stats.ttest_rel(a, b).pvalue) if len(d) > 1 else None
             paired.append({"metric": metric, "n": int(len(d)), "full_minus_variant_mean": float(np.nanmean(d)) if len(d) else None, "cohens_dz": float(np.nanmean(d) / sd) if sd > 0 else 0.0, "p_value": p})
         effects[variant] = paired
-    return {"phase": "V3.4", "status": "PASS", "datasets": list(paths), "seeds": seeds, "variants": list(VARIANTS), "runs": runs, "effects_vs_full": effects, "row_count": len(rows)}
+    return {
+        "phase": "V3.4",
+        "status": "PASS",
+        "paper_grade_component_ablation": False,
+        "evidence_mode": "proxy_telemetry_statistics",
+        "limitations": [
+            "Variants remove proxy inputs, not the integrated BTAE/BSS/ATT&CK/ACFM components in the research method.",
+            "These are exploratory binary attack-classification comparisons, not component-attribution ablation evidence.",
+        ],
+        "datasets": list(paths),
+        "seeds": seeds,
+        "variants": list(VARIANTS),
+        "runs": runs,
+        "effects_vs_full": effects,
+        "row_count": len(rows),
+    }
 
 
 def write_phase4_artifacts(result: dict, out_dir: str | Path):
