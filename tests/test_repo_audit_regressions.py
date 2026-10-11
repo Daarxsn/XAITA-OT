@@ -545,3 +545,73 @@ def test_behavior_profile_validation_rejects_invalid_weights_and_intervals():
     invalid_intervals = {**base, "inter_event_seconds": [1.0, 2.0]}
     with pytest.raises(ValueError, match=r"len\(sequence\)-1"):
         AttributionConfig(behavior_profiles={"H1": invalid_intervals})
+
+
+
+def test_swat_unlabeled_small_csv_keeps_out_of_fit_rows(tmp_path):
+    source = tmp_path / "small-input"
+    source.mkdir()
+    count = 120
+    frame = pd.DataFrame({
+        "Timestamp": pd.date_range("2021-07-01", periods=count, freq="s").astype(str),
+        "sensor_a": np.sin(np.arange(count) / 4),
+        "sensor_b": np.cos(np.arange(count) / 7),
+    })
+    frame.to_csv(source / "small.csv", index=False)
+    result = analyze_swat_unlabeled(
+        source, tmp_path / "small-output", seed=42, train_fraction=0.7,
+        max_train_rows=256, n_estimators=10, top_n=2,
+    )
+    item = result["files"][0]
+    assert item["status"] == "completed"
+    assert item["rows"] == count
+    assert item["train_rows"] == 84
+    assert item["train_rows"] < item["rows"]
+
+
+def test_swat_unlabeled_excludes_label_aliases_from_numeric_features(tmp_path):
+    source = tmp_path / "labeled-input"
+    source.mkdir()
+    count = 300
+    values = np.arange(count)
+    frame = pd.DataFrame({
+        "Timestamp": pd.date_range("2021-07-01", periods=count, freq="s").astype(str),
+        "sensor_a": np.sin(values / 5),
+        "sensor_b": np.cos(values / 9),
+        "interval_attack_label": values % 2,
+        "ATT_FLAG": (values // 2) % 2,
+    })
+    frame.to_csv(source / "labeled.csv", index=False)
+    result = analyze_swat_unlabeled(
+        source, tmp_path / "labeled-output", seed=42, train_fraction=0.7,
+        max_train_rows=256, n_estimators=10, top_n=2,
+    )
+    assert result["files"][0]["status"] == "completed"
+    assert result["files"][0]["features"] == ["sensor_a", "sensor_b"]
+
+
+def test_swat_unlabeled_duplicate_header_is_reviewed_without_aborting_other_files(tmp_path):
+    source = tmp_path / "mixed-input"
+    source.mkdir()
+    (source / "bad.csv").write_text(
+        "Timestamp,sensor_a,sensor_a,sensor_b\n"
+        "2021-07-01T00:00:00Z,1,2,3\n"
+        "2021-07-01T00:00:01Z,2,3,4\n",
+        encoding="utf-8",
+    )
+    count = 300
+    values = np.arange(count)
+    pd.DataFrame({
+        "Timestamp": pd.date_range("2021-07-01", periods=count, freq="s").astype(str),
+        "sensor_a": np.sin(values / 5),
+        "sensor_b": np.cos(values / 9),
+    }).to_csv(source / "valid.csv", index=False)
+    result = analyze_swat_unlabeled(
+        source, tmp_path / "mixed-output", seed=42, train_fraction=0.7,
+        max_train_rows=256, n_estimators=10, top_n=2,
+    )
+    by_name = {item["file"]: item for item in result["files"]}
+    assert by_name["bad.csv"]["status"] == "review"
+    assert "duplicate CSV header" in by_name["bad.csv"]["reason"]
+    assert by_name["valid.csv"]["status"] == "completed"
+    assert result["unique_csv_count"] == 2
