@@ -111,3 +111,65 @@ def test_missing_dataset_root_has_actionable_error(tmp_path):
         assert "CSV file not found" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("expected DatasetValidationError")
+
+
+
+def test_missing_label_values_are_counted_and_block_readiness(tmp_path):
+    path = _write(
+        tmp_path / "missing-labels.csv",
+        "Timestamp,Attack State,sensor\n"
+        "2026-01-01 00:00:00,Normal,1.0\n"
+        "2026-01-01 00:00:01,,2.0\n"
+        "2026-01-01 00:00:02,Attack,3.0\n",
+    )
+    result = validate_csv(path, "SWaT", tmp_path)
+    assert result.validation_status == "review"
+    assert result.unknown_label_rows == 1
+    assert result.attack_rows == 1
+    assert result.normal_rows == 1
+    assert "missing_or_invalid_labels" in result.validation_errors
+
+
+def test_feature_nulls_are_reported_without_automatically_blocking_readiness(tmp_path):
+    path = _write(
+        tmp_path / "feature-gaps.csv",
+        "Timestamp,Attack State,sensor\n"
+        "2026-01-01 00:00:00,Normal,1.0\n"
+        "2026-01-01 00:00:01,Attack,\n"
+        "2026-01-01 00:00:02,Normal,3.0\n",
+    )
+    result = validate_csv(path, "SWaT", tmp_path)
+    assert result.validation_status == "pass"
+    assert result.missing_cells == 1
+    assert result.validation_errors == []
+    assert any("missing_cells_present" in warning for warning in result.validation_warnings)
+
+
+def test_day_first_swat_timestamps_parse_without_dateutil_ambiguity(tmp_path):
+    path = _write(
+        tmp_path / "swat-dayfirst.csv",
+        "Timestamp,Attack State,sensor\n"
+        "13/06/2021 07:30:00 AM,Normal,1.0\n"
+        "13/06/2021 07:30:01 AM,Attack,2.0\n"
+        "13/06/2021 07:30:02 AM,Normal,1.5\n",
+    )
+    result = validate_csv(path, "SWaT", tmp_path)
+    assert result.validation_status == "pass"
+    assert result.invalid_timestamps == 0
+    assert result.monotonic_timestamp_order is True
+
+
+def test_timestamp_order_and_duplicate_diagnostics_are_explicit(tmp_path):
+    path = _write(
+        tmp_path / "unordered.csv",
+        "Timestamp,Attack State,sensor\n"
+        "2026-01-01 00:00:01,Normal,1.0\n"
+        "2026-01-01 00:00:01,Attack,2.0\n"
+        "2026-01-01 00:00:00,Normal,3.0\n",
+    )
+    result = validate_csv(path, "SWaT", tmp_path)
+    assert result.validation_status == "review"
+    assert result.duplicate_timestamps == 1
+    assert result.monotonic_timestamp_order is False
+    assert "duplicate_timestamps" in result.validation_errors
+    assert "non_monotonic_timestamps" in result.validation_errors
