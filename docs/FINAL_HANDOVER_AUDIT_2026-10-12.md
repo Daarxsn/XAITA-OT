@@ -12,7 +12,7 @@ The repository baseline has a substantial automated test suite and CI coverage. 
 
 This confirms that the repository passes its configured synthetic-fixture and code-contract checks. It **does not** confirm that every privately supplied benchmark dataset is correctly labeled, ready for supervised training, or has been evaluated with real-data results. That boundary matters for a scientific or company handover.
 
-A small final hardening change is being prepared in this audit branch: normal local startup binds to loopback by default, and Compose publishes its host port on loopback by default. The container process still listens on its container interface so local host-to-container forwarding works. The audit branch must pass CI before its additional changes are treated as verified.
+Final handover hardening was merged as PR #28, merge commit `b9acbb38b2cae59ba02069673e62bc8fe0109365`. Local startup now binds to loopback by default, and Compose publishes its host port on loopback by default. The container process listens on its container interface so local host-to-container forwarding works. PR #28 CI, clean-install, release-candidate, dependency/security evidence, operational, provenance, and preflight checks passed. The corresponding main-branch workflows were queued/running immediately after merge and should be checked in Actions for the final post-merge status.
 
 ## 2. Confirmed fixes already merged
 
@@ -25,14 +25,16 @@ The prior handover hardening in PR #26 (`4272189`) is also merged. GitHub Action
 - container/filesystem security scan and Python static analysis;
 - operational, security-posture, provenance, and preflight checks.
 
+PR #28 then passed the same principal gates: CI (Python 3.11/3.12), V5 clean install, release candidate, dependency/security evidence, security posture, operational check, provenance, and preflight. PR #28 is merged. Main-branch workflows were running immediately after the merge; verify their final state in [GitHub Actions](https://github.com/Daarxsn/XAITA-OT/actions).
+
 These are repository/fixture acceptance results; they are not independently reproduced real benchmark performance.
 
 ## 3. Issues found and their disposition
 
 | Area | Finding | Disposition |
 |---|---|---|
-| Local server exposure | `run_api.py` used `0.0.0.0` by default, unnecessarily exposing a developer-run API to other interfaces on the machine/network. | Final audit branch changes the default to `127.0.0.1`; callers can explicitly set `XAITA_HOST` when a deployment needs another bind address. CI verification is pending. |
-| Container port exposure | Compose published `8080:8080`, which binds on all host interfaces by default. | Final audit branch changes host publication to `127.0.0.1:8080:8080`; remote publication now requires an explicit deployment change. CI verification is pending. |
+| Local server exposure | `run_api.py` used `0.0.0.0` by default, unnecessarily exposing a developer-run API to other interfaces on the machine/network. | Fixed in PR #28, merged as `b9acbb3`; default is `127.0.0.1`. A deployment must explicitly set `XAITA_HOST` to use another bind address. |
+| Container port exposure | Compose published `8080:8080`, which binds on all host interfaces by default. | Fixed in PR #28, merged as `b9acbb3`; host publication is `127.0.0.1:8080:8080`. Remote publication now requires an explicit deployment change. |
 | Raw dataset versioning | Benchmark files are deliberately excluded from Git; a source ZIP alone cannot include the user's licensed/private data. | Intentional and retained. Supply datasets separately, follow their access terms, and keep hashes/manifests alongside research outputs. |
 | Dataset presence vs readiness | API/dashboard file-presence status is not the same as benchmark validation. | Dashboard contract tests cover this distinction; do not treat file presence as benchmark acceptance. |
 | BATADAL labels | A dataset file includes native `ATT_FLAG=-999` unknown/unlabeled rows; the general validator flags them before the BATADAL attack-interval alignment can necessarily be applied. The test file may also lack a native label column. | Remains open. The ingest/validation sequence needs a dataset-aware policy using published attack interval metadata, with unknown labels preserved rather than silently changed to normal. |
