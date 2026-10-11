@@ -440,7 +440,11 @@ def experiment_status(job_id: str, xaita_api_key: str | None = Header(default=No
         job = _experiment_jobs.get(job_id)
         if job is None:
             raise HTTPException(status_code=404, detail="Experiment job not found")
-        return {"schema_version": "XAITA-OT-V5-JOB-1.0", "job": dict(job)}
+        public_job = {
+            key: value for key, value in job.items()
+            if key not in {"lifecycle_key", "worker_active"}
+        }
+        return {"schema_version": "XAITA-OT-V5-JOB-1.0", "job": public_job}
 
 
 @app.post("/v2/experiment")
