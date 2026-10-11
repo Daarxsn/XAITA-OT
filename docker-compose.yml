@@ -1,9 +1,11 @@
 services:
   xaita-ot:
     build: .
+    # Publish only on the local host by default. External publication must be explicit.
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
+      XAITA_HOST: ${XAITA_HOST:-0.0.0.0}
       XAITA_ENV: ${XAITA_ENV:-development}
       XAITA_ENABLE_DOCS: ${XAITA_ENABLE_DOCS:-true}
       XAITA_ALLOWED_HOSTS: ${XAITA_ALLOWED_HOSTS:-127.0.0.1,localhost}
