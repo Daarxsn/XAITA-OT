@@ -53,7 +53,11 @@ def _numeric_features(frame: pd.DataFrame) -> list[str]:
     for column in frame.columns:
         if str(column).strip().lower() in EXCLUDED_COLUMNS:
             continue
-        converted = pd.to_numeric(frame[column], errors="coerce")
+        converted = (
+            pd.to_numeric(frame[column], errors="coerce")
+            .replace([np.inf, -np.inf], np.nan)
+            .astype("float64")
+        )
         if converted.notna().mean() >= 0.90 and converted.nunique(dropna=True) > 1:
             features.append(column)
     return features
@@ -86,17 +90,24 @@ def analyze_swat_unlabeled(
     top_n: int = 3,
 ) -> dict[str, Any]:
     source_root = Path(root).resolve()
-    output_root = Path(out)
-    output_root.mkdir(parents=True, exist_ok=True)
+    output_root = Path(out).resolve()
 
-    if not source_root.exists():
-        raise ValueError(f"SWaT root not found: {source_root}")
+    if not source_root.is_dir():
+        raise ValueError(f"SWaT root must be an existing directory: {source_root}")
+    if output_root == source_root or source_root in output_root.parents:
+        raise ValueError(
+            f"Output directory must be outside the SWaT source tree: {output_root}"
+        )
     if not 0.1 <= train_fraction < 1.0:
         raise ValueError("train_fraction must be in [0.1, 1.0)")
     if max_train_rows < 256:
         raise ValueError("max_train_rows must be at least 256")
     if n_estimators < 10:
         raise ValueError("n_estimators must be at least 10")
+    if top_n < 1:
+        raise ValueError("top_n must be at least 1")
+
+    output_root.mkdir(parents=True, exist_ok=True)
 
     files = _unique_csvs(source_root)
     if not files:
@@ -107,10 +118,32 @@ def analyze_swat_unlabeled(
     total_flagged = 0
 
     for source in files:
-        frame = pd.read_csv(source, low_memory=False)
-        if frame.empty:
+        relative = source.relative_to(source_root)
+        try:
+            frame = pd.read_csv(source, low_memory=False)
+        except pd.errors.EmptyDataError:
+            file_results.append({
+                "file": relative.as_posix(),
+                "sha256": _sha256(source),
+                "status": "review",
+                "reason": "empty CSV has no header or rows",
+                "rows": 0,
+                "feature_count": 0,
+            })
             continue
 
+        if frame.empty:
+            file_results.append({
+                "file": relative.as_posix(),
+                "sha256": _sha256(source),
+                "status": "review",
+                "reason": "CSV contains a header but no data rows",
+                "rows": 0,
+                "feature_count": 0,
+            })
+            continue
+
+        total_rows += len(frame)
         features = _numeric_features(frame)
         if len(features) < 2:
             file_results.append({
@@ -125,7 +158,11 @@ def analyze_swat_unlabeled(
 
         numeric = pd.DataFrame(
             {
-                column: pd.to_numeric(frame[column], errors="coerce")
+                column: (
+                    pd.to_numeric(frame[column], errors="coerce")
+                    .replace([np.inf, -np.inf], np.nan)
+                    .astype("float64")
+                )
                 for column in features
             }
         )
@@ -178,7 +215,7 @@ def analyze_swat_unlabeled(
         flagged = prediction == -1
 
         names, deviation = _top_deviations(
-            numeric.to_numpy(dtype=float),
+            numeric.fillna(medians).to_numpy(dtype=float),
             valid_columns,
             medians.to_numpy(dtype=float),
             scales.to_numpy(dtype=float),
@@ -214,7 +251,6 @@ def analyze_swat_unlabeled(
                 "top_deviation_score": float(deviation[index]),
             })
 
-        total_rows += len(frame)
         total_flagged += int(flagged.sum())
         file_results.append({
             "file": relative.as_posix(),
