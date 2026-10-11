@@ -43,7 +43,7 @@ jobs:
                   "XAITA-OT/data/demo/toniot_like.csv",
               ]
               missing = [name for name in required if name not in names]
-              blocked_raw = [name for name in files if name.startswith("XAITA-OT/data/raw/") and name.lower().endswith(".csv")]
+              blocked_raw = [name for name in files if name.startswith("XAITA-OT/data/raw/") and name.lower().endswith(".csv") and "/attack_lists/" not in name]
               if missing:
                   raise SystemExit("Source package failed required-file check: " + ", ".join(missing))
               if blocked_raw:
@@ -60,7 +60,7 @@ jobs:
                       "data/demo/v3_phase2_swat.csv",
                   ],
                   "raw_benchmarks_included": False,
-                  "raw_data_note": "Git excludes data/raw/** and *.zip. Real benchmark files must be supplied separately under their applicable dataset terms.",
+                  "raw_data_note": "Full raw benchmark telemetry and private ZIP archives are not included. Only the small tracked BATADAL attack-list metadata is present under data/raw/batadal/attack_lists; actual SWaT, BATADAL and TON-IoT telemetry files must be supplied separately under their applicable dataset terms.",
                   "required_files_check": "pass",
                   "raw_dataset_policy_check": "pass",
               }
