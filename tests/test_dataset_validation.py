@@ -187,3 +187,17 @@ def test_non_binary_numeric_labels_block_benchmark_readiness(tmp_path):
     assert result.validation_status == "review"
     assert result.unknown_label_rows == 1
     assert "missing_or_invalid_labels" in result.validation_errors
+
+
+def test_validator_lists_entirely_empty_columns_without_silently_dropping_them(tmp_path):
+    path = _write(
+        tmp_path / "empty-column.csv",
+        "Timestamp,Attack State,sensor,unused_metadata\n"
+        "2026-01-01T00:00:00Z,Normal,1.0,\n"
+        "2026-01-01T00:00:01Z,Attack,2.0,\n"
+        "2026-01-01T00:00:02Z,Normal,3.0,\n",
+    )
+    result = validate_csv(path, "SWaT", tmp_path)
+    assert result.validation_status == "pass"
+    assert result.empty_columns == ["unused_metadata"]
+    assert "all_null_columns_present" in result.validation_warnings
