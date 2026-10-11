@@ -18,13 +18,13 @@ from ..core.seed import set_seed
 from ..core.schemas import DetectionEvent
 from ..io.telemetry import load_csv, semantic_harmonize
 from ..io.adapters import adapt_dataset
-from .evaluation import chronological_split, binary_metrics, expected_calibration_error, _positive_probability
+from .evaluation import chronological_split, binary_metrics, expected_calibration_error, _positive_probability, _validate_binary_labels
 from .preprocess import OTPreprocessor
 from ..models.trainer import Detector
 
 
 def _episode_ids(labels) -> np.ndarray:
-    labels = np.asarray(labels).astype(int)
+    labels = _validate_binary_labels(labels, allow_empty=True)
     ids = np.zeros(len(labels), dtype=int)
     episode = 0
     active = False
@@ -63,7 +63,7 @@ def _assert_chronological(train, val, test) -> None:
 
 def fit_threshold_train_only(y_train, scores_train) -> float:
     """Fit a classification threshold using training labels/scores only."""
-    y_train = np.asarray(y_train).astype(int)
+    y_train = _validate_binary_labels(y_train)
     scores_train = np.asarray(scores_train, dtype=float)
     if len(y_train) != len(scores_train) or not len(y_train):
         raise ValueError("training labels and scores must be non-empty and aligned")
@@ -184,11 +184,12 @@ def reproducibility_audit(df: pd.DataFrame, cfg, label_col="label", seed=42) -> 
 
 
 def confidence_bins(y, p, bins=10) -> list[dict]:
-    y, p = np.asarray(y).astype(int), np.asarray(p, dtype=float)
-    if len(y) != len(p) or not len(y):
-        raise ValueError("labels and probabilities must be non-empty and aligned")
-    if not 1 <= int(bins) <= 100:
-        raise ValueError("bins must be between 1 and 100")
+    y = _validate_binary_labels(y)
+    p = np.asarray(p, dtype=float)
+    if p.ndim != 1 or len(y) != len(p):
+        raise ValueError("labels and probabilities must be one-dimensional, non-empty and aligned")
+    if isinstance(bins, bool) or not isinstance(bins, (int, np.integer)) or not 1 <= int(bins) <= 100:
+        raise ValueError("bins must be an integer between 1 and 100")
     if not np.isin(y, [0, 1]).all() or not np.isfinite(p).all() or np.any((p < 0.0) | (p > 1.0)):
         raise ValueError("labels must be binary and probabilities must be finite in [0, 1]")
     edges = np.linspace(0, 1, bins + 1)

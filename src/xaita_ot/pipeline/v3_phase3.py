@@ -25,18 +25,20 @@ from ..core.seed import set_seed
 from ..io.adapters import adapt_dataset
 from ..io.telemetry import load_csv, semantic_harmonize
 from ..io.dataset_validation import validate_csv, DatasetValidationError
-from .evaluation import chronological_split, expected_calibration_error
+from .evaluation import chronological_split, expected_calibration_error, _validate_binary_labels
 from .preprocess import OTPreprocessor
 
 
 def confidence_bins(y, p, bins: int = 10) -> list[dict]:
     """Return empirical confidence/accuracy statistics for fixed probability bins."""
-    y = np.asarray(y).astype(int)
+    y = _validate_binary_labels(y)
     p = np.asarray(p, dtype=float)
-    if len(y) != len(p) or len(y) == 0:
-        raise ValueError("labels and probabilities must be non-empty and aligned")
-    if not 1 <= bins <= 100:
-        raise ValueError("bins must be between 1 and 100")
+    if p.ndim != 1 or len(y) != len(p):
+        raise ValueError("labels and probabilities must be one-dimensional, non-empty and aligned")
+    if isinstance(bins, bool) or not isinstance(bins, int) or not 1 <= bins <= 100:
+        raise ValueError("bins must be an integer between 1 and 100")
+    if not np.isfinite(p).all() or np.any((p < 0.0) | (p > 1.0)):
+        raise ValueError("probabilities must be finite and in [0, 1]")
     edges = np.linspace(0.0, 1.0, bins + 1)
     rows = []
     for i, (lo, hi) in enumerate(zip(edges[:-1], edges[1:])):

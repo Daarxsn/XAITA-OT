@@ -10,6 +10,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import precision_recall_fscore_support, roc_auc_score
 
 from ..config import AppConfig
+from .evaluation import _validate_binary_labels
 from ..core.attribution import assess
 from ..core.seed import set_seed
 from ..io.adapters import adapt_dataset
@@ -29,7 +30,7 @@ BASE_RELIABILITY = {"DC": 1.0, "BSS": 0.80, "ECS": 0.85, "EC": 0.80, "MAS": 0.65
 
 
 def _metrics(y, p):
-    y = np.asarray(y).astype(int); p = np.asarray(p, dtype=float)
+    y = _validate_binary_labels(y); p = np.asarray(p, dtype=float)
     if len(y) != len(p) or not np.isfinite(p).all() or np.any((p < 0) | (p > 1)):
         raise ValueError("sensitivity probabilities must be finite and in [0, 1]")
     pred = (p >= 0.5).astype(int)

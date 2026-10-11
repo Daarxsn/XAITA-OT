@@ -92,10 +92,21 @@ class Detector:
 
     def evaluate(self, X, y):
         X = np.asarray(X, dtype=np.float32)
-        y = np.asarray(y).astype(int)
-        if len(X) != len(y) or not np.isfinite(X).all():
-            raise ValueError("evaluation data must be aligned and finite")
-        p = self.predict_proba(X); pred = (p >= self.threshold).astype(int)
+        try:
+            raw_y = np.asarray(y, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("evaluation labels must be finite binary 0/1 values") from exc
+        if raw_y.ndim != 1 or not np.isfinite(raw_y).all() or not np.isin(raw_y, [0.0, 1.0]).all():
+            raise ValueError("evaluation labels must be finite binary 0/1 values")
+        y = raw_y.astype(int)
+        if X.ndim != 3 or len(X) != len(y) or not len(X) or not np.isfinite(X).all():
+            raise ValueError("evaluation data must be non-empty, aligned and finite")
+        if not math.isfinite(float(self.threshold)) or not 0 <= float(self.threshold) <= 1:
+            raise ValueError("detector threshold must be finite and in [0, 1]")
+        p = self.predict_proba(X)
+        if len(p) != len(y) or not np.isfinite(p).all() or np.any((p < 0.0) | (p > 1.0)):
+            raise ValueError("detector returned invalid evaluation probabilities")
+        pred = (p >= self.threshold).astype(int)
         pr, re, f1, _ = precision_recall_fscore_support(y, pred, average='binary', zero_division=0)
         auc = roc_auc_score(y, p) if len(np.unique(y)) > 1 else float('nan')
         fp = ((pred == 1) & (y == 0)).sum(); tn = ((pred == 0) & (y == 0)).sum()
