@@ -11,7 +11,8 @@ if __name__ == "__main__":
         raise SystemExit(status)
     uvicorn.run(
         "xaita_ot.api.app:app",
-        host="0.0.0.0",
+        # Keep local developer runs on loopback unless deployment explicitly opts in.
+        host=os.environ.get("XAITA_HOST", "127.0.0.1"),
         port=int(os.environ.get("PORT", "8080")),
         reload=False,
     )
