@@ -40,7 +40,7 @@ def test_ready_reports_dashboard(tmp_path, monkeypatch):
     (tmp_path / "web" / "index.html").write_text("<html></html>", encoding="utf-8")
     for name in ("swat", "batadal", "ton_iot"):
         (tmp_path / "data" / "raw" / name).mkdir(parents=True)
-        (tmp_path / "data" / "raw" / name / "sample.csv").write_text("timestamp,label\n2026-01-01,0\n", encoding="utf-8")
+        (tmp_path / "data" / "raw" / name / "sample.csv").write_text("timestamp,label,sensor\n2026-01-01,0,1.0\n", encoding="utf-8")
     monkeypatch.setattr(api, "ROOT", tmp_path)
     monkeypatch.setattr(api, "DATASET_PATHS", {
         "SWaT": str(tmp_path / "data" / "raw" / "swat"),
@@ -157,7 +157,7 @@ def test_ops_summary_reports_dataset_readiness(tmp_path, monkeypatch):
     for key, folder in (("SWaT", "swat"), ("BATADAL", "batadal"), ("TON-IoT", "ton_iot")):
         path = dataset_root / folder
         path.mkdir(parents=True)
-        (path / "sample.csv").write_text("timestamp,label\n2026-01-01,0\n", encoding="utf-8")
+        (path / "sample.csv").write_text("timestamp,label,sensor\n2026-01-01,0,1.0\n", encoding="utf-8")
         paths[key] = str(path)
     monkeypatch.setattr(api, "DATASET_PATHS", paths)
     response = client.get("/v2/ops/summary")
@@ -195,7 +195,7 @@ def _fake_run():
 def test_experiment_lifecycle_completed_and_status(monkeypatch, tmp_path):
     monkeypatch.setattr(api, "API_KEY", None)
     monkeypatch.setattr(api, "DATASET_PATHS", {"TON-IoT": str(tmp_path)})
-    (tmp_path / "sample.csv").write_text("timestamp,label\n2026-01-01,0\n", encoding="utf-8")
+    (tmp_path / "sample.csv").write_text("timestamp,label,sensor\n2026-01-01,0,1.0\n", encoding="utf-8")
     monkeypatch.setattr(api, "run_detection", lambda *args, **kwargs: _fake_run())
     with api._experiment_lifecycle_lock:
         api._experiment_jobs.clear()
@@ -215,7 +215,7 @@ def test_experiment_lifecycle_completed_and_status(monkeypatch, tmp_path):
 def test_experiment_duplicate_running_job_is_rejected(monkeypatch, tmp_path):
     monkeypatch.setattr(api, "API_KEY", None)
     monkeypatch.setattr(api, "DATASET_PATHS", {"TON-IoT": str(tmp_path)})
-    (tmp_path / "sample.csv").write_text("timestamp,label\n2026-01-01,0\n", encoding="utf-8")
+    (tmp_path / "sample.csv").write_text("timestamp,label,sensor\n2026-01-01,0,1.0\n", encoding="utf-8")
     with api._experiment_lifecycle_lock:
         api._experiment_jobs.clear()
         api._experiment_jobs["job-running"] = {
@@ -230,7 +230,7 @@ def test_experiment_duplicate_running_job_is_rejected(monkeypatch, tmp_path):
 def test_experiment_failure_becomes_terminal_job(monkeypatch, tmp_path):
     monkeypatch.setattr(api, "API_KEY", None)
     monkeypatch.setattr(api, "DATASET_PATHS", {"TON-IoT": str(tmp_path)})
-    (tmp_path / "sample.csv").write_text("timestamp,label\n2026-01-01,0\n", encoding="utf-8")
+    (tmp_path / "sample.csv").write_text("timestamp,label,sensor\n2026-01-01,0,1.0\n", encoding="utf-8")
     def fail(*args, **kwargs):
         raise RuntimeError("controlled failure")
     monkeypatch.setattr(api, "run_detection", fail)
@@ -249,7 +249,7 @@ def test_experiment_failure_becomes_terminal_job(monkeypatch, tmp_path):
 def test_experiment_concurrency_limit_is_explicit(monkeypatch, tmp_path):
     monkeypatch.setattr(api, "API_KEY", None)
     monkeypatch.setattr(api, "DATASET_PATHS", {"TON-IoT": str(tmp_path)})
-    (tmp_path / "sample.csv").write_text("timestamp,label\n2026-01-01,0\n", encoding="utf-8")
+    (tmp_path / "sample.csv").write_text("timestamp,label,sensor\n2026-01-01,0,1.0\n", encoding="utf-8")
     monkeypatch.setattr(api, "MAX_CONCURRENT_EXPERIMENTS", 1)
     with api._experiment_lifecycle_lock:
         api._experiment_jobs.clear()
