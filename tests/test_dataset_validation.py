@@ -215,3 +215,17 @@ def test_placeholder_epoch_day_timestamps_block_benchmark_readiness(tmp_path):
     assert result.validation_status == "review"
     assert result.placeholder_timestamps == 1
     assert "placeholder_timestamps" in result.validation_errors
+
+
+def test_swat_prefers_explicit_attack_state_over_generic_attack_metadata(tmp_path):
+    path = _write(
+        tmp_path / "swat-label-aliases.csv",
+        "Timestamp,Attack,Attack State,flow\n"
+        "2026-01-01T00:00:00Z,maintenance,Normal,1.0\n"
+        "2026-01-01T00:00:01Z,process change,Attack,2.0\n"
+        "2026-01-01T00:00:02Z,maintenance,Normal,1.5\n",
+    )
+    result = validate_csv(path, "SWaT", tmp_path)
+    assert result.validation_status == "pass"
+    assert result.label_column == "Attack State"
+    assert result.attack_rows == 1
