@@ -111,13 +111,13 @@ def _find_dataset_csv(path: str | Path, dataset: str) -> Path:
         return root
     if not root.is_dir():
         raise HTTPException(status_code=409, detail=f"{dataset} dataset path is configured but unavailable")
-    patterns = {"TON-IoT": ["**/train_test_network.csv", "**/Train_Test_IoT_*.csv", "**/*.csv"], "SWaT": ["**/*.csv", "**/*.CSV"], "BATADAL": ["**/*.csv", "**/*.CSV"]}.get(dataset, ["**/*.csv"])
-    candidates = []
-    for pattern in patterns:
-        candidates.extend(p for p in root.glob(pattern) if p.is_file() and p.suffix.lower() == ".csv")
-        if candidates:
-            break
-    candidates = sorted(set(candidates))
+    # Enumerate all candidates before preference rules, otherwise the first
+    # glob pattern can hide a canonical file in a different nested folder.
+    candidates = sorted({
+        candidate
+        for candidate in root.rglob("*")
+        if candidate.is_file() and candidate.suffix.lower() == ".csv"
+    })
     if not candidates:
         raise HTTPException(status_code=409, detail=f"No CSV benchmark file found under {dataset} dataset path")
     if dataset == "TON-IoT":

@@ -195,7 +195,7 @@ def analyze_swat_unlabeled(
         flagged = prediction == -1
 
         names, deviation = _top_deviations(
-            numeric.to_numpy(dtype=float),
+            X_all.astype(float),
             valid_columns,
             medians.to_numpy(dtype=float),
             scales.to_numpy(dtype=float),
