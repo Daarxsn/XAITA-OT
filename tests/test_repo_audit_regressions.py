@@ -347,3 +347,18 @@ def test_api_dataset_selector_prefers_canonical_toniot_network_file(tmp_path):
     preferred.write_text("ts,type,x\n2026-01-01T00:00:00Z,normal,1\n", encoding="utf-8")
     (tmp_path / "other.csv").write_text("ts,type,x\n2026-01-01T00:00:00Z,normal,1\n", encoding="utf-8")
     assert _find_dataset_csv(tmp_path, "TON-IoT") == preferred
+
+
+def test_shared_csv_loader_parses_ambiguous_swat_timestamp_day_first(tmp_path):
+    from xaita_ot.io.telemetry import load_csv
+
+    csv = tmp_path / "ambiguous-swat-time.csv"
+    csv.write_text(
+        "Timestamp,Attack State,sensor\n"
+        "02/07/2021 10:00:00 AM,Normal,1\n"
+        "03/07/2021 10:00:01 AM,Attack,2\n",
+        encoding="utf-8",
+    )
+    frame = load_csv(csv, sort_and_deduplicate=False)
+    assert frame["timestamp"].iloc[0] == pd.Timestamp("2021-07-02 10:00:00", tz="UTC")
+    assert frame["timestamp"].iloc[1] == pd.Timestamp("2021-07-03 10:00:01", tz="UTC")

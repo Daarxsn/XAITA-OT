@@ -23,11 +23,22 @@ def test_all_v2_adapters_harmonize_native_timestamp_and_labels(tmp_path):
 
 def test_swat_attack_state_boolean_and_numeric_values_are_attacks():
     df = pd.DataFrame({
-        "Timestamp": ["2026-01-01T00:00:00Z"] * 5,
-        "Attack State": ["False", "True", "5.0", "7.0", ""],
+        "Timestamp": ["2026-01-01T00:00:00Z"] * 4,
+        "Attack State": ["False", "True", "5.0", "7.0"],
     })
     out = adapt_dataset(df, "SWaT")
-    assert out["label"].tolist() == [0, 1, 1, 1, 0]
+    assert out["label"].tolist() == [0, 1, 1, 1]
+
+
+def test_adapter_rejects_missing_or_unknown_labels_instead_of_imputing_benign():
+    import pytest
+
+    with pytest.raises(ValueError, match="Missing required attack-label column"):
+        adapt_dataset(pd.DataFrame({"timestamp": ["2026-01-01T00:00:00Z"], "sensor": [1]}), "SWaT")
+    with pytest.raises(ValueError, match="missing/unknown label values"):
+        adapt_dataset(pd.DataFrame({"timestamp": ["2026-01-01T00:00:00Z"], "label": ["unlabeled"]}), "SWaT")
+    with pytest.raises(ValueError, match="missing/unknown label values"):
+        adapt_dataset(pd.DataFrame({"timestamp": ["2026-01-01T00:00:00Z"], "label": [-999]}), "SWaT")
 
 
 def test_unknown_dataset_rejected():

@@ -34,7 +34,9 @@ def load_csv(
         raise ValueError(f"Missing required columns: {sorted(missing)}")
     if "timestamp" not in df.columns:
         return df
-    parsed = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
+    # SWaT, BATADAL, and TON-IoT include day-first timestamps as well as ISO
+    # timestamps. ISO year-first values remain unambiguous with dayfirst enabled.
+    parsed = pd.to_datetime(df["timestamp"], errors="coerce", utc=True, dayfirst=True)
     invalid = int(parsed.isna().sum())
     duplicate_timestamps = int(parsed.dropna().duplicated().sum())
     out_of_order = bool(not parsed.dropna().is_monotonic_increasing)

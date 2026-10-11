@@ -7,17 +7,28 @@ def normalize_labels(df: pd.DataFrame, candidates=('label','Label','Normal/Attac
     out = df.copy()
     source = next((c for c in candidates if c in out.columns), None)
     if source is None:
-        out['label'] = 0
-        return out
+        raise ValueError(
+            "Missing required attack-label column; refusing to manufacture an all-benign label vector"
+        )
     vals = out[source]
+    unknown = {'', 'nan', 'none', 'null', 'unknown', 'unlabeled', 'unlabelled', 'n/a', 'na', 'not available', 'not_available', '-999', '-999.0'}
     if pd.api.types.is_numeric_dtype(vals):
         numeric = pd.to_numeric(vals, errors="coerce")
-        if numeric.isna().any():
-            raise ValueError(f"Label column '{source}' contains non-numeric values that cannot be normalized")
+        invalid = numeric.isna() | (numeric < 0)
+        if invalid.any():
+            raise ValueError(
+                f"Label column '{source}' contains {int(invalid.sum())} missing/unknown label values"
+            )
         out['label'] = (numeric > 0).astype(int)
         return out
     text = vals.astype(str).str.strip().str.lower()
-    benign = {'normal', 'benign', '0', '0.0', 'false', 'no', '', 'nan', 'none', 'null'}
+    numeric_text = pd.to_numeric(text, errors="coerce")
+    invalid = text.isin(unknown) | (numeric_text.notna() & (numeric_text < 0))
+    if invalid.any():
+        raise ValueError(
+            f"Label column '{source}' contains {int(invalid.sum())} missing/unknown label values"
+        )
+    benign = {'normal', 'benign', '0', '0.0', 'false', 'no'}
     out['label'] = (~text.isin(benign)).astype(int)
     return out
 
