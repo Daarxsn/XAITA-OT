@@ -29,7 +29,7 @@ TIMESTAMP_ALIASES = {
 }
 
 LABEL_ALIASES = {
-    "SWaT": ("label", "Label", "Normal/Attack", "attack", "Attack", "Attack State"),
+    "SWaT": ("label", "Label", "Normal/Attack", "Attack State", "attack_state", "attack", "Attack"),
     "BATADAL": ("ATT_FLAG", "label", "Label", "attack", "Attack", "attack_label"),
     "TON-IoT": ("label", "Label", "attack", "Attack", "type"),
 }
