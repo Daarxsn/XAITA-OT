@@ -208,10 +208,38 @@ def restore_backup(backup: str | Path, staging_root: str | Path) -> Path:
 
 
 def prune_backups(directory: str | Path, *, keep: int = 5) -> list[Path]:
-    if keep < 1:
-        raise ValueError("keep must be at least 1")
+    """Prune verified backups only; make no deletions if any candidate is invalid.
+
+    Verification is performed for the full candidate set before the first unlink,
+    so a corrupt recent backup cannot cause older recovery points to be deleted.
+    """
+    if not isinstance(keep, int) or keep < 1:
+        raise ValueError("keep must be a positive integer")
     base = Path(directory)
-    backups = sorted(base.glob("xaita-backup-*.tar.gz"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not base.exists():
+        return []
+    if not base.is_dir():
+        raise ValueError(f"backup directory is not a directory: {base}")
+    backups = sorted(
+        base.glob("xaita-backup-*.tar.gz"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+
+    invalid: list[str] = []
+    for path in backups:
+        try:
+            result = verify_backup(path)
+            if not result.get("verified"):
+                invalid.append(f"{path.name}: checksum verification failed")
+        except Exception as exc:
+            invalid.append(f"{path.name}: {type(exc).__name__}: {exc}")
+    if invalid:
+        raise ValueError(
+            "refusing to prune backups because one or more candidate backups failed verification: "
+            + "; ".join(invalid)
+        )
+
     removed = backups[keep:]
     for path in removed:
         path.unlink()

@@ -18,7 +18,7 @@ from xaita_ot.pipeline.evaluation import (
     select_threshold,
 )
 from xaita_ot.pipeline.preprocess import OTPreprocessor
-from xaita_ot.operations.lifecycle import create_backup, restore_backup, verify_backup
+from xaita_ot.operations.lifecycle import create_backup, prune_backups, restore_backup, verify_backup
 from xaita_ot.cti.stix import to_stix_bundle
 
 
@@ -257,3 +257,32 @@ def test_run_started_at_reflects_start_not_completion(tmp_path, monkeypatch):
     started_at = datetime.fromisoformat(run.started_at).timestamp()
     assert started_at < completed_at - 0.08
     assert run.duration_seconds >= 0.12
+
+
+
+def test_prune_refuses_all_deletions_when_any_backup_is_invalid(tmp_path):
+    root = tmp_path / "source"
+    root.mkdir()
+    (root / "source.txt").write_text("recoverable source", encoding="utf-8")
+    backup_dir = tmp_path / "backups"
+    backup_dir.mkdir()
+    older_valid = backup_dir / "xaita-backup-older.tar.gz"
+    newer_invalid = backup_dir / "xaita-backup-newer.tar.gz"
+
+    create_backup(root, older_valid)
+    newer_invalid.write_bytes(b"this is not a valid gzip tar archive")
+    import os
+    os.utime(older_valid, (100, 100))
+    os.utime(newer_invalid, (200, 200))
+
+    with pytest.raises(ValueError, match="refusing to prune backups"):
+        prune_backups(backup_dir, keep=1)
+
+    assert older_valid.is_file(), "older verified recovery point must be preserved"
+    assert newer_invalid.is_file(), "invalid candidate must never be silently deleted"
+
+
+def test_prune_missing_directory_is_a_noop_and_keep_must_be_positive(tmp_path):
+    assert prune_backups(tmp_path / "missing-backups", keep=3) == []
+    with pytest.raises(ValueError, match="positive integer"):
+        prune_backups(tmp_path, keep=0)

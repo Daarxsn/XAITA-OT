@@ -10,7 +10,7 @@ Audited the public `main` snapshot `8ac654cc2267323c49ceb2113b4ef277d39b438b`. C
 - Refuse to manufacture an all-benign label vector when no label column exists. Explicit missing/unlabeled/negative sentinel values fail closed instead of being silently converted to attacks or normal rows.
 - Correct the SWaT unsupervised anomaly-deviation row/feature index; cast Boolean telemetry to `float64`; calculate deviation explanations from the imputed numeric matrix; reject output folders nested in the input root; validate `top_n`; and record empty CSVs as review items.
 - Enforce archive download limits while streaming, reject duplicate ZIP extraction destinations, and recognize dotted SWaT A8 archive directory names.
-- Exclude symlinked files from lifecycle backups, correctly handle an archive created at backup root, normalize archive paths, and reject duplicate normalized restore paths (including case-only collisions).
+- Exclude symlinked files from lifecycle backups, correctly handle an archive created at backup root, normalize archive paths, reject duplicate normalized restore paths (including case-only collisions), and verify the entire backup candidate set before any retention deletions.
 - Validate model dimensions, dropout, and learning rate at configuration load time; validate configured ATT&CK reference-profile IDs and reject duplicates/invalid IDs.
 - Validate API event timestamps as timezone-aware and feature values as finite; bound request bodies even without `Content-Length`; and improve runtime project-root discovery.
 - Reject ambiguous benchmark directories containing multiple CSVs instead of silently selecting one partial file; retain canonical TON-IoT network CSV preference.
@@ -22,7 +22,7 @@ Audited the public `main` snapshot `8ac654cc2267323c49ceb2113b4ef277d39b438b`. C
 - Correct run `started_at` metadata and make experiment identifiers unique below one-second resolution.
 - Reject unknown detector architectures, copy read-only sliding-window arrays before PyTorch tensor creation, require finite positive learning rates, and load checkpoints with safe weights-only deserialization.
 - Enforce full attribution evidence-payload validation inside `validate_assessments`, not only interval bounds and source disjointness.
-- Add regression coverage for the above defects.
+- Add regression coverage for the above defects, including a corrupted-newest-backup test proving pruning preserves older verified recovery points.
 - Make the dashboard's research-prototype/demo-data boundary persistent and visible; fix dataset preflight UI precedence so a failed archive cannot be reported READY just because a mounted path exists, and safely render archives with missing hashes.
 
 ## Findings that remain acceptance items
