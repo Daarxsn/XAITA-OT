@@ -646,7 +646,7 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
                 "error_type": error_type,
             },
         ) from exc
-    return {"schema_version": "XAITA-OT-V2-RUN-1.3", "job_id": job_id, "experiment_id": run.experiment_id, "dataset": run.dataset, "detector": payload.detector, "detector_key": detector_key, "seed": run.seed, "started_at": run.started_at, "duration_seconds": run.duration_seconds, "rows": run.rows, "windows": run.windows, "metrics": run.metrics[detector_key], "all_model_metrics": run.metrics, "dataset_file": csv_path.name}
+    return {"schema_version": "XAITA-OT-V2-RUN-1.4", "job_id": job_id, "experiment_id": run.experiment_id, "dataset": run.dataset, "detector": payload.detector, "detector_key": detector_key, "seed": run.seed, "started_at": run.started_at, "duration_seconds": run.duration_seconds, "rows": run.rows, "windows": run.windows, "metrics": run.metrics[detector_key], "all_model_metrics": run.metrics, "dataset_file": csv_path.name}
 
 
 
