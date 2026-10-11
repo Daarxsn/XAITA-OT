@@ -70,9 +70,11 @@ def _top_deviations(
     order = np.argsort(-deviation, axis=1)[:, :top_n]
     names: list[str] = []
     scores: list[float] = []
-    for row in order:
+
+    for row_index, row in enumerate(order):
         names.append("|".join(feature_names[i] for i in row))
-        scores.append(float(deviation[row[0]]))
+        scores.append(float(deviation[row_index, row[0]]))
+
     return names, scores
 
 
@@ -125,7 +127,7 @@ def analyze_swat_unlabeled(
 
         numeric = pd.DataFrame(
             {
-                column: pd.to_numeric(frame[column], errors="coerce")
+                column: pd.to_numeric(frame[column], errors="coerce").astype("float64")
                 for column in features
             }
         )

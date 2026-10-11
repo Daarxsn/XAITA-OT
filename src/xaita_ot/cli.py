@@ -135,9 +135,10 @@ def build_parser() -> argparse.ArgumentParser:
         "real-experiment-matrix",
         help="Validate and execute the four-detector suite across SWaT, BATADAL and TON-IoT.",
     )
-    real_experiment_matrix.add_argument("--swat-csv", required=True, help="CSV path for SWaT.")
-    real_experiment_matrix.add_argument("--batadal-csv", required=True, help="CSV path for BATADAL.")
-    real_experiment_matrix.add_argument("--toniot-csv", required=True, help="CSV path for TON-IoT.")
+    real_experiment_matrix.add_argument("--swat-csv", default=None, help="CSV path for SWaT.")
+    real_experiment_matrix.add_argument("--batadal-csv", default=None, help="CSV path for BATADAL.")
+    real_experiment_matrix.add_argument("--toniot-csv", default=None, help="CSV path for TON-IoT.")
+    real_experiment_matrix.add_argument("--datasets", default="SWaT,BATADAL,TON-IoT", help="Comma-separated dataset names to run.")
     real_experiment_matrix.add_argument("--seed", type=int, default=42)
     real_experiment_matrix.add_argument("--out", default=None)
     real_experiment_matrix.add_argument("--config", default="configs/default.yaml")
@@ -480,16 +481,31 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "real-experiment-matrix":
             cfg = load_config(args.config)
             output = args.out or f"artifacts/real_experiments/matrix_{args.seed}.json"
+
+            datasets = tuple(
+                part.strip()
+                for part in args.datasets.split(",")
+                if part.strip()
+            )
+
+            all_csv_paths = {
+                "SWaT": args.swat_csv,
+                "BATADAL": args.batadal_csv,
+                "TON-IoT": args.toniot_csv,
+            }
+
+            selected_csv_paths = {
+                name: path
+                for name, path in all_csv_paths.items()
+                if name in datasets and path
+            }
+
             payload = run_real_experiment_matrix(
-                csv_paths={
-                    "SWaT": args.swat_csv,
-                    "BATADAL": args.batadal_csv,
-                    "TON-IoT": args.toniot_csv,
-                },
+                csv_paths=selected_csv_paths,
                 config=cfg,
                 seed=args.seed,
                 detectors=REAL_EXPERIMENT_DETECTORS,
-                datasets=REAL_EXPERIMENT_DATASETS,
+                datasets=tuple(part.strip() for part in args.datasets.split(",") if part.strip()),
             )
             path = write_result_envelope(payload, output)
             print(json.dumps({

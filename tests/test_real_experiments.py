@@ -195,7 +195,7 @@ def test_real_experiment_matrix_runs_datasets_in_deterministic_order(tmp_path, m
     }
     calls = []
 
-    def fake_suite(csv_path, dataset, config, seed=None, detectors=()):
+    def fake_suite(csv_path, dataset, config, seed=None, dataset_root=None, detectors=()):
         calls.append((dataset, tuple(detectors)))
         return {
             "suite": {
@@ -230,7 +230,7 @@ def test_real_experiment_matrix_retains_dataset_failure(tmp_path, monkeypatch):
         "TON-IoT": tmp_path / "toniot.csv",
     }
 
-    def fake_suite(csv_path, dataset, config, seed=None, detectors=()):
+    def fake_suite(csv_path, dataset, config, seed=None, dataset_root=None, detectors=()):
         if dataset == "BATADAL":
             raise DatasetValidationError("BATADAL validation blocked")
         return {

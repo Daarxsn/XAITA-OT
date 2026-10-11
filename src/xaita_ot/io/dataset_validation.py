@@ -359,7 +359,11 @@ def discover_csvs(root: str | Path) -> list[Path]:
         {
             path.resolve()
             for path in base.rglob("*")
-            if path.is_file() and path.suffix.lower() == ".csv"
+            if (
+                path.is_file()
+                and path.suffix.lower() == ".csv"
+                and "attack_lists" not in path.relative_to(base).parts
+            )
         },
         key=lambda item: item.as_posix().lower(),
     )

@@ -10,6 +10,7 @@ from ..config import AppConfig
 from ..core.seed import set_seed
 from ..io.telemetry import load_csv, semantic_harmonize
 from ..io.adapters import adapt_dataset
+from ..datasets.batadal import BATADALDatasetAdapter
 from .evaluation import chronological_split, group_stratified_split, train_baselines
 from .preprocess import OTPreprocessor
 
@@ -28,7 +29,7 @@ class ExperimentRun:
 def _normalize_detector_name(name: str) -> str:
     return {'rf':'random_forest','random forest':'random_forest','random_forest':'random_forest','cnn':'cnn','lstm':'lstm','cnn-lstm':'cnn_lstm','cnn_lstm':'cnn_lstm'}.get(name.strip().lower(), name.strip().lower().replace('-','_'))
 
-def run_detection(csv_path: str | Path, dataset: str, config: AppConfig, seed: int | None = None, detector: str | None = None) -> ExperimentRun:
+def run_detection(csv_path: str | Path, dataset: str, config: AppConfig, seed: int | None = None, detector: str | None = None, dataset_root: str | Path | None = None) -> ExperimentRun:
     started = time.perf_counter(); run_seed = config.seed if seed is None else seed; set_seed(run_seed)
     raw = load_csv(
         csv_path,
@@ -36,7 +37,19 @@ def run_detection(csv_path: str | Path, dataset: str, config: AppConfig, seed: i
         strict_timestamps=False,
         sort_and_deduplicate=False,
     )
-    df = adapt_dataset(semantic_harmonize(raw), dataset)
+    if dataset.strip().upper() == "BATADAL":
+        if dataset_root is None:
+            raise ValueError("BATADAL real experiments require dataset_root to resolve official attack metadata")
+        batadal_root = Path(dataset_root).resolve()
+        csv_source = Path(csv_path).resolve()
+        expected_train_2 = (batadal_root / "train_2" / "BATADAL_dataset04.csv").resolve()
+        if csv_source != expected_train_2:
+            raise ValueError("Derived BATADAL supervised experiments require train_2/BATADAL_dataset04.csv; train_1 and the unlabeled test set are not accepted")
+        aligned = BATADALDatasetAdapter(batadal_root).load_aligned("train_2")
+        df = semantic_harmonize(aligned.frame)
+        df[config.attack_label_column] = pd.to_numeric(df["interval_attack_label"], errors="raise").astype(int)
+    else:
+        df = adapt_dataset(semantic_harmonize(raw), dataset)
     if 'timestamp' not in df.columns:
         raise ValueError("Missing required columns: ['timestamp']")
     if config.attack_label_column not in df.columns:

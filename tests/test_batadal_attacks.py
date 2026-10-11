@@ -3,6 +3,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from xaita_ot.pipeline.preprocess import OTPreprocessor
+
 from xaita_ot.datasets.batadal_attacks import (
     BATADALAttackMetadataError,
     apply_attack_intervals,
@@ -52,3 +54,10 @@ def test_duplicate_attack_ids_are_rejected(tmp_path):
     )
     with pytest.raises(BATADALAttackMetadataError, match="duplicate attack_id"):
         load_attack_intervals(path)
+
+
+def test_batadal_labels_and_interval_metadata_are_excluded_from_features():
+    frame = pd.DataFrame({"L_T1": [10.0, 11.0, 12.0], "F_PU1": [20.0, 21.0, 22.0], "ATT_FLAG": [0, -999, 1], "interval_attack_label": [0, 1, 1], "interval_attack_id": [0, 1, 1], "interval_attack_overlap": [0, 0, 1]})
+    features = OTPreprocessor._numeric_features(frame, label_col="interval_attack_label")
+    assert list(features.columns) == ["L_T1", "F_PU1"]
+    assert not {"ATT_FLAG", "interval_attack_label", "interval_attack_id", "interval_attack_overlap"}.intersection(features.columns)
