@@ -68,17 +68,25 @@ def _dataset_path(env_name: str, default_relative: str) -> str | None:
 
 def _dataset_status(path: str | None) -> dict:
     exists = bool(path and Path(path).exists())
-    csv_count = 0
+    csvs: list[Path] = []
     sample = None
     if exists:
         root = Path(path)
         if root.is_file() and root.suffix.lower() == ".csv":
-            csv_count = 1
-            sample = root.name
+            csvs = [root.resolve()]
         elif root.is_dir():
-            csvs = list(root.rglob("*.csv")) + list(root.rglob("*.CSV"))
-            csv_count = len(csvs)
-            sample = sorted(csvs)[0].name if csvs else None
+            # Normalize suffixes and deduplicate paths. Two separate glob calls
+            # can count the same .CSV file twice on case-insensitive filesystems.
+            csvs = sorted(
+                {
+                    item.resolve()
+                    for item in root.rglob("*")
+                    if item.is_file() and item.suffix.lower() == ".csv"
+                },
+                key=lambda item: item.as_posix().lower(),
+            )
+        sample = csvs[0].name if csvs else None
+    csv_count = len(csvs)
     return {"configured": bool(path), "exists": exists, "ready": exists and csv_count > 0, "csv_count": csv_count, "sample_file": sample, "path": path}
 
 
@@ -390,7 +398,13 @@ def dataset_preflight(xaita_api_key: str | None = Header(default=None, alias="X-
             }
             for name in DATASET_PATHS
         }
-        payload["all_ready"] = report["all_ready"]
+        # Overall readiness combines mounted paths with archive-provided
+        # datasets. An incomplete archive must not mark a separately mounted,
+        # ready dataset as unavailable.
+        payload["all_ready"] = bool(payload["datasets"]) and all(
+            item["ready"] or item["archive_ready"]
+            for item in payload["datasets"].values()
+        )
     return payload
 
 
