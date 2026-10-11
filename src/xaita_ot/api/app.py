@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from datetime import datetime
 import hmac
 import json
@@ -42,6 +43,10 @@ MAX_CONCURRENT_EXPERIMENTS = max(1, int(os.environ.get("XAITA_MAX_CONCURRENT_EXP
 MAX_RETAINED_EXPERIMENT_JOBS = max(100, int(os.environ.get("XAITA_MAX_RETAINED_EXPERIMENT_JOBS", "1000")))
 _experiment_lifecycle_lock = threading.Lock()
 _experiment_jobs: dict[str, dict] = {}
+_experiment_executor = ThreadPoolExecutor(
+    max_workers=MAX_CONCURRENT_EXPERIMENTS,
+    thread_name_prefix="xaita-experiment",
+)
 ENABLE_DOCS = os.environ.get("XAITA_ENABLE_DOCS", "true").lower() == "true"
 FORCE_HTTPS = os.environ.get("XAITA_FORCE_HTTPS", "false").lower() == "true"
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get("XAITA_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") if h.strip()]
@@ -79,7 +84,17 @@ def _dataset_status(path: str | None) -> dict:
             csvs = list(root.rglob("*.csv")) + list(root.rglob("*.CSV"))
             csv_count = len(csvs)
             sample = sorted(csvs)[0].name if csvs else None
-    return {"configured": bool(path), "exists": exists, "ready": exists and csv_count > 0, "csv_count": csv_count, "sample_file": sample, "path": path}
+    files_present = exists and csv_count > 0
+    return {
+        "configured": bool(path),
+        "exists": exists,
+        "ready": files_present,
+        "files_present": files_present,
+        "readiness_basis": "file_presence_only",
+        "benchmark_validation_status": "not_checked",
+        "csv_count": csv_count,
+        "sample_file": sample,
+    }
 
 
 def _experiment_detector_name(name: str) -> str:
@@ -291,7 +306,17 @@ def ready():
     datasets = {name: _dataset_status(path) for name, path in DATASET_PATHS.items()}
     datasets_ready = all(item["ready"] for item in datasets.values())
     status = "ready" if dashboard_ready and datasets_ready else "degraded"
-    return {"status": status, "dashboard": dashboard_ready, "datasets_ready": datasets_ready, "datasets": {name: item["ready"] for name, item in datasets.items()}, "max_events": MAX_EVENTS, "max_request_bytes": MAX_REQUEST_BYTES}
+    return {
+        "status": status,
+        "dashboard": dashboard_ready,
+        "datasets_ready": datasets_ready,
+        "dataset_files_present": datasets_ready,
+        "benchmark_validation_checked": False,
+        "readiness_basis": "dashboard_and_dataset_file_presence_only",
+        "datasets": {name: item["ready"] for name, item in datasets.items()},
+        "max_events": MAX_EVENTS,
+        "max_request_bytes": MAX_REQUEST_BYTES,
+    }
 
 
 @app.get("/v2/system")
@@ -315,7 +340,13 @@ def operations_summary(xaita_api_key: str | None = Header(default=None, alias="X
     benchmark_path = ROOT / "artifacts" / "toniOT_network_5seed_summary.json"
     dashboard_ready = bool(_dashboard_path())
     auth_configured = _auth_ready()
-    return {"schema_version": "XAITA-OT-V5-OPS-1.0", "status": "operational" if dashboard_ready and ready_count == len(datasets) else "degraded", "role": role, "release": {"version": VERSION, "environment": ENVIRONMENT}, "dashboard": {"ready": dashboard_ready}, "datasets": {"ready_count": ready_count, "total": len(datasets), "items": datasets}, "execution": {"detectors": list(SUPPORTED_DETECTORS), "attribution_configurations": attribution_configurations(), "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE, "max_request_bytes": MAX_REQUEST_BYTES, "max_events": MAX_EVENTS}, "security": {"authentication_required": REQUIRE_AUTH or bool(_configured_api_keys()), "authentication_configured": auth_configured, "force_https": FORCE_HTTPS, "allowed_hosts": ALLOWED_HOSTS, "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE, "max_request_bytes": MAX_REQUEST_BYTES, "max_events": MAX_EVENTS}, "research": {"benchmark_summary_available": benchmark_path.is_file(), "benchmark_summary_path": str(benchmark_path) if benchmark_path.is_file() else None}, "safety_boundary": "Analyst-support only; no autonomous PLC/RTU/SCADA control action."}
+    return {"schema_version": "XAITA-OT-V5-OPS-1.0", "status": "operational" if dashboard_ready and ready_count == len(datasets) else "degraded", "role": role, "release": {"version": VERSION, "environment": ENVIRONMENT}, "dashboard": {"ready": dashboard_ready}, "datasets": {
+            "ready_count": ready_count,
+            "total": len(datasets),
+            "readiness_basis": "file_presence_only",
+            "benchmark_validation_checked": False,
+            "items": datasets,
+        }, "execution": {"detectors": list(SUPPORTED_DETECTORS), "attribution_configurations": attribution_configurations(), "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE, "max_request_bytes": MAX_REQUEST_BYTES, "max_events": MAX_EVENTS}, "security": {"authentication_required": REQUIRE_AUTH or bool(_configured_api_keys()), "authentication_configured": auth_configured, "force_https": FORCE_HTTPS, "allowed_hosts": ALLOWED_HOSTS, "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE, "max_request_bytes": MAX_REQUEST_BYTES, "max_events": MAX_EVENTS}, "research": {"benchmark_summary_available": benchmark_path.is_file(), "benchmark_summary_artifact": benchmark_path.name if benchmark_path.is_file() else None}, "safety_boundary": "Analyst-support only; no autonomous PLC/RTU/SCADA control action."}
 
 
 @app.get("/v2/dashboard")
@@ -333,7 +364,24 @@ def dashboard_summary(xaita_api_key: str | None = Header(default=None, alias="X-
         "generated_at": datetime.utcnow().isoformat() + "Z",
         "role": role,
         "platform": {"status": "operational" if bool(_dashboard_path()) and ready_count == len(datasets) else "degraded", "version": VERSION, "environment": ENVIRONMENT},
-        "datasets": {"ready_count": ready_count, "total": len(datasets), "items": {name: {"ready": item["ready"], "exists": item["exists"], "csv_count": item["csv_count"], "sample_file": item["sample_file"]} for name, item in datasets.items()}},
+        "datasets": {
+            "ready_count": ready_count,
+            "total": len(datasets),
+            "readiness_basis": "file_presence_only",
+            "benchmark_validation_checked": False,
+            "items": {
+                name: {
+                    "ready": item["ready"],
+                    "exists": item["exists"],
+                    "files_present": item["files_present"],
+                    "readiness_basis": item["readiness_basis"],
+                    "benchmark_validation_status": item["benchmark_validation_status"],
+                    "csv_count": item["csv_count"],
+                    "sample_file": item["sample_file"],
+                }
+                for name, item in datasets.items()
+            },
+        },
         "experiments": {"jobs_retained": len(jobs), "counts": job_counts, "max_concurrent": MAX_CONCURRENT_EXPERIMENTS, "timeout_seconds": EXPERIMENT_TIMEOUT_SECONDS},
         "benchmark": {"available": benchmark_path.is_file(), "artifact": benchmark_path.name if benchmark_path.is_file() else None},
         "security": {"authentication_required": REQUIRE_AUTH or bool(_configured_api_keys()), "authentication_configured": _auth_ready(), "force_https": FORCE_HTTPS},
@@ -377,7 +425,9 @@ def dataset_preflight(xaita_api_key: str | None = Header(default=None, alias="X-
             }
             payload["all_ready"] = False
             return payload
-        payload["archive"] = report["archive"]
+        payload["archive"] = {
+            key: value for key, value in report["archive"].items() if key != "path"
+        }
         payload["datasets"] = {
             name: {
                 **dataset_items[name],
@@ -386,7 +436,11 @@ def dataset_preflight(xaita_api_key: str | None = Header(default=None, alias="X-
                 "archive_file_count": report["datasets"][name]["file_count"],
                 "archive_validated_files": report["datasets"][name]["validated_files"],
                 "archive_review_files": report["datasets"][name]["review_files"],
-                "archive_reason": report["datasets"][name].get("reason"),
+                "archive_reason": (
+                    "Dataset archive validation failed"
+                    if report["datasets"][name].get("reason")
+                    else None
+                ),
             }
             for name in DATASET_PATHS
         }
@@ -419,7 +473,11 @@ def experiment_status(job_id: str, xaita_api_key: str | None = Header(default=No
         job = _experiment_jobs.get(job_id)
         if job is None:
             raise HTTPException(status_code=404, detail="Experiment job not found")
-        return {"schema_version": "XAITA-OT-V5-JOB-1.0", "job": dict(job)}
+        public_job = {
+            key: value for key, value in job.items()
+            if key not in {"lifecycle_key", "worker_active"}
+        }
+        return {"schema_version": "XAITA-OT-V5-JOB-1.0", "job": public_job}
 
 
 @app.post("/v2/experiment")
@@ -443,9 +501,8 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
             status_code=409,
             detail={
                 "message": f"{payload.dataset} dataset could not be prepared",
-                "path": str(path),
                 "error_type": type(exc).__name__,
-                "error": str(exc),
+                "error": "Dataset preparation failed; inspect server-side audit logs for details.",
                 "hint": "Provide a mounted dataset directory or a valid private datasets.zip archive.",
             },
         ) from exc
@@ -454,17 +511,23 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
             status_code=409,
             detail={
                 "message": f"{payload.dataset} dataset is not available",
-                "path": str(path),
                 "hint": "Mount the dataset directory or provide a valid private datasets.zip archive.",
             },
         )
 
     lifecycle_key = f"{payload.dataset}:{detector_key}:{payload.seed}"
     with _experiment_lifecycle_lock:
-        active = next((job for job in _experiment_jobs.values() if job["lifecycle_key"] == lifecycle_key and job["status"] == "running"), None)
+        active = next((
+            job for job in _experiment_jobs.values()
+            if job["lifecycle_key"] == lifecycle_key
+            and (job["status"] == "running" or job.get("worker_active", False))
+        ), None)
         if active:
             raise HTTPException(status_code=409, detail={"message": "Equivalent experiment is already running", "job_id": active["job_id"], "status": active["status"]})
-        running_count = sum(1 for job in _experiment_jobs.values() if job["status"] == "running")
+        running_count = sum(
+            1 for job in _experiment_jobs.values()
+            if job["status"] == "running" or job.get("worker_active", False)
+        )
         if running_count >= MAX_CONCURRENT_EXPERIMENTS:
             raise HTTPException(status_code=429, detail={"message": "Experiment concurrency limit reached", "max_concurrent_experiments": MAX_CONCURRENT_EXPERIMENTS})
         job_id = uuid4().hex
@@ -473,13 +536,18 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
             "dataset": payload.dataset, "detector": detector_key, "seed": payload.seed,
             "started_at": datetime.utcnow().isoformat() + "Z", "finished_at": None,
             "duration_seconds": None, "error_type": None, "error": None,
+            "worker_active": False,
         }
         if len(_experiment_jobs) > MAX_RETAINED_EXPERIMENT_JOBS:
-            terminal = [key for key, value in _experiment_jobs.items() if value["status"] != "running"]
+            terminal = [
+                key for key, value in _experiment_jobs.items()
+                if value["status"] != "running" and not value.get("worker_active", False)
+            ]
             for stale_key in terminal[: max(1, len(_experiment_jobs) - MAX_RETAINED_EXPERIMENT_JOBS)]:
                 _experiment_jobs.pop(stale_key, None)
 
     started = time.monotonic()
+    future = None
     try:
         csv_path = _find_dataset_csv(path, payload.dataset)
         validation = validate_csv(csv_path, payload.dataset, root=path)
@@ -489,10 +557,54 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
                 detail={
                     "message": f"{payload.dataset} dataset validation did not pass",
                     "validation_status": validation.validation_status,
-                    "manifest": validation.as_dict(),
+                    "manifest": {
+                        key: value for key, value in validation.as_dict().items()
+                        if key != "path"
+                    },
                 },
             )
-        run = run_detection(csv_path, payload.dataset, load_config(), seed=payload.seed, detector=detector_key)
+        if time.monotonic() - started >= EXPERIMENT_TIMEOUT_SECONDS:
+            raise HTTPException(
+                status_code=504,
+                detail={
+                    "message": "Experiment exceeded execution deadline before model execution",
+                    "job_id": job_id,
+                    "timeout_seconds": EXPERIMENT_TIMEOUT_SECONDS,
+                },
+            )
+        # Mark the slot before submitting work. If the future completes immediately,
+        # add_done_callback executes synchronously when registered; this ordering prevents
+        # a fast worker from having its completion overwritten by a later True assignment.
+        with _experiment_lifecycle_lock:
+            _experiment_jobs[job_id]["worker_active"] = True
+
+        future = _experiment_executor.submit(
+            run_detection, csv_path, payload.dataset, load_config(),
+            seed=payload.seed, detector=detector_key,
+        )
+
+        def _release_worker_slot(_future):
+            with _experiment_lifecycle_lock:
+                current = _experiment_jobs.get(job_id)
+                if current is not None:
+                    current["worker_active"] = False
+
+        future.add_done_callback(_release_worker_slot)
+        remaining = max(0.0, EXPERIMENT_TIMEOUT_SECONDS - (time.monotonic() - started))
+        try:
+            run = future.result(timeout=remaining)
+        except FutureTimeoutError as exc:
+            if future.done():
+                run = future.result()
+            else:
+                raise HTTPException(
+                    status_code=504,
+                    detail={
+                        "message": "Experiment exceeded execution deadline",
+                        "job_id": job_id,
+                        "timeout_seconds": EXPERIMENT_TIMEOUT_SECONDS,
+                    },
+                ) from exc
         duration = round(time.monotonic() - started, 3)
         if duration > EXPERIMENT_TIMEOUT_SECONDS:
             with _experiment_lifecycle_lock:
@@ -506,6 +618,8 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
             _experiment_jobs[job_id].update({"status": "completed", "finished_at": datetime.utcnow().isoformat() + "Z", "duration_seconds": duration})
     except HTTPException as exc:
         with _experiment_lifecycle_lock:
+            if future is None or future.done():
+                _experiment_jobs[job_id]["worker_active"] = False
             _experiment_jobs[job_id].update({
                 "status": "timed_out" if exc.status_code == 504 else "failed",
                 "finished_at": datetime.utcnow().isoformat() + "Z",
@@ -517,7 +631,13 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
     except Exception as exc:
         duration = round(time.monotonic() - started, 3)
         error_type = type(exc).__name__
+        logger.exception(
+            "experiment_execution_failed",
+            extra={"job_id": job_id, "dataset": payload.dataset, "detector": detector_key},
+        )
         with _experiment_lifecycle_lock:
+            if future is None or future.done():
+                _experiment_jobs[job_id]["worker_active"] = False
             _experiment_jobs[job_id].update({
                 "status": "failed", "finished_at": datetime.utcnow().isoformat() + "Z",
                 "duration_seconds": duration, "error_type": error_type,
@@ -530,7 +650,7 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
                 "error_type": error_type,
             },
         ) from exc
-    return {"schema_version": "XAITA-OT-V2-RUN-1.3", "job_id": job_id, "experiment_id": run.experiment_id, "dataset": run.dataset, "detector": payload.detector, "detector_key": detector_key, "seed": run.seed, "started_at": run.started_at, "duration_seconds": run.duration_seconds, "rows": run.rows, "windows": run.windows, "metrics": run.metrics[detector_key], "all_model_metrics": run.metrics, "dataset_file": str(csv_path)}
+    return {"schema_version": "XAITA-OT-V2-RUN-1.4", "job_id": job_id, "experiment_id": run.experiment_id, "dataset": run.dataset, "detector": payload.detector, "detector_key": detector_key, "seed": run.seed, "started_at": run.started_at, "duration_seconds": run.duration_seconds, "rows": run.rows, "windows": run.windows, "metrics": run.metrics[detector_key], "all_model_metrics": run.metrics, "dataset_file": csv_path.name}
 
 
 

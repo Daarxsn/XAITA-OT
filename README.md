@@ -76,7 +76,7 @@ API: `http://127.0.0.1:8080/docs`
 
 Researcher-supplied SWaT, BATADAL and TON-IoT files are validated without storing
 raw data in Git. The validator records CSV schema, timestamps, labels, row counts,
-missing/invalid values, SHA-256 file identity and a deterministic manifest digest.
+missing/invalid values, placeholder epoch-day timestamps, entirely empty columns, SHA-256 file identity and a deterministic manifest digest.
 
 For large private datasets, the three benchmark families can also be supplied in one local ZIP without committing the archive. Use an archive layout such as `SWaT/*.csv`, `BATADAL/*.csv`, and `TON-IoT/*.csv` inside `datasets.zip`, and set `XAITA_DATASET_ARCHIVE` when needed. `python run_api.py` prepares available archives before starting the API. The archive is safely extracted and validated; missing families remain unavailable. See `docs/DATASETS.md` for dataset-specific archive and private-URL settings.
 
@@ -130,7 +130,15 @@ xaita real-experiment-statistics --swat-csv <swat.csv> --batadal-csv <batadal.cs
 
 The statistical runner requires at least two unique seeds, executes the Day 23 matrix for each seed, and reports per-dataset/per-detector metric mean, sample standard deviation, Student-t confidence intervals, and paired detector comparisons across matched seeds. Failed matrix runs are retained and prevent statistical acceptance. These statistics are descriptive/research evaluation outputs; they do not establish benchmark superiority, significance beyond the reported tests, generalization, or production OT acceptance.
 
-For expensive API experiments, execution is tracked with a process-local lifecycle state. Equivalent dataset/detector/seed requests are rejected while already running, concurrent execution is bounded by `XAITA_MAX_CONCURRENT_EXPERIMENTS`, and each job exposes terminal `completed`, `failed`, or `timed_out` state through `GET /v2/experiment/{job_id}`. The elapsed execution deadline is controlled by `XAITA_EXPERIMENT_TIMEOUT_SECONDS`; the API classifies an over-deadline run safely after execution returns rather than claiming forced process termination. Retained terminal job state is bounded by `XAITA_MAX_RETAINED_EXPERIMENT_JOBS`.
+For expensive API experiments, execution is tracked with a process-local lifecycle state. Equivalent dataset/detector/seed requests are rejected while running or while a timed-out worker is still active, concurrent execution is bounded by `XAITA_MAX_CONCURRENT_EXPERIMENTS`, and each job exposes `completed`, `failed`, or `timed_out` state through `GET /v2/experiment/{job_id}`. The request deadline is controlled by `XAITA_EXPERIMENT_TIMEOUT_SECONDS`; the API returns at the deadline and retains the worker's concurrency slot until the Python thread exits. Python threads cannot be forcibly terminated, so this is a bounded-wait/admission safeguard, not hard cancellation. Process isolation is still required if deployment policy requires terminating hung model execution. Retained terminal job state is bounded by `XAITA_MAX_RETAINED_EXPERIMENT_JOBS`.
+
+For the dataset-backed Phase 4 C1-C6 comparison, run:
+
+```powershell
+python scripts/run_phase4_attribution.py --swat data/raw/swat/<swat.csv> --batadal data/raw/batadal/<batadal.csv> --toniot data/raw/ton_iot/<toniot.csv> --out artifacts/phase4-attribution --seed 42 --window-size 32 --source-kind unverified
+```
+
+This produces JSON and CSV artifacts for C1 detection-only, C2 DC+BSS, C3 DC+BSS+ECS, C4 DC+BSS+ECS+MAS, C5 WEF and C6 ACFM using the same chronological test windows and a shared Random Forest detection-score baseline. C1 reports detection metrics rather than attribution metrics; WEF is a point estimate and does not claim an uncertainty interval. Ties in hypothesis ranking are counted as abstentions. The source-kind value is a user declaration, not provenance authentication; the runner never marks benchmark claims as approved. CI runs only synthetic fixtures to verify execution/artifact structure, not real benchmark performance.
 
 To evaluate attribution configurations on an explicit researcher-supplied labeled case set:
 
