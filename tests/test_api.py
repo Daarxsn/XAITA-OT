@@ -460,3 +460,22 @@ def test_experiment_timeout_returns_terminal_status_without_releasing_active_slo
     with api._experiment_lifecycle_lock:
         assert api._experiment_jobs[job_id]["worker_active"] is True
     time.sleep(1.1)
+
+
+def test_production_auth_fails_closed_when_no_api_key_is_configured(monkeypatch):
+    monkeypatch.setattr(api, "API_KEY", None)
+    monkeypatch.setattr(api, "REQUIRE_AUTH", True)
+    response = client.get("/v2/datasets")
+    assert response.status_code == 503
+    assert "authentication is required but not configured" in response.json()["detail"]
+
+
+def test_viewer_cannot_execute_event_analysis(monkeypatch):
+    monkeypatch.setattr(api, "API_KEY", "viewer-only-secret")
+    monkeypatch.setattr(api, "API_KEY_ROLE", "viewer")
+    response = client.post(
+        "/v1/analyze",
+        json=[event_payload()],
+        headers={"X-XAITA-API-Key": "viewer-only-secret"},
+    )
+    assert response.status_code == 403
