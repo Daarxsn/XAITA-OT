@@ -6,7 +6,7 @@ requiring raw benchmark data to be committed to the repository.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import json
 from pathlib import Path
@@ -62,6 +62,8 @@ class CSVValidation:
     normal_rows: int
     unknown_label_rows: int
     validation_status: str
+    validation_errors: list[str] = field(default_factory=list)
+    validation_warnings: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -85,6 +87,8 @@ class CSVValidation:
             "normal_rows": self.normal_rows,
             "unknown_label_rows": self.unknown_label_rows,
             "validation_status": self.validation_status,
+            "validation_errors": self.validation_errors,
+            "validation_warnings": self.validation_warnings,
         }
 
 
@@ -128,14 +132,17 @@ def _parse_timestamp(frame: pd.DataFrame, dataset: str, timestamp_column: str | 
                 + " "
                 + frame[time_column].astype(str).str.strip()
             )
-            return pd.to_datetime(combined, errors="coerce", utc=True), f"{date_column} + {time_column}"
+            return pd.to_datetime(
+                combined, errors="coerce", format="mixed", utc=True
+            ), f"{date_column} + {time_column}"
     if timestamp_column is None:
         return None, None
     return (
         pd.to_datetime(
             frame[timestamp_column],
             errors="coerce",
-            dayfirst=dataset == "BATADAL",
+            format="mixed",
+            dayfirst=dataset in {"SWaT", "BATADAL"},
             utc=True,
         ),
         timestamp_column,
@@ -183,7 +190,7 @@ def validate_csv(
     invalid_timestamps = 0
     missing_cells = 0
     duplicate_timestamps = 0
-    monotonic = True if (source_timestamp_column or dataset_name == "TON-IoT") else None
+    monotonic = True if source_timestamp_column or dataset_name == "TON-IoT" else None
     start_timestamp = None
     end_timestamp = None
     previous_timestamp = None
@@ -192,12 +199,25 @@ def validate_csv(
     normal_rows = 0
     unknown_label_rows = 0
     effective_timestamp_column = source_timestamp_column
+    feature_columns = [
+        column for column in columns
+        if column != source_timestamp_column and column != source_label_column
+        and not (
+            dataset_name == "TON-IoT"
+            and column.strip().lower() in {"date", "time"}
+        )
+    ]
+    usable_feature_columns: set[str] = set()
 
     try:
         for frame in pd.read_csv(source, chunksize=chunksize, low_memory=False):
             frame.columns = columns
             rows += len(frame)
             missing_cells += int(frame.isna().sum().sum())
+            usable_feature_columns.update(
+                column for column in feature_columns
+                if column in frame.columns and frame[column].notna().any()
+            )
 
             timestamps, timestamp_display = _parse_timestamp(
                 frame, dataset_name, source_timestamp_column
@@ -227,12 +247,15 @@ def validate_csv(
             if source_label_column:
                 labels = frame[source_label_column]
                 label_values.update(str(value) for value in labels.dropna().unique())
+                label_text = labels.astype(str).str.strip().str.lower()
+                missing_labels = labels.isna() | label_text.isin({"", "nan", "none", "null"})
                 numeric_labels = pd.to_numeric(labels, errors="coerce")
-                chunk_unknown = int((numeric_labels.notna() & (numeric_labels < 0)).sum())
-                unknown_label_rows += chunk_unknown
+                invalid_numeric_labels = numeric_labels.notna() & (numeric_labels < 0)
+                unknown_label_rows += int(missing_labels.sum() + invalid_numeric_labels.sum())
                 attacks = _label_is_attack(labels)
-                attack_rows += int(attacks.sum())
-                normal_rows += int((~attacks).sum()) - chunk_unknown
+                valid_labels = ~missing_labels & ~invalid_numeric_labels
+                attack_rows += int((attacks & valid_labels).sum())
+                normal_rows += int((~attacks & valid_labels).sum())
 
     except Exception as exc:
         raise DatasetValidationError(
@@ -244,27 +267,35 @@ def validate_csv(
 
     timestamp_quality_ready = (
         invalid_timestamps == 0
-        and (
-            dataset_name == "TON-IoT"
-            or (
-                duplicate_timestamps == 0
-                and bool(monotonic)
-            )
+        and duplicate_timestamps == 0
+        and bool(monotonic)
+    )
+    timestamp_column_ready = effective_timestamp_column is not None
+    feature_ready = bool(usable_feature_columns)
+
+    validation_errors: list[str] = []
+    validation_warnings: list[str] = []
+    if not timestamp_column_ready:
+        validation_errors.append("missing_timestamp_column")
+    if source_label_column is None:
+        validation_errors.append("missing_label_column")
+    if invalid_timestamps:
+        validation_errors.append("invalid_timestamps")
+    if duplicate_timestamps:
+        validation_errors.append("duplicate_timestamps")
+    if monotonic is False:
+        validation_errors.append("non_monotonic_timestamps")
+    if unknown_label_rows:
+        validation_errors.append("missing_or_invalid_labels")
+    if not feature_ready:
+        validation_errors.append("no_usable_feature_columns")
+    if missing_cells:
+        validation_warnings.append(
+            "missing_cells_present: non-label feature/metadata nulls are counted; "
+            "the training-fitted preprocessing pipeline must handle them"
         )
-    )
 
-    timestamp_column_ready = (
-        dataset_name == "TON-IoT"
-        or effective_timestamp_column is not None
-    )
-
-    ready = (
-        timestamp_column_ready
-        and source_label_column is not None
-        and timestamp_quality_ready
-        and missing_cells == 0
-        and unknown_label_rows == 0
-    )
+    ready = not validation_errors and timestamp_quality_ready and feature_ready
 
     return CSVValidation(
         dataset=dataset_name,
@@ -286,6 +317,8 @@ def validate_csv(
         normal_rows=normal_rows,
         unknown_label_rows=unknown_label_rows,
         validation_status="pass" if ready else "review",
+        validation_errors=validation_errors,
+        validation_warnings=validation_warnings,
     )
 
 
