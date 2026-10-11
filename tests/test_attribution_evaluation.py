@@ -58,6 +58,8 @@ def test_phase4_attribution_executes_same_cases_and_reports_metrics():
                 assert 0 <= item["mean_attribution_belief"] <= 1
                 assert item["mean_attribution_belief"] <= item["mean_attribution_plausibility"] <= 1
                 assert 0 <= item["mean_uncertainty_width"] <= 1
+            if key != "C1":
+                assert item["hypothesis_top1_evaluated_count"] + item["hypothesis_abstention_count"] == item["sample_count"]
 
 
 def test_phase4_attribution_writes_json_and_csv(tmp_path):
