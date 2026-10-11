@@ -111,3 +111,18 @@ def test_missing_dataset_root_has_actionable_error(tmp_path):
         assert "CSV file not found" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("expected DatasetValidationError")
+
+def test_validate_swat_day_first_timestamps(tmp_path):
+    path = _write(
+        tmp_path / "swat_a8.csv",
+        "Timestamp,Attack State,SENSOR_A,SENSOR_B\\n"
+        "02/06/2021 10:12:10 AM,Normal,1.0,2.0\\n"
+        "02/06/2021 10:12:11 AM,Attack,1.1,2.1\\n"
+        "02/06/2021 10:12:12 AM,Normal,1.2,2.2\\n",
+    )
+    result = validate_csv(path, "SWaT", tmp_path)
+    assert result.validation_status == "pass"
+    assert result.start_timestamp is not None
+    assert result.start_timestamp.startswith("2021-06-02T")
+    assert result.attack_rows == 1
+
