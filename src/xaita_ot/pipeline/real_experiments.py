@@ -28,7 +28,14 @@ REAL_EXPERIMENT_DATASETS = ("SWaT", "BATADAL", "TON-IoT")
 
 
 def _canonical_json(payload: Any) -> bytes:
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    """Serialize fingerprint inputs strictly; never stringify unsupported values or NaN."""
+    return json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
 
 
 def source_code_fingerprint() -> str:

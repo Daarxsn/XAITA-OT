@@ -421,3 +421,19 @@ def test_stix_rejects_invalid_attack_pattern_id():
     }
     with pytest.raises(ValueError, match="Invalid ATT&CK technique ID"):
         to_stix_bundle(cti)
+
+
+
+def test_reproducibility_fingerprint_rejects_nonfinite_config():
+    from xaita_ot.pipeline.real_experiments import reproducibility_fingerprint
+
+    with pytest.raises(ValueError):
+        reproducibility_fingerprint(
+            dataset_sha256="a" * 64,
+            dataset="SWaT",
+            detector="cnn_lstm",
+            seed=42,
+            split_protocol="chronological_episode_aware",
+            config={"invalid_threshold": float("nan")},
+            implementation_sha256="b" * 64,
+        )
