@@ -362,3 +362,62 @@ def test_shared_csv_loader_parses_ambiguous_swat_timestamp_day_first(tmp_path):
     frame = load_csv(csv, sort_and_deduplicate=False)
     assert frame["timestamp"].iloc[0] == pd.Timestamp("2021-07-02 10:00:00", tz="UTC")
     assert frame["timestamp"].iloc[1] == pd.Timestamp("2021-07-03 10:00:01", tz="UTC")
+
+
+
+def test_shared_csv_loader_combines_toniot_date_and_time_before_sorting(tmp_path):
+    from xaita_ot.io.telemetry import load_csv
+
+    csv = tmp_path / "toniot-time-pair.csv"
+    csv.write_text(
+        "date,time,type,feature\n"
+        "02/07/2021,10:00:00,normal,1\n"
+        "02/07/2021,10:00:01,attack,2\n"
+        "03/07/2021,09:59:59,normal,3\n",
+        encoding="utf-8",
+    )
+    frame = load_csv(csv)
+    assert frame["timestamp"].tolist() == [
+        pd.Timestamp("2021-07-02 10:00:00", tz="UTC"),
+        pd.Timestamp("2021-07-02 10:00:01", tz="UTC"),
+        pd.Timestamp("2021-07-03 09:59:59", tz="UTC"),
+    ]
+
+
+def test_archive_discovery_matches_dotted_swat_a8_root():
+    from xaita_ot.io.dataset_archive import _matches_name
+
+    assert _matches_name(
+        "SWaT.A8_June 2021/_20210622_093704/20210622_093704.csv",
+        "SWaT",
+    )
+    assert not _matches_name("not-swatting/data.csv", "SWaT")
+
+
+def test_stix_attack_pattern_uses_canonical_mitre_url():
+    from xaita_ot.cti.stix import to_stix_bundle
+
+    cti = {
+        "incident_id": "INC-URL",
+        "generated_at": "2026-10-11T10:00:00Z",
+        "context": [{"technique_id": "T0855", "name": "Unauthorized Command Message"}],
+        "risk": {"level": "HIGH"},
+        "attribution": {"hypothesis": "H1", "belief": 0.7, "plausibility": 0.9},
+    }
+    bundle = to_stix_bundle(cti)
+    attack_pattern = next(item for item in bundle["objects"] if item["type"] == "attack-pattern")
+    assert attack_pattern["external_references"][0]["url"] == "https://attack.mitre.org/techniques/T0855/"
+
+
+def test_stix_rejects_invalid_attack_pattern_id():
+    from xaita_ot.cti.stix import to_stix_bundle
+
+    cti = {
+        "incident_id": "INC-BAD-ID",
+        "generated_at": "2026-10-11T10:00:00Z",
+        "context": [{"technique_id": "", "name": "Unknown technique"}],
+        "risk": {"level": "HIGH"},
+        "attribution": {"hypothesis": "H1", "belief": 0.7, "plausibility": 0.9},
+    }
+    with pytest.raises(ValueError, match="Invalid ATT&CK technique ID"):
+        to_stix_bundle(cti)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import tempfile
 import urllib.request
 import zipfile
@@ -67,7 +68,10 @@ def _matches_name(name: str, dataset: str) -> bool:
     parts = _parts(name)
     stem = Path(name).stem.strip().lower().replace("-", "_")
     if any(
-        token in parts or stem == token or stem.startswith(f"{token}_")
+        token in parts
+        or stem == token
+        or stem.startswith(f"{token}_")
+        or any(re.match(rf"^{re.escape(token)}(?:$|[^a-z0-9])", part) for part in parts)
         for token in tokens
     ):
         return True

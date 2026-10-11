@@ -25,6 +25,27 @@ def load_csv(
         raise FileNotFoundError(source)
     df = pd.read_csv(source)
     df.columns = [str(c).strip() for c in df.columns]
+    # Some TON-IoT files store date and clock time in separate columns.
+    # Combine before taxonomy harmonization could mistake "time" alone for the
+    # event timestamp and sort/deduplicate records by time-of-day.
+    raw_columns = {str(column).strip().lower(): column for column in df.columns}
+    explicit_timestamp_aliases = {"timestamp", "datetime", "ts", "date_time", "date time"}
+    if (
+        "timestamp" not in raw_columns
+        and not (explicit_timestamp_aliases & set(raw_columns))
+        and "date" in raw_columns
+        and "time" in raw_columns
+    ):
+        date_column = raw_columns["date"]
+        time_column = raw_columns["time"]
+        df["timestamp"] = pd.to_datetime(
+            df[date_column].astype(str).str.strip()
+            + " "
+            + df[time_column].astype(str).str.strip(),
+            errors="coerce",
+            utc=True,
+            dayfirst=True,
+        )
     if len(df.columns) != len(set(df.columns)):
         duplicates = sorted({c for c in df.columns if list(df.columns).count(c) > 1})
         raise ValueError(f"Duplicate columns: {duplicates}")
