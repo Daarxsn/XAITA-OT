@@ -26,6 +26,14 @@ EXCLUDED_COLUMNS = {
     "attack state",
     "label",
     "normal/attack",
+    "att_flag",
+    "interval_attack_label",
+    "attack_label",
+    "attack_status",
+    "is_attack",
+    "ground_truth",
+    "ground truth",
+    "target",
 }
 
 
@@ -74,9 +82,9 @@ def _top_deviations(
     order = np.argsort(-deviation, axis=1)[:, :top_n]
     names: list[str] = []
     scores: list[float] = []
-    for row in order:
-        names.append("|".join(feature_names[i] for i in row))
-        scores.append(float(deviation[row[0]]))
+    for row_index, feature_indices in enumerate(order):
+        names.append("|".join(feature_names[i] for i in feature_indices))
+        scores.append(float(deviation[row_index, feature_indices[0]]))
     return names, scores
 
 
@@ -127,6 +135,16 @@ def analyze_swat_unlabeled(
                 "sha256": _sha256(source),
                 "status": "review",
                 "reason": "empty CSV has no header or rows",
+                "rows": 0,
+                "feature_count": 0,
+            })
+            continue
+        except pd.errors.ParserError as exc:
+            file_results.append({
+                "file": relative.as_posix(),
+                "sha256": _sha256(source),
+                "status": "review",
+                "reason": f"CSV parse error: {exc}",
                 "rows": 0,
                 "feature_count": 0,
             })
@@ -266,8 +284,13 @@ def analyze_swat_unlabeled(
             "top_anomalies": top_rows,
         })
 
+    completed_files = sum(item.get("status") == "completed" for item in file_results)
+    review_files = sum(item.get("status") == "review" for item in file_results)
     payload: dict[str, Any] = {
         "schema_version": "XAITA-OT-SWAT-UNLABELED-ANALYSIS-1.0",
+        "status": "completed" if completed_files == len(files) and completed_files > 0 else "review",
+        "completed_file_count": completed_files,
+        "review_file_count": review_files,
         "dataset": "SWaT",
         "analysis_mode": "unlabeled_unsupervised",
         "ground_truth_used": False,
