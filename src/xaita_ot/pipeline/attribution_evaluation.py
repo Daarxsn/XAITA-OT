@@ -59,6 +59,9 @@ def _fuse_configuration(
             "sample_count": int(n),
             "metrics": metrics,
             "hypothesis_top1_accuracy": None,
+            "hypothesis_top1_evaluated_count": 0,
+            "hypothesis_abstention_count": None,
+            "detector": "random_forest",
             "mean_detection_confidence": float(np.mean(detector_scores)),
             "mean_attribution_belief": None,
             "mean_attribution_plausibility": None,
@@ -79,7 +82,7 @@ def _fuse_configuration(
     scores = np.empty(n, dtype=float)
     beliefs = np.empty(n, dtype=float)
     plausibilities = np.empty(n, dtype=float)
-    top1_attack = np.empty(n, dtype=bool)
+    top1_attack = np.full(n, np.nan, dtype=float)
     interval_available = definition["method"] == "ACFM"
 
     for index in range(n):
@@ -89,7 +92,10 @@ def _fuse_configuration(
             scores[index] = fused["score"]
             beliefs[index] = np.nan
             plausibilities[index] = np.nan
-            top1_attack[index] = scores[index] >= 0.5
+            if scores[index] > 0.5:
+                top1_attack[index] = 1.0
+            elif scores[index] < 0.5:
+                top1_attack[index] = 0.0
             continue
 
         competing_evidence = {
@@ -108,9 +114,19 @@ def _fuse_configuration(
         scores[index] = (attack.belief + attack.plausibility) / 2.0
         beliefs[index] = attack.belief
         plausibilities[index] = attack.plausibility
-        top1_attack[index] = assessments[0].hypothesis == "attack"
+        benign = by_hypothesis["benign"]
+        attack_rank = (attack.belief, attack.plausibility)
+        benign_rank = (benign.belief, benign.plausibility)
+        if attack_rank != benign_rank:
+            top1_attack[index] = 1.0 if attack_rank > benign_rank else 0.0
 
     result_metrics = _metrics(labels, scores)
+    ranked = np.isfinite(top1_attack)
+    ranking_count = int(ranked.sum())
+    ranking_accuracy = (
+        float(np.mean(top1_attack[ranked].astype(int) == labels[ranked].astype(int)))
+        if ranking_count else None
+    )
     return {
         "configuration": configuration_id,
         "name": definition["name"],
@@ -118,7 +134,10 @@ def _fuse_configuration(
         "sources": list(definition["sources"]),
         "sample_count": int(n),
         "metrics": result_metrics,
-        "hypothesis_top1_accuracy": float(np.mean(top1_attack)),
+        "hypothesis_top1_accuracy": ranking_accuracy,
+        "hypothesis_top1_evaluated_count": ranking_count,
+        "hypothesis_abstention_count": int(n - ranking_count),
+        "detector": "random_forest",
         "mean_detection_confidence": float(np.mean(detector_scores)),
         "mean_attribution_belief": float(np.mean(beliefs)) if interval_available else None,
         "mean_attribution_plausibility": float(np.mean(plausibilities)) if interval_available else None,
@@ -259,6 +278,9 @@ def write_phase4_attribution_artifacts(
                 "fpr": configuration["metrics"]["fpr"],
                 "auroc": configuration["metrics"]["auroc"],
                 "hypothesis_top1_accuracy": configuration["hypothesis_top1_accuracy"],
+                "hypothesis_top1_evaluated_count": configuration["hypothesis_top1_evaluated_count"],
+                "hypothesis_abstention_count": configuration["hypothesis_abstention_count"],
+                "detector": configuration["detector"],
                 "mean_detection_confidence": configuration["mean_detection_confidence"],
                 "mean_attribution_belief": configuration["mean_attribution_belief"],
                 "mean_attribution_plausibility": configuration["mean_attribution_plausibility"],
