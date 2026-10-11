@@ -76,7 +76,7 @@ API: `http://127.0.0.1:8080/docs`
 
 Researcher-supplied SWaT, BATADAL and TON-IoT files are validated without storing
 raw data in Git. The validator records CSV schema, timestamps, labels, row counts,
-missing/invalid values, SHA-256 file identity and a deterministic manifest digest.
+missing/invalid values, placeholder epoch-day timestamps, entirely empty columns, SHA-256 file identity and a deterministic manifest digest.
 
 For large private datasets, the three benchmark families can also be supplied in one local ZIP without committing the archive. Use an archive layout such as `SWaT/*.csv`, `BATADAL/*.csv`, and `TON-IoT/*.csv` inside `datasets.zip`, and set `XAITA_DATASET_ARCHIVE` when needed. `python run_api.py` prepares available archives before starting the API. The archive is safely extracted and validated; missing families remain unavailable. See `docs/DATASETS.md` for dataset-specific archive and private-URL settings.
 
