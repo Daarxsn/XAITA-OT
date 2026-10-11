@@ -433,6 +433,7 @@ def test_dataset_preflight_redacts_archive_path(tmp_path, monkeypatch):
 
 
 def test_experiment_timeout_returns_terminal_status_without_releasing_active_slot_early(monkeypatch, tmp_path):
+    import threading
     import time
 
     monkeypatch.setattr(api, "API_KEY", None)
@@ -441,9 +442,12 @@ def test_experiment_timeout_returns_terminal_status_without_releasing_active_slo
     (tmp_path / "sample.csv").write_text(
         "timestamp,label\n2026-01-01T00:00:00Z,0\n", encoding="utf-8"
     )
+    worker_started = threading.Event()
+    release_worker = threading.Event()
 
     def slow_run(*args, **kwargs):
-        time.sleep(3.0)
+        worker_started.set()
+        release_worker.wait(timeout=10)
         return _fake_run()
 
     monkeypatch.setattr(api, "run_detection", slow_run)
@@ -455,6 +459,7 @@ def test_experiment_timeout_returns_terminal_status_without_releasing_active_slo
         json={"dataset": "TON-IoT", "detector": "CNN-LSTM", "seed": 42},
     )
     assert response.status_code == 504
+    assert worker_started.wait(timeout=1.0)
     job_id = response.json()["detail"]["job_id"]
     status = client.get(f"/v2/experiment/{job_id}")
     assert status.status_code == 200
@@ -462,7 +467,16 @@ def test_experiment_timeout_returns_terminal_status_without_releasing_active_slo
     assert "worker_active" not in status.json()["job"]
     with api._experiment_lifecycle_lock:
         assert api._experiment_jobs[job_id]["worker_active"] is True
-    time.sleep(1.1)
+
+    release_worker.set()
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        with api._experiment_lifecycle_lock:
+            if not api._experiment_jobs[job_id]["worker_active"]:
+                break
+        time.sleep(0.01)
+    with api._experiment_lifecycle_lock:
+        assert api._experiment_jobs[job_id]["worker_active"] is False
 
 
 def test_production_auth_fails_closed_when_no_api_key_is_configured(monkeypatch):
