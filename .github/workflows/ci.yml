@@ -97,6 +97,21 @@ jobs:
           name: v3-phase4-${{ matrix.python-version }}
           path: artifacts/v3/phase4
           if-no-files-found: error
+      - name: Phase 4 C1-C6 attribution smoke (synthetic fixtures)
+        run: |
+          python scripts/run_phase4_attribution.py \
+            --swat data/demo/swat_like.csv \
+            --batadal data/demo/batadal_like.csv \
+            --toniot data/demo/toniot_like.csv \
+            --out artifacts/phase4-attribution \
+            --seed 42 --window-size 4 --source-kind synthetic_fixture
+      - name: Upload Phase 4 attribution artifacts
+        if: ${{ always() && hashFiles('artifacts/phase4-attribution/**') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase4-attribution-${{ matrix.python-version }}
+          path: artifacts/phase4-attribution
+          if-no-files-found: error
       - name: V3 Phase 5 sensitivity acceptance
         run: python scripts/run_v3_phase5.py --swat data/demo/swat_like.csv --batadal data/demo/batadal_like.csv --toniot data/demo/toniot_like.csv --out artifacts/v3/phase5 --seed 42 --window-size 4
       - name: Upload V3 Phase 5 acceptance artifacts
