@@ -128,6 +128,7 @@ def _validate_archive_members(archive: tarfile.TarFile, manifest: dict[str, Any]
     expected = {"manifest.json"} | set(manifest_paths)
     actual_files = set()
     seen_members = set()
+    seen_paths = set()
     for member in archive.getmembers():
         if member.name in seen_members:
             raise ValueError(f"duplicate archive member: {member.name}")
@@ -138,6 +139,10 @@ def _validate_archive_members(archive: tarfile.TarFile, manifest: dict[str, Any]
             continue
         rel = _safe_member_path(member.name)
         rel_name = rel.as_posix()
+        normalized_path = rel_name.casefold()
+        if normalized_path in seen_paths:
+            raise ValueError(f"duplicate normalized archive path: {rel_name}")
+        seen_paths.add(normalized_path)
         if member.isdir():
             prefix = rel_name.rstrip("/") + "/"
             if not any(name.startswith(prefix) for name in expected):

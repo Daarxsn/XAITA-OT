@@ -10,12 +10,12 @@ Audited the public `main` snapshot `8ac654cc2267323c49ceb2113b4ef277d39b438b`. C
 - Refuse to manufacture an all-benign label vector when no label column exists. Explicit missing/unlabeled/negative sentinel values fail closed instead of being silently converted to attacks or normal rows.
 - Correct the SWaT unsupervised anomaly-deviation row/feature index; cast Boolean telemetry to `float64`; calculate deviation explanations from the imputed numeric matrix; reject output folders nested in the input root; validate `top_n`; and record empty CSVs as review items.
 - Enforce archive download limits while streaming, reject duplicate ZIP extraction destinations, and recognize dotted SWaT A8 archive directory names.
-- Exclude symlinked files from lifecycle backups, correctly handle an archive created at backup root, and normalize archive paths.
+- Exclude symlinked files from lifecycle backups, correctly handle an archive created at backup root, normalize archive paths, and reject duplicate normalized restore paths (including case-only collisions).
 - Validate model dimensions, dropout, and learning rate at configuration load time.
 - Validate API event timestamps as timezone-aware and feature values as finite; bound request bodies even without `Content-Length`; and improve runtime project-root discovery.
 - Reject ambiguous benchmark directories containing multiple CSVs instead of silently selecting one partial file; retain canonical TON-IoT network CSV preference.
 - Correct the Multi-Asset/Protocol consistency score so repeated known asset/protocol identities score as more consistent than varied identities.
-- Bind deterministic source-code SHA-256 into real-experiment fingerprints.
+- Bind deterministic source-code SHA-256 into real-experiment fingerprints and use strict canonical JSON serialization that rejects NaN/unsupported values.
 - Deduplicate repeated STIX attack-pattern objects, reject naive CTI timestamps and invalid ATT&CK IDs, emit canonical MITRE URLs, return domain-specific errors for malformed provenance, and reject empty correlation-weight mappings.
 - Package artifacts in Docker; escape API-generated strings before dynamic HTML insertion; and fix incident search to consider all table rows.
 - Add regression coverage for the above defects.

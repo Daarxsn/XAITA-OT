@@ -437,3 +437,28 @@ def test_reproducibility_fingerprint_rejects_nonfinite_config():
             config={"invalid_threshold": float("nan")},
             implementation_sha256="b" * 64,
         )
+
+
+def test_backup_verification_rejects_duplicate_normalized_paths(tmp_path):
+    import io
+    import tarfile
+    from xaita_ot.operations.lifecycle import _validate_archive_members
+
+    archive_path = tmp_path / "case-collision.tar.gz"
+    payload = b"sample"
+    manifest = {"files": [{"path": "a.txt", "sha256": "0" * 64, "size": len(payload)}]}
+    with tarfile.open(archive_path, "w:gz") as archive:
+        root = tarfile.TarInfo("xaita-backup")
+        root.type = tarfile.DIRTYPE
+        archive.addfile(root)
+        data = b"{}"
+        item = tarfile.TarInfo("xaita-backup/manifest.json")
+        item.size = len(data)
+        archive.addfile(item, io.BytesIO(data))
+        for name in ("xaita-backup/a.txt", "xaita-backup/A.TXT"):
+            item = tarfile.TarInfo(name)
+            item.size = len(payload)
+            archive.addfile(item, io.BytesIO(payload))
+    with tarfile.open(archive_path, "r:gz") as archive:
+        with pytest.raises(ValueError, match="duplicate normalized archive path"):
+            _validate_archive_members(archive, manifest)
