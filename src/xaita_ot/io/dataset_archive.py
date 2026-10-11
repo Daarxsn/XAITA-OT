@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shutil
 import tempfile
 import urllib.request
 import zipfile
@@ -145,16 +144,51 @@ def _archive_candidates(dataset: str) -> list[Path]:
     return list(dict.fromkeys(path for path in values if path.is_file()))
 
 
-def _download_archive(url: str) -> tuple[Path, tempfile.TemporaryDirectory]:
+def _download_archive(
+    url: str,
+    *,
+    max_bytes: int = MAX_ARCHIVE_BYTES,
+) -> tuple[Path, tempfile.TemporaryDirectory]:
+    """Download an archive to a temporary file while enforcing its size limit."""
+    if max_bytes < 1:
+        raise ValueError("max_bytes must be positive")
+
     temp_dir = tempfile.TemporaryDirectory(prefix="xaita-dataset-download-")
     destination = Path(temp_dir.name) / "dataset.zip"
     request = urllib.request.Request(url, headers={"User-Agent": "XAITA-OT-runtime/1.0"})
     try:
-        with urllib.request.urlopen(request, timeout=300) as response, destination.open("wb") as output:
-            shutil.copyfileobj(response, output)
+        with urllib.request.urlopen(request, timeout=300) as response:
+            declared_length = response.headers.get("Content-Length")
+            if declared_length is not None:
+                try:
+                    content_length = int(declared_length)
+                except (TypeError, ValueError) as exc:
+                    raise RuntimeError("Dataset archive response has an invalid Content-Length") from exc
+                if content_length < 0:
+                    raise RuntimeError("Dataset archive response has a negative Content-Length")
+                if content_length > max_bytes:
+                    raise RuntimeError(
+                        "Dataset archive download exceeds XAITA_MAX_DATASET_ARCHIVE_BYTES"
+                    )
+
+            total = 0
+            with destination.open("wb") as output:
+                while True:
+                    # Read no more than one byte beyond the configured cap so a
+                    # response without Content-Length cannot fill the temp disk.
+                    chunk = response.read(min(1024 * 1024, max_bytes - total + 1))
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > max_bytes:
+                        raise RuntimeError(
+                            "Dataset archive download exceeds XAITA_MAX_DATASET_ARCHIVE_BYTES"
+                        )
+                    output.write(chunk)
     except Exception:
         temp_dir.cleanup()
         raise
+
     # The temporary directory must stay alive until the caller finishes reading
     # the archive. Return it explicitly rather than attaching state to Path.
     return destination, temp_dir
