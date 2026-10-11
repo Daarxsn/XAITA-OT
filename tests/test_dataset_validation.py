@@ -173,3 +173,17 @@ def test_timestamp_order_and_duplicate_diagnostics_are_explicit(tmp_path):
     assert result.monotonic_timestamp_order is False
     assert "duplicate_timestamps" in result.validation_errors
     assert "non_monotonic_timestamps" in result.validation_errors
+
+
+def test_non_binary_numeric_labels_block_benchmark_readiness(tmp_path):
+    path = _write(
+        tmp_path / "non-binary-labels.csv",
+        "Timestamp,label,sensor\n"
+        "2026-01-01T00:00:00Z,0,1.0\n"
+        "2026-01-01T00:00:01Z,2,2.0\n"
+        "2026-01-01T00:00:02Z,1,3.0\n",
+    )
+    result = validate_csv(path, "SWaT", tmp_path)
+    assert result.validation_status == "review"
+    assert result.unknown_label_rows == 1
+    assert "missing_or_invalid_labels" in result.validation_errors
