@@ -61,6 +61,7 @@ class CSVValidation:
     attack_rows: int
     normal_rows: int
     unknown_label_rows: int
+    placeholder_timestamps: int
     validation_status: str
     validation_errors: list[str] = field(default_factory=list)
     validation_warnings: list[str] = field(default_factory=list)
@@ -87,6 +88,7 @@ class CSVValidation:
             "attack_rows": self.attack_rows,
             "normal_rows": self.normal_rows,
             "unknown_label_rows": self.unknown_label_rows,
+            "placeholder_timestamps": self.placeholder_timestamps,
             "validation_status": self.validation_status,
             "validation_errors": self.validation_errors,
             "validation_warnings": self.validation_warnings,
@@ -200,6 +202,7 @@ def validate_csv(
     attack_rows = 0
     normal_rows = 0
     unknown_label_rows = 0
+    placeholder_timestamps = 0
     effective_timestamp_column = source_timestamp_column
     feature_columns = [
         column for column in columns
@@ -232,6 +235,14 @@ def validate_csv(
                 effective_timestamp_column = timestamp_display
             if timestamps is not None:
                 invalid_timestamps += int(timestamps.isna().sum())
+                placeholder_timestamps += int(
+                    (
+                        timestamps.notna()
+                        & timestamps.dt.normalize().eq(
+                            pd.Timestamp("1970-01-01", tz="UTC")
+                        )
+                    ).sum()
+                )
                 valid = timestamps.dropna()
                 if len(valid):
                     first = valid.iloc[0]
@@ -273,6 +284,7 @@ def validate_csv(
 
     timestamp_quality_ready = (
         invalid_timestamps == 0
+        and placeholder_timestamps == 0
         and duplicate_timestamps == 0
         and bool(monotonic)
     )
@@ -288,6 +300,8 @@ def validate_csv(
         validation_errors.append("missing_label_column")
     if invalid_timestamps:
         validation_errors.append("invalid_timestamps")
+    if placeholder_timestamps:
+        validation_errors.append("placeholder_timestamps")
     if duplicate_timestamps:
         validation_errors.append("duplicate_timestamps")
     if monotonic is False:
@@ -325,6 +339,7 @@ def validate_csv(
         attack_rows=attack_rows,
         normal_rows=normal_rows,
         unknown_label_rows=unknown_label_rows,
+        placeholder_timestamps=placeholder_timestamps,
         validation_status="pass" if ready else "review",
         validation_errors=validation_errors,
         validation_warnings=validation_warnings,
