@@ -12,9 +12,12 @@ def _timestamp(cti: dict) -> str:
     raw = cti.get("generated_at")
     if raw:
         try:
-            return datetime.fromisoformat(str(raw).replace("Z", "+00:00")).astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+            parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            if parsed.tzinfo is None or parsed.utcoffset() is None:
+                raise ValueError("timestamp has no timezone offset")
+            return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
         except ValueError as exc:
-            raise ValueError("CTI generated_at must be a valid ISO-8601 timestamp") from exc
+            raise ValueError("CTI generated_at must be a valid timezone-aware ISO-8601 timestamp") from exc
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
@@ -51,8 +54,8 @@ def to_stix_bundle(cti):
                 "url": f"https://attack.mitre.org/techniques/ics/{technique_id}",
             }],
         }
-        objects.append(ap)
         if ap["id"] not in seen:
+            objects.append(ap)
             refs.append(ap["id"])
             seen.add(ap["id"])
     note = {

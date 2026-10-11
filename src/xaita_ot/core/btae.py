@@ -33,7 +33,7 @@ def _components(a: DetectionEvent, b: DetectionEvent, temporal_window: float) ->
 
 
 def _validated_weights(weights=None) -> dict[str, float]:
-    value = dict(weights or DEFAULT_WEIGHTS)
+    value = dict(DEFAULT_WEIGHTS if weights is None else weights)
     required = set(DEFAULT_WEIGHTS)
     if set(value) != required:
         raise ValueError(f"correlation weights must contain exactly {sorted(required)}")

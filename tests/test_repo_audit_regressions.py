@@ -256,3 +256,51 @@ def test_toniot_duplicate_timestamps_do_not_pass_preflight(tmp_path):
     result = validate_csv(csv, "TON-IoT", root=tmp_path)
     assert result.duplicate_timestamps == 1
     assert result.validation_status == "review"
+
+
+
+def test_stix_bundle_deduplicates_repeated_attack_patterns():
+    from xaita_ot.cti.stix import to_stix_bundle
+
+    cti = {
+        "incident_id": "INC-DUPLICATE-TECH",
+        "generated_at": "2026-10-11T10:00:00Z",
+        "context": [
+            {"technique_id": "T0855", "name": "Unauthorized Command Message"},
+            {"technique_id": "T0855", "name": "Unauthorized Command Message"},
+        ],
+        "risk": {"level": "HIGH"},
+        "attribution": {"hypothesis": "H1", "belief": 0.7, "plausibility": 0.9},
+    }
+    bundle = to_stix_bundle(cti)
+    ids = [item["id"] for item in bundle["objects"]]
+    assert len(ids) == len(set(ids))
+    assert sum(item["type"] == "attack-pattern" for item in bundle["objects"]) == 1
+
+
+def test_stix_export_rejects_naive_generated_timestamp():
+    from xaita_ot.cti.stix import to_stix_bundle
+
+    cti = {
+        "incident_id": "INC-NAIVE-TIME",
+        "generated_at": "2026-10-11T10:00:00",
+        "context": [],
+        "risk": {"level": "HIGH"},
+        "attribution": {"hypothesis": "H1", "belief": 0.7, "plausibility": 0.9},
+    }
+    with pytest.raises(ValueError, match="timezone-aware"):
+        to_stix_bundle(cti)
+
+
+def test_provenance_malformed_item_raises_domain_error():
+    from xaita_ot.core.provenance import ProvenanceValidationError, validate_provenance
+
+    with pytest.raises(ProvenanceValidationError, match="mappings"):
+        validate_provenance([["not", "a", "mapping"]])
+
+
+def test_explicit_empty_correlation_weights_are_rejected():
+    from xaita_ot.core.btae import _validated_weights
+
+    with pytest.raises(ValueError, match="exactly"):
+        _validated_weights({})
