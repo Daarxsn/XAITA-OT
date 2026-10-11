@@ -571,17 +571,19 @@ def main(argv: list[str] | None = None) -> int:
                 n_estimators=args.n_estimators,
             )
             print(json.dumps({
-                "status": "completed",
+                "status": payload["status"],
                 "dataset": payload["dataset"],
                 "analysis_mode": payload["analysis_mode"],
                 "ground_truth_used": payload["ground_truth_used"],
                 "unique_csv_count": payload["unique_csv_count"],
+                "completed_file_count": payload["completed_file_count"],
+                "review_file_count": payload["review_file_count"],
                 "total_rows": payload["total_rows"],
                 "total_anomaly_rows": payload["total_anomaly_rows"],
                 "fingerprint": payload["fingerprint"],
                 "summary": payload["summary"],
             }, sort_keys=True))
-            return 0
+            return 0 if payload["status"] == "completed" else 2
 
         if args.cmd == "validate-data":
             output = args.out or f"artifacts/{args.dataset}_real_data_manifest.json"
