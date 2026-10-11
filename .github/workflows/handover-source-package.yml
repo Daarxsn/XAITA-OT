@@ -1,0 +1,77 @@
+name: XAITA-OT Handover Source Package
+
+on:
+  push:
+    branches:
+      - handover/package-snapshot
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact handover candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create tracked-source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p handover-output
+          REV="$(git rev-parse HEAD)"
+          git archive --format=zip --prefix=XAITA-OT/ HEAD -o handover-output/XAITA-OT-source.zip
+          python - <<'PY'
+          import hashlib, json, subprocess, zipfile
+          from pathlib import Path
+          rev = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          zpath = Path("handover-output/XAITA-OT-source.zip")
+          with zipfile.ZipFile(zpath) as archive:
+              names = archive.namelist()
+              files = [n for n in names if not n.endswith("/")]
+              required = [
+                  "XAITA-OT/README.md",
+                  "XAITA-OT/pyproject.toml",
+                  "XAITA-OT/src/xaita_ot/api/app.py",
+                  "XAITA-OT/tests/test_api.py",
+                  "XAITA-OT/data/demo/swat_like.csv",
+                  "XAITA-OT/data/demo/batadal_like.csv",
+                  "XAITA-OT/data/demo/toniot_like.csv",
+              ]
+              missing = [name for name in required if name not in names]
+              blocked_raw = [name for name in files if name.startswith("XAITA-OT/data/raw/") and name.lower().endswith(".csv")]
+              if missing:
+                  raise SystemExit("Source package failed required-file check: " + ", ".join(missing))
+              if blocked_raw:
+                  raise SystemExit("Raw dataset files unexpectedly tracked in source package: " + ", ".join(blocked_raw[:10]))
+              data = {
+                  "schema_version": "XAITA-OT-SOURCE-PACKAGE-1.0",
+                  "git_revision": rev,
+                  "tracked_file_count": len(files),
+                  "archive_sha256": hashlib.sha256(zpath.read_bytes()).hexdigest(),
+                  "included_demo_fixtures": [
+                      "data/demo/swat_like.csv",
+                      "data/demo/batadal_like.csv",
+                      "data/demo/toniot_like.csv",
+                      "data/demo/v3_phase2_swat.csv",
+                  ],
+                  "raw_benchmarks_included": False,
+                  "raw_data_note": "Git excludes data/raw/** and *.zip. Real benchmark files must be supplied separately under their applicable dataset terms.",
+                  "required_files_check": "pass",
+                  "raw_dataset_policy_check": "pass",
+              }
+          Path("handover-output/package-manifest.json").write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(json.dumps(data, indent=2))
+          PY
+
+      - name: Upload handover source package
+        uses: actions/upload-artifact@v4
+        with:
+          name: XAITA-OT-handover-source
+          path: handover-output/*
+          if-no-files-found: error
+          retention-days: 30
