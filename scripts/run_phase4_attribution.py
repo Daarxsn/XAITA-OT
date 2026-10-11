@@ -51,6 +51,7 @@ def main() -> None:
         ) else "FAIL",
         "source_kind": result["source_kind"],
         "benchmark_claims_allowed": result["benchmark_claims_allowed"],
+        "benchmark_claims_candidate": result["benchmark_claims_candidate"],
         "configurations": result["configurations"],
         "datasets": result["datasets"],
         "seeds": result["seeds"],
