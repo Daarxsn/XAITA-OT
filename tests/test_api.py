@@ -440,7 +440,7 @@ def test_experiment_timeout_returns_terminal_status_without_releasing_active_slo
     monkeypatch.setattr(api, "DATASET_PATHS", {"TON-IoT": str(tmp_path)})
     monkeypatch.setattr(api, "EXPERIMENT_TIMEOUT_SECONDS", 2.0)
     (tmp_path / "sample.csv").write_text(
-        "timestamp,label\n2026-01-01T00:00:00Z,0\n", encoding="utf-8"
+        "timestamp,label,sensor\n2026-01-01T00:00:00Z,0,1.0\n", encoding="utf-8"
     )
     worker_started = threading.Event()
     release_worker = threading.Event()
