@@ -202,6 +202,8 @@ def test_experiment_lifecycle_completed_and_status(monkeypatch, tmp_path):
     body = response.json()
     assert body["schema_version"] == "XAITA-OT-V2-RUN-1.3"
     assert body["job_id"]
+    assert body["dataset_file"] == "sample.csv"
+    assert str(tmp_path) not in response.text
     status = client.get(f"/v2/experiment/{body['job_id']}")
     assert status.status_code == 200
     assert status.json()["job"]["status"] == "completed"
