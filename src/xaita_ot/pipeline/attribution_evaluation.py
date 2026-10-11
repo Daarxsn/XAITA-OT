@@ -7,12 +7,15 @@ The attribution interval is an evidence interval, not a calibrated probability.
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
 import json
+import platform
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
+from .. import __version__
 from ..config import AppConfig
 from ..core.attribution import assess
 from ..core.attribution_baselines import weighted_evidence_fusion
@@ -234,12 +237,21 @@ def run_phase4_attribution(
         for dataset in DATASETS
         for seed in selected_seeds
     ]
-    return {
+    payload = {
         "schema_version": PHASE4_SCHEMA_VERSION,
         "phase": "Phase 4 Attribution Evaluation",
         "status": "EXECUTED",
         "source_kind": source_kind,
         "detector": "random_forest",
+        "package_version": __version__,
+        "python_version": platform.python_version(),
+        "run_configuration": {
+            "window_size": int(config.model.window_size),
+            "train_fraction": float(config.experiment.train_fraction),
+            "validation_fraction": float(config.experiment.validation_fraction),
+            "episode_aware": bool(config.experiment.episode_aware),
+            "split_protocol": "chronological_episode_aware",
+        },
         "benchmark_claims_allowed": False,
         "benchmark_claims_candidate": source_kind == "real_benchmark",
         "benchmark_claims_note": (
@@ -251,6 +263,11 @@ def run_phase4_attribution(
         "seeds": [int(seed) for seed in selected_seeds],
         "runs": runs,
     }
+    canonical = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), allow_nan=False, default=str
+    ).encode("utf-8")
+    payload["fingerprint"] = hashlib.sha256(canonical).hexdigest()
+    return payload
 
 
 def write_phase4_attribution_artifacts(
