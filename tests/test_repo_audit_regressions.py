@@ -242,3 +242,17 @@ def test_toniot_ambiguous_date_time_pair_uses_day_first(tmp_path):
     validation = validate_csv(csv, "TON-IoT", root=tmp_path)
     assert validation.start_timestamp == "2021-07-02T10:00:00+00:00"
     assert validation.validation_status == "pass"
+
+
+
+def test_toniot_duplicate_timestamps_do_not_pass_preflight(tmp_path):
+    csv = tmp_path / "duplicate-toniot.csv"
+    csv.write_text(
+        "date,time,label,feature\n"
+        "02/07/2021,10:00:00,0,1\n"
+        "02/07/2021,10:00:00,1,2\n",
+        encoding="utf-8",
+    )
+    result = validate_csv(csv, "TON-IoT", root=tmp_path)
+    assert result.duplicate_timestamps == 1
+    assert result.validation_status == "review"

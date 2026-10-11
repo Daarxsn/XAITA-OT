@@ -249,15 +249,12 @@ def validate_csv(
     if rows == 0:
         raise DatasetValidationError(f"{dataset_name}: {source} is empty")
 
+    # Keep validation aligned with run_detection: a "pass" must not conceal
+    # duplicate or out-of-order timestamps that would block the later experiment.
     timestamp_quality_ready = (
         invalid_timestamps == 0
-        and (
-            dataset_name == "TON-IoT"
-            or (
-                duplicate_timestamps == 0
-                and bool(monotonic)
-            )
-        )
+        and duplicate_timestamps == 0
+        and bool(monotonic)
     )
 
     timestamp_column_ready = effective_timestamp_column is not None
