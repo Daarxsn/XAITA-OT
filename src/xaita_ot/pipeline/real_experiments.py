@@ -237,6 +237,14 @@ def run_real_experiment_matrix(
         {
             "dataset": item["dataset"],
             "status": item["status"],
+            "dataset_sha256": (
+                item["result"].get("dataset_validation", {}).get("sha256")
+                if "result" in item else None
+            ),
+            "suite_fingerprint": (
+                item["result"].get("suite", {}).get("fingerprint")
+                if "result" in item else None
+            ),
             "completed_detectors": (
                 item["result"]["suite"]["completed_detectors"] if "result" in item else []
             ),
@@ -313,7 +321,12 @@ def run_real_experiment_statistical_matrix(
             detectors=detectors,
             datasets=datasets,
         )
-        runs.append({"seed": int(seed), "status": matrix["matrix"]["status"], "result": matrix})
+        runs.append({
+            "seed": int(seed),
+            "status": matrix["matrix"]["status"],
+            "matrix_fingerprint": matrix["matrix"].get("fingerprint"),
+            "result": matrix,
+        })
 
     observations = []
     for run in runs:
@@ -406,6 +419,7 @@ def run_real_experiment_statistical_matrix(
             "observation_count": len(observations),
             "fingerprint": hashlib.sha256(_canonical_json({
                 "seeds": [int(seed) for seed in seeds],
+                "matrix_fingerprints": [run["matrix_fingerprint"] for run in runs],
                 "detectors": list(detectors),
                 "datasets": list(datasets),
                 "confidence": float(confidence),
