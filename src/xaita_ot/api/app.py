@@ -398,7 +398,11 @@ def dataset_preflight(xaita_api_key: str | None = Header(default=None, alias="X-
                 "archive_file_count": report["datasets"][name]["file_count"],
                 "archive_validated_files": report["datasets"][name]["validated_files"],
                 "archive_review_files": report["datasets"][name]["review_files"],
-                "archive_reason": report["datasets"][name].get("reason"),
+                "archive_reason": (
+                    "Dataset archive validation failed"
+                    if report["datasets"][name].get("reason")
+                    else None
+                ),
             }
             for name in DATASET_PATHS
         }
@@ -499,7 +503,10 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
                 detail={
                     "message": f"{payload.dataset} dataset validation did not pass",
                     "validation_status": validation.validation_status,
-                    "manifest": validation.as_dict(),
+                    "manifest": {
+                        key: value for key, value in validation.as_dict().items()
+                        if key != "path"
+                    },
                 },
             )
         run = run_detection(csv_path, payload.dataset, load_config(), seed=payload.seed, detector=detector_key)
@@ -540,7 +547,7 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
                 "error_type": error_type,
             },
         ) from exc
-    return {"schema_version": "XAITA-OT-V2-RUN-1.3", "job_id": job_id, "experiment_id": run.experiment_id, "dataset": run.dataset, "detector": payload.detector, "detector_key": detector_key, "seed": run.seed, "started_at": run.started_at, "duration_seconds": run.duration_seconds, "rows": run.rows, "windows": run.windows, "metrics": run.metrics[detector_key], "all_model_metrics": run.metrics, "dataset_file": str(csv_path)}
+    return {"schema_version": "XAITA-OT-V2-RUN-1.3", "job_id": job_id, "experiment_id": run.experiment_id, "dataset": run.dataset, "detector": payload.detector, "detector_key": detector_key, "seed": run.seed, "started_at": run.started_at, "duration_seconds": run.duration_seconds, "rows": run.rows, "windows": run.windows, "metrics": run.metrics[detector_key], "all_model_metrics": run.metrics, "dataset_file": csv_path.name}
 
 
 
