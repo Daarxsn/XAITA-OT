@@ -137,6 +137,14 @@ def chronological_split(df, train=0.70, val=0.15, label_col="label", episode_awa
 
 
 def select_threshold(y, p, metric="f1"):
+    """Select a decision threshold using an efficient cumulative-count sweep.
+
+    The former implementation recomputed classification metrics over the full
+    validation set for every distinct probability score (quadratic in the
+    number of rows/scores). Sorting once and using suffix counts gives
+    O(n log n) work and preserves the original candidate thresholds and the
+    preference for the lowest threshold when scores tie.
+    """
     y, p = np.asarray(y).astype(int), np.asarray(p, dtype=float)
     if len(y) != len(p):
         raise ValueError("labels and probabilities must have equal length")
@@ -144,21 +152,50 @@ def select_threshold(y, p, metric="f1"):
         raise ValueError("probabilities must be finite")
     if len(y) == 0 or np.unique(y).size < 2:
         return 0.5
+    if metric not in ("f1", "balanced_accuracy"):
+        raise ValueError("threshold_metric must be 'f1' or 'balanced_accuracy'")
+
     thresholds = np.unique(np.concatenate(([0.0], p, [1.0])))
-    best_threshold, best_score = 0.5, -np.inf
-    for threshold in thresholds:
-        pred = (p >= threshold).astype(int)
-        pr, re, f1, _ = precision_recall_fscore_support(y, pred, average="binary", zero_division=0)
-        if metric == "f1":
-            score = f1
-        elif metric == "balanced_accuracy":
-            tn = ((pred == 0) & (y == 0)).sum(); fp = ((pred == 1) & (y == 0)).sum()
-            score = (re + tn / max(1, tn + fp)) / 2.0
-        else:
-            raise ValueError("threshold_metric must be 'f1' or 'balanced_accuracy'")
-        if score > best_score or (np.isclose(score, best_score) and threshold < best_threshold):
-            best_threshold, best_score = float(threshold), float(score)
-    return best_threshold
+    order = np.argsort(p, kind="mergesort")
+    sorted_p = p[order]
+    sorted_y = y[order]
+    starts = np.searchsorted(sorted_p, thresholds, side="left")
+    predicted_positive = len(y) - starts
+
+    # suffix_tp[i] is the number of positive labels at sorted positions >= i.
+    positive_sorted = (sorted_y == 1).astype(np.int64)
+    suffix_tp = np.empty(len(y) + 1, dtype=np.int64)
+    suffix_tp[-1] = 0
+    suffix_tp[:-1] = np.cumsum(positive_sorted[::-1], dtype=np.int64)[::-1]
+    true_positive = suffix_tp[starts]
+    actual_positive = int(np.count_nonzero(y == 1))
+    precision = np.divide(
+        true_positive,
+        predicted_positive,
+        out=np.zeros(len(thresholds), dtype=float),
+        where=predicted_positive != 0,
+    )
+    recall = true_positive / actual_positive
+
+    if metric == "f1":
+        denominator = precision + recall
+        scores = np.divide(
+            2.0 * precision * recall,
+            denominator,
+            out=np.zeros(len(thresholds), dtype=float),
+            where=denominator != 0,
+        )
+    else:
+        actual_negative = len(y) - actual_positive
+        false_positive = predicted_positive - true_positive
+        true_negative = actual_negative - false_positive
+        specificity = true_negative / max(1, actual_negative)
+        scores = (recall + specificity) / 2.0
+
+    # np.argmax returns the first maximum; thresholds are sorted, so this
+    # preserves the old loop's lowest-threshold tie preference.
+    best_idx = int(np.argmax(scores))
+    return float(thresholds[best_idx])
 
 
 def _positive_probability(classifier, X):

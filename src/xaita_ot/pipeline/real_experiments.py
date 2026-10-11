@@ -31,6 +31,23 @@ def _canonical_json(payload: Any) -> bytes:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
 
 
+
+
+def implementation_fingerprint() -> str:
+    """Hash Python package source to identify the experiment implementation."""
+    package_root = Path(__file__).resolve().parents[1]
+    digest = hashlib.sha256()
+
+    for source in sorted(package_root.rglob("*.py")):
+        relative = source.relative_to(package_root).as_posix()
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(source.read_bytes())
+        digest.update(b"\0")
+
+    return digest.hexdigest()
+
+
 def reproducibility_fingerprint(
     *,
     dataset_sha256: str,
@@ -40,8 +57,10 @@ def reproducibility_fingerprint(
     split_protocol: str,
     config: dict[str, Any],
     package_version: str = __version__,
+    implementation_sha256: str | None = None,
 ) -> str:
     payload = {
+        "implementation_sha256": implementation_sha256 or implementation_fingerprint(),
         "dataset_sha256": dataset_sha256,
         "dataset": dataset,
         "detector": detector,
@@ -60,6 +79,7 @@ def build_result_envelope(
     config: AppConfig,
 ) -> dict[str, Any]:
     experiment = asdict(run)
+    implementation_sha256 = implementation_fingerprint()
     fingerprint = reproducibility_fingerprint(
         dataset_sha256=validation.sha256,
         dataset=run.dataset,
@@ -67,6 +87,7 @@ def build_result_envelope(
         seed=run.seed,
         split_protocol=str(run.config.get("split_protocol", "")),
         config=run.config,
+        implementation_sha256=implementation_sha256,
     )
     return {
         "schema_version": SCHEMA_VERSION,
@@ -75,6 +96,7 @@ def build_result_envelope(
         "experiment": experiment,
         "reproducibility": {
             "fingerprint": fingerprint,
+            "implementation_sha256": implementation_sha256,
             "dataset_sha256": validation.sha256,
             "seed": int(run.seed),
             "detector": str(run.config.get("detector", "")),
@@ -102,7 +124,10 @@ def run_real_experiment(
             "real experiment execution is blocked until the dataset passes validation"
         )
 
-    run = run_detection(csv_path, dataset, config, seed=seed, detector=detector)
+    if dataset.strip().upper() == "BATADAL":
+        run = run_detection(csv_path, dataset, config, seed=seed, detector=detector, dataset_root=dataset_root)
+    else:
+        run = run_detection(csv_path, dataset, config, seed=seed, detector=detector)
     return build_result_envelope(validation, run, config=config)
 
 
@@ -137,7 +162,10 @@ def run_real_experiment_suite(
     runs: list[dict[str, Any]] = []
     for detector in requested:
         try:
-            run = run_detection(csv_path, dataset, config, seed=run_seed, detector=detector)
+            if dataset.strip().upper() == "BATADAL":
+                run = run_detection(csv_path, dataset, config, seed=run_seed, detector=detector, dataset_root=dataset_root)
+            else:
+                run = run_detection(csv_path, dataset, config, seed=run_seed, detector=detector)
             runs.append({"status": "completed", "detector": detector,
                          "result": build_result_envelope(validation, run, config=config)})
         except Exception as exc:
@@ -150,7 +178,9 @@ def run_real_experiment_suite(
         item["result"]["reproducibility"]["split_protocol"]
         for item in runs if item["status"] == "completed"
     })
+    implementation_sha256 = implementation_fingerprint()
     fingerprint_payload = {
+        "implementation_sha256": implementation_sha256,
         "dataset_sha256": validation.sha256,
         "dataset": validation.dataset,
         "detectors": list(requested),
@@ -175,6 +205,7 @@ def run_real_experiment_suite(
             "status": "completed" if failed == 0 else "failed",
             "split_protocols": split_protocols,
             "config_sha256": hashlib.sha256(_canonical_json(config.model_dump(mode="json"))).hexdigest(),
+            "implementation_sha256": implementation_sha256,
             "fingerprint": hashlib.sha256(_canonical_json(fingerprint_payload)).hexdigest(),
         },
         "runs": runs,
@@ -212,13 +243,16 @@ def run_real_experiment_matrix(
     dataset_runs: list[dict[str, Any]] = []
     for dataset in requested_datasets:
         try:
-            suite = run_real_experiment_suite(
-                csv_path=normalized_paths[dataset],
-                dataset=dataset,
-                config=config,
-                seed=run_seed,
-                detectors=detectors,
-            )
+            suite_kwargs = {
+                "csv_path": normalized_paths[dataset],
+                "dataset": dataset,
+                "config": config,
+                "seed": run_seed,
+                "detectors": detectors,
+            }
+            if dataset.strip().upper() == "BATADAL":
+                suite_kwargs["dataset_root"] = normalized_paths[dataset].resolve().parent.parent
+            suite = run_real_experiment_suite(**suite_kwargs)
             dataset_runs.append({
                 "status": "completed" if suite["suite"]["status"] == "completed" else "failed",
                 "dataset": dataset,
@@ -249,6 +283,7 @@ def run_real_experiment_matrix(
     normalized_detectors = tuple(
         str(d).strip().lower().replace("-", "_") for d in detectors
     )
+    implementation_sha256 = implementation_fingerprint()
     fingerprint_payload = {
         "datasets": list(requested_datasets),
         "detectors": list(normalized_detectors),
@@ -256,6 +291,7 @@ def run_real_experiment_matrix(
         "dataset_status": dataset_status,
         "config": config.model_dump(mode="json"),
         "package_version": __version__,
+        "implementation_sha256": implementation_sha256,
     }
     return {
         "schema_version": "XAITA-OT-V5-REAL-EXPERIMENT-MATRIX-1.0",
@@ -268,6 +304,7 @@ def run_real_experiment_matrix(
             "failed_dataset_count": failed,
             "seed": int(run_seed),
             "status": "completed" if failed == 0 else "failed",
+            "implementation_sha256": implementation_sha256,
             "fingerprint": hashlib.sha256(_canonical_json(fingerprint_payload)).hexdigest(),
         },
         "datasets": dataset_runs,

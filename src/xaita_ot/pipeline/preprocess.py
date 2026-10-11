@@ -23,6 +23,7 @@ class OTPreprocessor:
     LABEL_ALIASES = {
         "label", "attack", "attack state", "normal/attack", "att_flag",
         "attack_label", "type", "normal", "malicious",
+        "interval_attack_label", "interval_attack_id", "interval_attack_overlap",
     }
 
     @classmethod
