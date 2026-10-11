@@ -4,7 +4,7 @@
 
 This checklist combines the agreed Phase 4 attribution evaluation with the separate complete pre-handover gate. It does not replace the V5.1 developer contract, V3.1 evidence freeze, or V4 enterprise-hardening roadmap.
 
-Implementation entry point: `scripts/run_phase4_attribution.py` backed by `xaita_ot.pipeline.attribution_evaluation`. The existing `scripts/run_v3_phase4.py` is the separate V3.4 ablation study; it is not a substitute for the C1-C6 matrix. CI runs C1-C6 against synthetic fixtures to test execution and artifact structure only. That smoke run is not real benchmark evidence.
+Implementation entry point: `scripts/run_phase4_attribution.py` backed by `xaita_ot.pipeline.attribution_evaluation`. The existing `scripts/run_v3_phase4.py` is the separate V3.4 ablation study; it is not a substitute for the C1-C6 matrix. CI runs C1-C6 against synthetic fixtures to test execution and artifact structure only. The current C1-C6 runner uses one shared Random Forest detection-score baseline across all six configurations; the separate four-detector suite is still required for the broader detector acceptance gate. That smoke run is not real benchmark evidence.
 
 ## 1. Phase 4 attribution evaluation
 
