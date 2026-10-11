@@ -54,6 +54,9 @@ def test_ready_reports_dashboard(tmp_path, monkeypatch):
     assert body["dashboard"] is True
     assert body["datasets_ready"] is True
     assert body["datasets"] == {"SWaT": True, "BATADAL": True, "TON-IoT": True}
+    assert body["dataset_files_present"] is True
+    assert body["benchmark_validation_checked"] is False
+    assert body["readiness_basis"] == "dashboard_and_dataset_file_presence_only"
     assert body["max_events"] == api.MAX_EVENTS
 
 
