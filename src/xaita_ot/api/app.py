@@ -558,15 +558,16 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
             run = future.result(timeout=remaining)
         except FutureTimeoutError as exc:
             if future.done():
-                raise
-            raise HTTPException(
-                status_code=504,
-                detail={
-                    "message": "Experiment exceeded execution deadline",
-                    "job_id": job_id,
-                    "timeout_seconds": EXPERIMENT_TIMEOUT_SECONDS,
-                },
-            ) from exc
+                run = future.result()
+            else:
+                raise HTTPException(
+                    status_code=504,
+                    detail={
+                        "message": "Experiment exceeded execution deadline",
+                        "job_id": job_id,
+                        "timeout_seconds": EXPERIMENT_TIMEOUT_SECONDS,
+                    },
+                ) from exc
         duration = round(time.monotonic() - started, 3)
         if duration > EXPERIMENT_TIMEOUT_SECONDS:
             with _experiment_lifecycle_lock:
