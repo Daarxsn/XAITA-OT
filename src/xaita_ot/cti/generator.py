@@ -65,4 +65,4 @@ def generate_cti(incident_id, detection, episode, context, attribution, xai, ris
 
 def write_json(obj, path):
     with open(path, 'w', encoding='utf-8') as f:
-        json.dump(obj, f, indent=2, default=str)
+        json.dump(obj, f, indent=2, default=str, allow_nan=False)

@@ -138,3 +138,11 @@ def test_canonical_event_hashing_rejects_non_finite_json_numbers():
             action="x", actor="analyst", outcome="success", correlation_id="corr",
             details={"confidence": float("nan")},
         )
+
+
+
+def test_enterprise_json_writer_rejects_non_finite_numbers(tmp_path):
+    from xaita_ot.integrations.enterprise import write_json
+
+    with pytest.raises(ValueError):
+        write_json({"risk": float("nan")}, tmp_path / "invalid.json")

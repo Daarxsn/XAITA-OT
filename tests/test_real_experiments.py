@@ -411,3 +411,35 @@ def test_experiment_manifest_rejects_incomplete_result():
             {"dataset_validation": {"sha256": "a" * 64}, "experiment": {}},
             result_sha256="d" * 64,
         )
+
+
+
+def test_matrix_fingerprint_binds_dataset_and_implementation_identity(tmp_path, monkeypatch):
+    from xaita_ot.pipeline.real_experiments import run_real_experiment_matrix
+
+    paths = {
+        "SWaT": tmp_path / "swat.csv",
+        "BATADAL": tmp_path / "batadal.csv",
+        "TON-IoT": tmp_path / "toniot.csv",
+    }
+    identity = {"dataset_sha256": "a" * 64, "implementation_sha256": "b" * 64}
+    def fake_suite(csv_path, dataset, config, seed=None, detectors=()):
+        return {
+            "dataset_validation": {"sha256": identity["dataset_sha256"]},
+            "suite": {
+                "status": "completed",
+                "completed_detectors": list(detectors),
+                "failed_detectors": [],
+                "implementation_sha256": identity["implementation_sha256"],
+                "fingerprint": "c" * 64,
+            },
+        }
+    monkeypatch.setattr("xaita_ot.pipeline.real_experiments.run_real_experiment_suite", fake_suite)
+    first = run_real_experiment_matrix(csv_paths=paths, config=AppConfig(), seed=42)["matrix"]["fingerprint"]
+    identity["dataset_sha256"] = "d" * 64
+    changed_data = run_real_experiment_matrix(csv_paths=paths, config=AppConfig(), seed=42)["matrix"]["fingerprint"]
+    identity["dataset_sha256"] = "a" * 64
+    identity["implementation_sha256"] = "e" * 64
+    changed_code = run_real_experiment_matrix(csv_paths=paths, config=AppConfig(), seed=42)["matrix"]["fingerprint"]
+    assert first != changed_data
+    assert first != changed_code

@@ -218,5 +218,5 @@ def validate_audit_event(event: dict[str, Any]) -> dict[str, Any]:
 def write_json(payload: dict[str, Any], path: str | Path) -> Path:
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    destination.write_text(json.dumps(payload, indent=2, sort_keys=True, allow_nan=False), encoding="utf-8")
     return destination

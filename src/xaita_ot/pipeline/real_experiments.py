@@ -284,6 +284,20 @@ def run_real_experiment_matrix(
             "failed_detectors": (
                 item["result"]["suite"]["failed_detectors"] if "result" in item else []
             ),
+            # Bind the root matrix fingerprint to every child's real inputs/code,
+            # not just to the fact that the child reported success.
+            "dataset_sha256": (
+                item["result"].get("dataset_validation", {}).get("sha256")
+                if "result" in item else None
+            ),
+            "implementation_sha256": (
+                item["result"].get("suite", {}).get("implementation_sha256")
+                if "result" in item else None
+            ),
+            "suite_fingerprint": (
+                item["result"].get("suite", {}).get("fingerprint")
+                if "result" in item else None
+            ),
         }
         for item in dataset_runs
     ]
@@ -452,6 +466,10 @@ def run_real_experiment_statistical_matrix(
                 "confidence": float(confidence),
                 "summary": summary,
                 "paired_detector_comparisons": paired,
+                "matrix_fingerprints": [
+                    run["result"].get("matrix", {}).get("fingerprint")
+                    for run in runs
+                ],
             })).hexdigest(),
         },
         "runs": runs,
