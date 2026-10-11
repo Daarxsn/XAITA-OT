@@ -251,6 +251,18 @@ def run_phase4_attribution(
             "validation_fraction": float(config.experiment.validation_fraction),
             "episode_aware": bool(config.experiment.episode_aware),
             "split_protocol": "chronological_episode_aware",
+            "detector_configuration": {
+                "algorithm": "RandomForestClassifier",
+                "n_estimators": 120,
+                "class_weight": "balanced",
+                "n_jobs": 1,
+                "classification_threshold": 0.5,
+            },
+            "fusion_configuration": {
+                "support_threshold": 0.60,
+                "conflict_threshold": 0.35,
+                "source_reliabilities": RELIABILITIES,
+            },
         },
         "benchmark_claims_allowed": False,
         "benchmark_claims_candidate": source_kind == "real_benchmark",
