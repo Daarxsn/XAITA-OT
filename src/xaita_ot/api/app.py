@@ -79,7 +79,17 @@ def _dataset_status(path: str | None) -> dict:
             csvs = list(root.rglob("*.csv")) + list(root.rglob("*.CSV"))
             csv_count = len(csvs)
             sample = sorted(csvs)[0].name if csvs else None
-    return {"configured": bool(path), "exists": exists, "ready": exists and csv_count > 0, "csv_count": csv_count, "sample_file": sample, "path": path}
+    files_present = exists and csv_count > 0
+    return {
+        "configured": bool(path),
+        "exists": exists,
+        "ready": files_present,
+        "files_present": files_present,
+        "readiness_basis": "file_presence_only",
+        "benchmark_validation_status": "not_checked",
+        "csv_count": csv_count,
+        "sample_file": sample,
+    }
 
 
 def _experiment_detector_name(name: str) -> str:
@@ -315,7 +325,7 @@ def operations_summary(xaita_api_key: str | None = Header(default=None, alias="X
     benchmark_path = ROOT / "artifacts" / "toniOT_network_5seed_summary.json"
     dashboard_ready = bool(_dashboard_path())
     auth_configured = _auth_ready()
-    return {"schema_version": "XAITA-OT-V5-OPS-1.0", "status": "operational" if dashboard_ready and ready_count == len(datasets) else "degraded", "role": role, "release": {"version": VERSION, "environment": ENVIRONMENT}, "dashboard": {"ready": dashboard_ready}, "datasets": {"ready_count": ready_count, "total": len(datasets), "items": datasets}, "execution": {"detectors": list(SUPPORTED_DETECTORS), "attribution_configurations": attribution_configurations(), "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE, "max_request_bytes": MAX_REQUEST_BYTES, "max_events": MAX_EVENTS}, "security": {"authentication_required": REQUIRE_AUTH or bool(_configured_api_keys()), "authentication_configured": auth_configured, "force_https": FORCE_HTTPS, "allowed_hosts": ALLOWED_HOSTS, "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE, "max_request_bytes": MAX_REQUEST_BYTES, "max_events": MAX_EVENTS}, "research": {"benchmark_summary_available": benchmark_path.is_file(), "benchmark_summary_path": str(benchmark_path) if benchmark_path.is_file() else None}, "safety_boundary": "Analyst-support only; no autonomous PLC/RTU/SCADA control action."}
+    return {"schema_version": "XAITA-OT-V5-OPS-1.0", "status": "operational" if dashboard_ready and ready_count == len(datasets) else "degraded", "role": role, "release": {"version": VERSION, "environment": ENVIRONMENT}, "dashboard": {"ready": dashboard_ready}, "datasets": {"ready_count": ready_count, "total": len(datasets), "items": datasets}, "execution": {"detectors": list(SUPPORTED_DETECTORS), "attribution_configurations": attribution_configurations(), "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE, "max_request_bytes": MAX_REQUEST_BYTES, "max_events": MAX_EVENTS}, "security": {"authentication_required": REQUIRE_AUTH or bool(_configured_api_keys()), "authentication_configured": auth_configured, "force_https": FORCE_HTTPS, "allowed_hosts": ALLOWED_HOSTS, "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE, "max_request_bytes": MAX_REQUEST_BYTES, "max_events": MAX_EVENTS}, "research": {"benchmark_summary_available": benchmark_path.is_file(), "benchmark_summary_artifact": benchmark_path.name if benchmark_path.is_file() else None}, "safety_boundary": "Analyst-support only; no autonomous PLC/RTU/SCADA control action."}
 
 
 @app.get("/v2/dashboard")
@@ -377,7 +387,9 @@ def dataset_preflight(xaita_api_key: str | None = Header(default=None, alias="X-
             }
             payload["all_ready"] = False
             return payload
-        payload["archive"] = report["archive"]
+        payload["archive"] = {
+            key: value for key, value in report["archive"].items() if key != "path"
+        }
         payload["datasets"] = {
             name: {
                 **dataset_items[name],
@@ -443,9 +455,8 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
             status_code=409,
             detail={
                 "message": f"{payload.dataset} dataset could not be prepared",
-                "path": str(path),
                 "error_type": type(exc).__name__,
-                "error": str(exc),
+                "error": "Dataset preparation failed; inspect server-side audit logs for details.",
                 "hint": "Provide a mounted dataset directory or a valid private datasets.zip archive.",
             },
         ) from exc
@@ -454,7 +465,6 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
             status_code=409,
             detail={
                 "message": f"{payload.dataset} dataset is not available",
-                "path": str(path),
                 "hint": "Mount the dataset directory or provide a valid private datasets.zip archive.",
             },
         )
