@@ -56,6 +56,7 @@ def main() -> None:
         "datasets": result["datasets"],
         "seeds": result["seeds"],
         "run_count": len(result["runs"]),
+        "fingerprint": result["fingerprint"],
         "artifacts": {key: Path(value).name for key, value in outputs.items()},
     }
     acceptance_path = Path(args.out) / "phase4_attribution_acceptance.json"
