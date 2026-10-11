@@ -239,6 +239,7 @@ def run_phase4_attribution(
         "phase": "Phase 4 Attribution Evaluation",
         "status": "EXECUTED",
         "source_kind": source_kind,
+        "detector": "random_forest",
         "benchmark_claims_allowed": source_kind == "real_benchmark",
         "benchmark_claims_note": (
             "Source-kind metadata is user-declared and does not independently verify provenance, "
