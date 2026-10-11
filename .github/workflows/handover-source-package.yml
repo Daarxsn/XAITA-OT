@@ -31,7 +31,7 @@ jobs:
           python - <<'PY'
           import hashlib, json, os, subprocess, zipfile
           from pathlib import Path
-          rev = os.environ["SOURCE_REV"]
+          rev = subprocess.check_output(["git", "rev-parse", "origin/main"], text=True).strip()
           zpath = Path("handover-output/XAITA-OT-source.zip")
           with zipfile.ZipFile(zpath) as archive:
               names = archive.namelist()
