@@ -14,6 +14,25 @@ class ModelConfig(BaseModel):
     batch_size: int = 128
     learning_rate: float = 1e-3
 
+    @model_validator(mode="after")
+    def validate_model_parameters(self):
+        positive_ints = {
+            "input_features": self.input_features,
+            "window_size": self.window_size,
+            "cnn_channels": self.cnn_channels,
+            "lstm_hidden": self.lstm_hidden,
+            "epochs": self.epochs,
+            "batch_size": self.batch_size,
+        }
+        invalid = [name for name, value in positive_ints.items() if value <= 0]
+        if invalid:
+            raise ValueError(f"model parameters must be positive integers: {', '.join(invalid)}")
+        if not math.isfinite(self.dropout) or not 0.0 <= self.dropout < 1.0:
+            raise ValueError("dropout must be finite and in [0, 1)")
+        if not math.isfinite(self.learning_rate) or self.learning_rate <= 0:
+            raise ValueError("learning_rate must be finite and positive")
+        return self
+
 
 class CorrelationConfig(BaseModel):
     temporal_window_seconds: float = 60.0

@@ -1,0 +1,186 @@
+"""Regression tests for correctness and safety gaps found in the repository audit."""
+import asyncio
+import tarfile
+import zipfile
+from pathlib import Path
+from unittest.mock import patch
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from xaita_ot.config import ModelConfig
+from xaita_ot.io.dataset_archive import _download_archive, _safe_extract_selected
+from xaita_ot.io.dataset_validation import _parse_timestamp, validate_csv
+from xaita_ot.operations.lifecycle import create_backup, verify_backup
+from xaita_ot.pipeline.swat_unlabeled import _top_deviations, analyze_swat_unlabeled
+
+
+def test_swat_ambiguous_timestamp_uses_day_first():
+    frame = pd.DataFrame({"Timestamp": ["02/07/2021 10:07:42 AM"]})
+    parsed, _ = _parse_timestamp(frame, "SWaT", "Timestamp")
+    assert parsed is not None
+    assert parsed.iloc[0] == pd.Timestamp("2021-07-02 10:07:42", tz="UTC")
+
+
+def test_toniot_missing_timestamp_column_is_reviewed(tmp_path):
+    csv = tmp_path / "no-time.csv"
+    csv.write_text("label,feature\nnormal,1\nattack,2\n", encoding="utf-8")
+    result = validate_csv(csv, "TON-IoT", root=tmp_path)
+    assert result.timestamp_column is None
+    assert result.validation_status == "review"
+
+
+def test_unknown_string_labels_are_not_counted_as_attacks(tmp_path):
+    csv = tmp_path / "unknown-labels.csv"
+    csv.write_text(
+        "timestamp,label,feature\n"
+        "2026-01-01T00:00:00Z,normal,1\n"
+        "2026-01-01T00:00:01Z,unlabeled,2\n"
+        "2026-01-01T00:00:02Z,attack,3\n",
+        encoding="utf-8",
+    )
+    result = validate_csv(csv, "SWaT", root=tmp_path)
+    assert result.validation_status == "review"
+    assert result.normal_rows == 1
+    assert result.attack_rows == 1
+    assert result.unknown_label_rows == 1
+
+
+def test_top_deviation_score_uses_matching_row_and_feature():
+    values = np.array([[100.0, 3.0], [4.0, 9.0]])
+    names, scores = _top_deviations(
+        values, ["A", "B"], np.array([0.0, 0.0]), np.array([1.0, 1.0]), top_n=1
+    )
+    assert names == ["A", "B"]
+    assert scores == [100.0, 9.0]
+
+
+def test_swat_boolean_telemetry_is_supported(tmp_path):
+    source = tmp_path / "input"
+    source.mkdir()
+    frame = pd.DataFrame({
+        "Timestamp": pd.date_range("2021-07-01", periods=300, freq="s").astype(str),
+        "binary_a": [bool(i % 2) for i in range(300)],
+        "binary_b": [bool((i // 2) % 2) for i in range(300)],
+        "sensor": [float(i % 17) for i in range(300)],
+    })
+    frame.to_csv(source / "telemetry.csv", index=False)
+    result = analyze_swat_unlabeled(
+        source, tmp_path / "output", seed=42, train_fraction=0.7,
+        max_train_rows=256, n_estimators=10, top_n=2,
+    )
+    assert result["unique_csv_count"] == 1
+    assert result["files"][0]["status"] == "completed"
+    assert (tmp_path / "output" / "telemetry_scored.csv").is_file()
+
+
+def test_swat_unlabeled_output_inside_input_root_is_rejected(tmp_path):
+    source = tmp_path / "input"
+    source.mkdir()
+    (source / "telemetry.csv").write_text(
+        "Timestamp,A,B\n2021-07-01T00:00:00Z,1,2\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="outside the input root"):
+        analyze_swat_unlabeled(source, source / "derived")
+
+
+def test_backup_at_root_does_not_exclude_all_files(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "safe.txt").write_text("preserve-me", encoding="utf-8")
+    backup = create_backup(root, root / "xaita-backup-root.tar.gz")
+    assert verify_backup(backup)["verified"] is True
+    with tarfile.open(backup, "r:gz") as archive:
+        names = archive.getnames()
+    assert "xaita-backup/safe.txt" in names
+
+
+def test_backup_skips_symlink_files(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    secret = tmp_path / "outside-secret.txt"
+    secret.write_text("secret", encoding="utf-8")
+    link = root / "external.txt"
+    try:
+        link.symlink_to(secret)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlink creation is unavailable")
+    backup = create_backup(root, tmp_path / "xaita-backup.tar.gz")
+    with tarfile.open(backup, "r:gz") as archive:
+        names = archive.getnames()
+    assert "xaita-backup/external.txt" not in names
+
+
+def test_model_config_rejects_invalid_training_parameters():
+    with pytest.raises(ValueError, match="dropout"):
+        ModelConfig(dropout=1.0)
+    with pytest.raises(ValueError, match="learning_rate"):
+        ModelConfig(learning_rate=0.0)
+    with pytest.raises(ValueError, match="window_size"):
+        ModelConfig(window_size=0)
+
+
+def test_archive_download_enforces_limit_while_streaming(monkeypatch):
+    import xaita_ot.io.dataset_archive as archive_module
+
+    class Response:
+        headers = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, _size=-1):
+            if not hasattr(self, "_sent"):
+                self._sent = True
+                return b"x" * 11
+            return b""
+
+    monkeypatch.setattr(archive_module, "MAX_ARCHIVE_BYTES", 10)
+    with patch("xaita_ot.io.dataset_archive.urllib.request.urlopen", return_value=Response()):
+        with pytest.raises(RuntimeError, match="exceeds"):
+            _download_archive("https://example.invalid/dataset.zip")
+
+
+def test_archive_extract_rejects_duplicate_destinations(tmp_path):
+    archive = tmp_path / "duplicate.zip"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("SWaT/a.csv", "first")
+        bundle.writestr("SWaT/a.csv", "second")
+    with zipfile.ZipFile(archive) as bundle:
+        with pytest.raises(RuntimeError, match="Duplicate archive destination"):
+            _safe_extract_selected(bundle, bundle.infolist(), tmp_path / "output")
+
+
+def test_request_body_limit_middleware_rejects_streamed_oversize_body():
+    from xaita_ot.api.app import RequestBodyLimitMiddleware
+
+    chunks = iter([
+        {"type": "http.request", "body": b"a" * 700, "more_body": True},
+        {"type": "http.request", "body": b"b" * 400, "more_body": True},
+    ])
+    sent = []
+
+    async def receive():
+        return next(chunks)
+
+    async def send(message):
+        sent.append(message)
+
+    async def app(_scope, _receive, _send):
+        raise AssertionError("oversize request must not reach the app")
+
+    middleware = RequestBodyLimitMiddleware(app, max_bytes_getter=lambda: 1024)
+    scope = {
+        "type": "http", "method": "POST", "headers": [],
+        "path": "/v1/analyze", "query_string": b"", "scheme": "http",
+        "http_version": "1.1", "server": ("localhost", 80),
+        "client": ("127.0.0.1", 12345),
+    }
+    asyncio.run(middleware(scope, receive, send))
+    assert sent[0]["type"] == "http.response.start"
+    assert sent[0]["status"] == 413

@@ -34,7 +34,8 @@ LABEL_ALIASES = {
     "TON-IoT": ("label", "Label", "attack", "Attack", "type"),
 }
 
-BENIGN_VALUES = {"normal", "benign", "0", "0.0", "false", "no", "", "nan", "none", "null"}
+BENIGN_VALUES = {"normal", "benign", "0", "0.0", "false", "no"}
+UNKNOWN_LABEL_VALUES = {"", "nan", "none", "null", "unknown", "unlabeled", "unlabelled", "n/a", "na", "not available", "not_available", "-999", "-999.0"}
 
 
 class DatasetValidationError(ValueError):
@@ -135,11 +136,18 @@ def _parse_timestamp(frame: pd.DataFrame, dataset: str, timestamp_column: str | 
         pd.to_datetime(
             frame[timestamp_column],
             errors="coerce",
-            dayfirst=dataset == "BATADAL",
+            dayfirst=dataset in {"BATADAL", "SWaT"},
             utc=True,
         ),
         timestamp_column,
     )
+
+
+def _label_is_unknown(series: pd.Series) -> pd.Series:
+    """Identify missing/unlabeled sentinels instead of treating them as attacks."""
+    text = series.astype(str).str.strip().str.lower()
+    numeric = pd.to_numeric(series, errors="coerce")
+    return text.isin(UNKNOWN_LABEL_VALUES) | (numeric.notna() & (numeric < 0))
 
 
 def _label_is_attack(series: pd.Series) -> pd.Series:
@@ -147,7 +155,7 @@ def _label_is_attack(series: pd.Series) -> pd.Series:
         numeric = pd.to_numeric(series, errors="coerce")
         return numeric.fillna(0).astype(float) > 0
     text = series.astype(str).str.strip().str.lower()
-    return ~text.isin(BENIGN_VALUES)
+    return ~text.isin(BENIGN_VALUES | UNKNOWN_LABEL_VALUES)
 
 
 def validate_csv(
@@ -227,12 +235,11 @@ def validate_csv(
             if source_label_column:
                 labels = frame[source_label_column]
                 label_values.update(str(value) for value in labels.dropna().unique())
-                numeric_labels = pd.to_numeric(labels, errors="coerce")
-                chunk_unknown = int((numeric_labels.notna() & (numeric_labels < 0)).sum())
-                unknown_label_rows += chunk_unknown
-                attacks = _label_is_attack(labels)
+                unknown_mask = _label_is_unknown(labels)
+                attacks = _label_is_attack(labels) & ~unknown_mask
+                unknown_label_rows += int(unknown_mask.sum())
                 attack_rows += int(attacks.sum())
-                normal_rows += int((~attacks).sum()) - chunk_unknown
+                normal_rows += int((~attacks & ~unknown_mask).sum())
 
     except Exception as exc:
         raise DatasetValidationError(
@@ -253,10 +260,7 @@ def validate_csv(
         )
     )
 
-    timestamp_column_ready = (
-        dataset_name == "TON-IoT"
-        or effective_timestamp_column is not None
-    )
+    timestamp_column_ready = effective_timestamp_column is not None
 
     ready = (
         timestamp_column_ready

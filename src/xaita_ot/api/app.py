@@ -26,8 +26,18 @@ from ..pipeline.experiments import attribution_configurations, run_detection
 
 VERSION = __version__
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _discover_project_root() -> Path:
+    """Find the runtime checkout root when this package is installed elsewhere."""
+    for candidate in (Path.cwd(), Path("/app"), _PROJECT_ROOT):
+        if (candidate / "pyproject.toml").is_file() and (candidate / "web" / "index.html").is_file():
+            return candidate.resolve()
+    return _PROJECT_ROOT
+
+
 _CONFIGURED_ROOT = os.environ.get("XAITA_OT_ROOT")
-ROOT = Path(_CONFIGURED_ROOT) if _CONFIGURED_ROOT else _PROJECT_ROOT
+ROOT = Path(_CONFIGURED_ROOT).resolve() if _CONFIGURED_ROOT else _discover_project_root()
 _DEFAULT_ROOT = ROOT
 MAX_EVENTS = int(os.environ.get("XAITA_MAX_EVENTS", "5000"))
 MAX_REQUEST_BYTES = max(1024, int(os.environ.get("XAITA_MAX_REQUEST_BYTES", str(8 * 1024 * 1024))))
@@ -113,6 +123,51 @@ def _find_dataset_csv(path: str | Path, dataset: str) -> Path:
 
 DATASET_PATHS = {"SWaT": _dataset_path("XAITA_SWAT_PATH", "data/raw/swat"), "BATADAL": _dataset_path("XAITA_BATADAL_PATH", "data/raw/batadal"), "TON-IoT": _dataset_path("XAITA_TONIOT_PATH", "data/raw/ton_iot")}
 
+class RequestBodyLimitMiddleware:
+    """Bound streamed request bodies even when Content-Length is absent."""
+
+    def __init__(self, app, max_bytes_getter):
+        self.app = app
+        self.max_bytes_getter = max_bytes_getter
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http" or scope.get("method") not in {"POST", "PUT", "PATCH"}:
+            await self.app(scope, receive, send)
+            return
+        max_bytes = max(1024, int(self.max_bytes_getter()))
+        chunks = []
+        total = 0
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            if message["type"] != "http.request":
+                continue
+            chunk = message.get("body", b"")
+            total += len(chunk)
+            if total > max_bytes:
+                response = JSONResponse(
+                    status_code=413,
+                    content={"detail": f"Maximum request body is {max_bytes} bytes"},
+                )
+                await response(scope, receive, send)
+                return
+            chunks.append(chunk)
+            if not message.get("more_body", False):
+                break
+        body = b"".join(chunks)
+        sent_body = False
+
+        async def replay_receive():
+            nonlocal sent_body
+            if not sent_body:
+                sent_body = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        await self.app(scope, replay_receive, send)
+
+
 app = FastAPI(title="XAITA-OT API", version=VERSION, description="Evidence-continuous OT/ICS security analytics API", docs_url="/docs" if ENABLE_DOCS else None, redoc_url="/redoc" if ENABLE_DOCS else None, openapi_url="/openapi.json" if ENABLE_DOCS else None)
 if ALLOWED_HOSTS:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
@@ -121,6 +176,7 @@ if FORCE_HTTPS:
 if CORS_ORIGINS:
     app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_credentials=False, allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type", "X-XAITA-API-Key", "xaita-api-key", "X-Request-ID"])
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+app.add_middleware(RequestBodyLimitMiddleware, max_bytes_getter=lambda: MAX_REQUEST_BYTES)
 engine = XAITAEngine(load_config())
 
 

@@ -70,9 +70,9 @@ def _top_deviations(
     order = np.argsort(-deviation, axis=1)[:, :top_n]
     names: list[str] = []
     scores: list[float] = []
-    for row in order:
+    for row_index, row in enumerate(order):
         names.append("|".join(feature_names[i] for i in row))
-        scores.append(float(deviation[row[0]]))
+        scores.append(float(deviation[row_index, row[0]]))
     return names, scores
 
 
@@ -87,10 +87,19 @@ def analyze_swat_unlabeled(
 ) -> dict[str, Any]:
     source_root = Path(root).resolve()
     output_root = Path(out)
-    output_root.mkdir(parents=True, exist_ok=True)
+    resolved_output_root = output_root.resolve()
 
-    if not source_root.exists():
-        raise ValueError(f"SWaT root not found: {source_root}")
+    if not source_root.is_dir():
+        raise ValueError(f"SWaT root must be an existing directory: {source_root}")
+    try:
+        resolved_output_root.relative_to(source_root)
+    except ValueError:
+        pass
+    else:
+        raise ValueError("output directory must be outside the input root to prevent recursive rescoring")
+    if top_n < 1:
+        raise ValueError("top_n must be at least 1")
+    output_root.mkdir(parents=True, exist_ok=True)
     if not 0.1 <= train_fraction < 1.0:
         raise ValueError("train_fraction must be in [0.1, 1.0)")
     if max_train_rows < 256:
@@ -109,6 +118,14 @@ def analyze_swat_unlabeled(
     for source in files:
         frame = pd.read_csv(source, low_memory=False)
         if frame.empty:
+            file_results.append({
+                "file": source.relative_to(source_root).as_posix(),
+                "sha256": _sha256(source),
+                "status": "review",
+                "reason": "CSV contains no data rows",
+                "rows": 0,
+                "feature_count": 0,
+            })
             continue
 
         features = _numeric_features(frame)
@@ -125,7 +142,7 @@ def analyze_swat_unlabeled(
 
         numeric = pd.DataFrame(
             {
-                column: pd.to_numeric(frame[column], errors="coerce")
+                column: pd.to_numeric(frame[column], errors="coerce").astype("float64")
                 for column in features
             }
         )

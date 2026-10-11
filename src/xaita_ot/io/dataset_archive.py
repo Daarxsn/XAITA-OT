@@ -96,6 +96,7 @@ def _safe_extract_selected(
     destination = destination.resolve()
     destination.mkdir(parents=True, exist_ok=True)
     total = 0
+    targets: set[str] = set()
     for member in members:
         if _is_symlink(member):
             raise RuntimeError(f"Unsafe symlink archive member: {member.filename}")
@@ -105,6 +106,10 @@ def _safe_extract_selected(
         target = (destination / member.filename).resolve()
         if target != destination and destination not in target.parents:
             raise RuntimeError(f"Unsafe archive member: {member.filename}")
+        canonical_target = str(target).casefold()
+        if canonical_target in targets:
+            raise RuntimeError(f"Duplicate archive destination: {member.filename}")
+        targets.add(canonical_target)
     for member in members:
         bundle.extract(member, destination)
     return len(members)
@@ -151,7 +156,22 @@ def _download_archive(url: str) -> tuple[Path, tempfile.TemporaryDirectory]:
     request = urllib.request.Request(url, headers={"User-Agent": "XAITA-OT-runtime/1.0"})
     try:
         with urllib.request.urlopen(request, timeout=300) as response, destination.open("wb") as output:
-            shutil.copyfileobj(response, output)
+            declared_size = response.headers.get("Content-Length")
+            if declared_size:
+                try:
+                    if int(declared_size) > MAX_ARCHIVE_BYTES:
+                        raise RuntimeError("Dataset archive download exceeds XAITA_MAX_DATASET_ARCHIVE_BYTES")
+                except ValueError as exc:
+                    raise RuntimeError("Dataset archive returned an invalid Content-Length") from exc
+            total = 0
+            while True:
+                chunk = response.read(min(1024 * 1024, MAX_ARCHIVE_BYTES - total + 1))
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_ARCHIVE_BYTES:
+                    raise RuntimeError("Dataset archive download exceeds XAITA_MAX_DATASET_ARCHIVE_BYTES")
+                output.write(chunk)
     except Exception:
         temp_dir.cleanup()
         raise
