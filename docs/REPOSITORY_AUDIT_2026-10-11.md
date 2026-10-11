@@ -11,18 +11,18 @@ Audited the public `main` snapshot `8ac654cc2267323c49ceb2113b4ef277d39b438b`. C
 - Correct the SWaT unsupervised anomaly-deviation row/feature index; cast Boolean telemetry to `float64`; calculate deviation explanations from the imputed numeric matrix; reject output folders nested in the input root; validate `top_n`; and record empty CSVs as review items.
 - Enforce archive download limits while streaming, reject duplicate ZIP extraction destinations, and recognize dotted SWaT A8 archive directory names.
 - Exclude symlinked files from lifecycle backups, correctly handle an archive created at backup root, normalize archive paths, reject duplicate normalized restore paths (including case-only collisions), and verify the entire backup candidate set before any retention deletions.
-- Validate model dimensions, dropout, and learning rate at configuration load time; validate configured ATT&CK reference-profile IDs and reject duplicates/invalid IDs.
+- Validate model dimensions, dropout, and learning rate at configuration load time; validate configured ATT&CK reference-profile IDs and reject duplicates/invalid IDs. Recompute SIEM, CTI-export, and audit-event digests during validation so altered content cannot pass on digest length alone; reject non-finite JSON numbers in enterprise/provenance canonical hashing and naive audit timestamps.
 - Validate API event timestamps as timezone-aware and feature values as finite; bound request bodies even without `Content-Length`; and improve runtime project-root discovery.
 - Inspect raw CSV headers before pandas import so duplicate or case/whitespace-colliding names are rejected before pandas can silently mangle them; reject ambiguous benchmark directories containing multiple CSVs instead of silently selecting one partial file; retain canonical TON-IoT network CSV preference.
 - Align MAS with the paper's MITRE ATT&CK Alignment Score (Jaccard similarity between observed techniques and a hypothesis-specific reference technique profile); omit MAS from fusion when no reference profile is configured.
 - Align ECS with the episode's measured correlation strength and migrate legacy EC config to ECS rather than double-counting one signal.
 - Bind deterministic source-code SHA-256 into real-experiment fingerprints and use strict canonical JSON serialization that rejects NaN/unsupported values.
 - Deduplicate repeated STIX attack-pattern objects, reject naive CTI timestamps and invalid ATT&CK IDs, emit canonical MITRE URLs, return domain-specific errors for malformed provenance, and reject empty correlation-weight mappings.
-- Package artifacts in Docker; escape API-generated strings before dynamic HTML insertion; and fix incident search to consider all table rows.
+- Package artifacts in Docker; escape API-generated strings before dynamic HTML insertion; show missing/non-finite dashboard metrics as NA rather than zero; render benchmark API errors as text; and fix incident search to consider all table rows.
 - Correct run `started_at` metadata and make experiment identifiers unique below one-second resolution.
 - Reject unknown detector architectures, copy read-only sliding-window arrays before PyTorch tensor creation, require finite positive learning rates, and load checkpoints with safe weights-only deserialization.
 - Enforce full attribution evidence-payload validation inside `validate_assessments`, not only interval bounds and source disjointness.
-- Add regression coverage for the above defects, including a corrupted-newest-backup test proving pruning preserves older verified recovery points.
+- Add regression coverage for the above defects, including corrupted newest backups preserving older recovery points, tampered enterprise-envelope detection, strict provenance JSON, and safe dashboard rendering.
 - Make the dashboard's research-prototype/demo-data boundary persistent and visible; fix dataset preflight UI precedence so a failed archive cannot be reported READY just because a mounted path exists, and safely render archives with missing hashes.
 
 ## Findings that remain acceptance items

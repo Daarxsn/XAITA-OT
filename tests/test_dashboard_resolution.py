@@ -42,3 +42,16 @@ def test_ready_reports_dashboard_availability(tmp_path, monkeypatch):
     assert response["dashboard"] is False
     assert response["datasets_ready"] is False
     assert response["datasets"] == {name: False for name in api.SUPPORTED_DATASETS}
+
+
+
+def test_dashboard_escapes_api_text_and_handles_missing_metrics():
+    html_path = Path(__file__).resolve().parents[1] / "web" / "index.html"
+    html = html_path.read_text(encoding="utf-8")
+    assert "function escapeHtml(value)" in html
+    assert "escapeHtml(c.technique_id)" in html
+    assert "escapeHtml(c.name)" in html
+    assert "escapeHtml(e.label)" in html
+    assert "Benchmark summary unavailable: '+String(e?.message||e)" in html
+    assert "v==null||!Number.isFinite(n)" in html
+    assert "v==null||!Number.isFinite(n)?'NA'" in html
