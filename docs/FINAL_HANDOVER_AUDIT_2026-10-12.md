@@ -12,7 +12,7 @@ The repository baseline has a substantial automated test suite and CI coverage. 
 
 This confirms that the repository passes its configured synthetic-fixture and code-contract checks. It **does not** confirm that every privately supplied benchmark dataset is correctly labeled, ready for supervised training, or has been evaluated with real-data results. That boundary matters for a scientific or company handover.
 
-Final handover hardening was merged as PR #28, merge commit `b9acbb38b2cae59ba02069673e62bc8fe0109365`. Local startup now binds to loopback by default, and Compose publishes its host port on loopback by default. The container process listens on its container interface so local host-to-container forwarding works. PR #28 CI, clean-install, release-candidate, dependency/security evidence, operational, provenance, and preflight checks passed. The corresponding main-branch workflows were queued/running immediately after merge and should be checked in Actions for the final post-merge status.
+Final handover hardening was merged as PR #28, merge commit `b9acbb38b2cae59ba02069673e62bc8fe0109365`. Local startup now binds to loopback by default, and Compose publishes its host port on loopback by default. The container process listens on its container interface so local host-to-container forwarding works. PR #28 CI, clean-install, release-candidate, dependency/security evidence, operational, provenance, and preflight checks passed. The post-merge main-branch CI, clean-install, release-candidate, dependency/security evidence, security-posture, operational, provenance and preflight workflows also completed successfully for merge commit `b9acbb38b2cae59ba02069673e62bc8fe0109365`.
 
 ## 2. Confirmed fixes already merged
 
@@ -25,7 +25,7 @@ The prior handover hardening in PR #26 (`4272189`) is also merged. GitHub Action
 - container/filesystem security scan and Python static analysis;
 - operational, security-posture, provenance, and preflight checks.
 
-PR #28 then passed the same principal gates: CI (Python 3.11/3.12), V5 clean install, release candidate, dependency/security evidence, security posture, operational check, provenance, and preflight. PR #28 is merged. Main-branch workflows were running immediately after the merge; verify their final state in [GitHub Actions](https://github.com/Daarxsn/XAITA-OT/actions).
+PR #28 then passed the same principal gates: CI (Python 3.11/3.12), V5 clean install, release candidate, dependency/security evidence, security posture, operational check, provenance, and preflight. PR #28 is merged, and its post-merge main-branch workflows also completed successfully. See [GitHub Actions](https://github.com/Daarxsn/XAITA-OT/actions) for run details.
 
 These are repository/fixture acceptance results; they are not independently reproduced real benchmark performance.
 
