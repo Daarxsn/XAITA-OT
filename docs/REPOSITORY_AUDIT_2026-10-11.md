@@ -36,10 +36,10 @@ Audited the public `main` snapshot `8ac654cc2267323c49ceb2113b4ef277d39b438b`. C
 
 ## Follow-up after timeout and dashboard hardening
 
-- The dashboard displays a persistent warning that incident/asset/monitoring cards are illustrative, and explicitly identifies which status areas are API-backed.
+- The dashboard displays a persistent warning that incident/asset/monitoring cards are illustrative, and explicitly identifies which status areas are API-backed. Initial status badges now start in CHECKING state; the dataset panel reports path presence separately from schema validation and requires all configured CSV paths rather than any single path.
 - Dataset readiness display now prioritizes a discovered archive's preflight result; a failed archive can no longer be masked by a present mounted directory, and absent archive hashes no longer break the display.
 
-- A focused process-timeout regression test verifies that a stalled child is terminated within a bounded interval.
+- A focused process-timeout regression test verifies that a stalled child is terminated within a bounded interval. A Windows-specific CI smoke job exercises the worker timeout, model checkpoint, timestamp, API-timeout, and lifecycle-retention paths.
 - API regression coverage verifies that timeout results become terminal `timed_out` jobs and return HTTP 504.
 - The timeout applies to detector execution after dataset preparation and validation; synchronous preparation is still outside that execution deadline and remains a future acceptance item for deployments with hostile or unusually large local archives.
 
