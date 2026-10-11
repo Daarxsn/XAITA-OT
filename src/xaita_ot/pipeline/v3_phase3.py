@@ -52,12 +52,21 @@ def confidence_bins(y, p, bins: int = 10) -> list[dict]:
 
 def reliability_summary(y, p, bins: int = 10) -> dict:
     """Compute ECE, Brier score and confidence-bin data without silently altering scores."""
-    y = np.asarray(y).astype(int)
-    p = np.asarray(p, dtype=float)
-    if len(y) != len(p) or not len(y):
+    try:
+        raw_y = np.asarray(y, dtype=float)
+        p = np.asarray(p, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("labels must be binary and probabilities must be numeric") from exc
+    if len(raw_y) != len(p) or not len(raw_y):
         raise ValueError("labels and probabilities must be non-empty and aligned")
-    if not np.isin(y, [0, 1]).all() or not np.isfinite(p).all() or np.any((p < 0.0) | (p > 1.0)):
+    if (
+        not np.isfinite(raw_y).all()
+        or not np.isin(raw_y, [0, 1]).all()
+        or not np.isfinite(p).all()
+        or np.any((p < 0.0) | (p > 1.0))
+    ):
         raise ValueError("labels must be binary and probabilities must be finite in [0, 1]")
+    y = raw_y.astype(int)
     return {
         "ece": float(expected_calibration_error(y, p, bins)),
         "brier": float(brier_score_loss(y, p)),
@@ -112,8 +121,11 @@ def _window_context_scores(train_df: pd.DataFrame, test_df: pd.DataFrame, train_
     row_change = np.clip((diffs / std).mean(axis=1).to_numpy() / 4.0, 0.0, 1.0)
 
     def roll(values):
-        out = np.convolve(values, np.ones(window_size) / window_size, mode="valid")
-        return out[:len(train_w.X)] if len(out) >= len(train_w.X) else np.pad(out, (0, len(train_w.X) - len(out)), mode="edge")
+        # These inputs come from test_df, so outputs must align to test windows
+        # (len(test_df) - window_size + 1), never train_w length.
+        if len(values) < window_size:
+            return np.array([], dtype=float)
+        return np.convolve(values, np.ones(window_size) / window_size, mode="valid")
 
     return {"BSS": roll(row_anomaly), "ECS": roll(row_dispersion), "EC": roll(row_range), "MAS": roll(row_change)}
 

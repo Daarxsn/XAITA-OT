@@ -50,3 +50,34 @@ def test_phase3_runs_all_datasets_and_compares_wef_acfm():
         assert "ece" in run["fusion"]["ACFM"]
         assert "brier" in run["fusion"]["ACFM"]
         assert run["fusion"]["acfm_point_estimate"].startswith("midpoint")
+
+ 
+
+def test_context_scores_align_to_test_windows_when_test_exceeds_train():
+    import pandas as pd
+    from types import SimpleNamespace
+    from xaita_ot.pipeline.v3_phase3 import _window_context_scores
+
+    train = pd.DataFrame({
+        "label": [0, 1] * 10,
+        "sensor_a": np.linspace(0.0, 1.0, 20),
+        "sensor_b": np.linspace(1.0, 2.0, 20),
+    })
+    test = pd.DataFrame({
+        "label": [0, 1] * 40,
+        "sensor_a": np.linspace(0.0, 4.0, 80),
+        "sensor_b": np.linspace(4.0, 8.0, 80),
+    })
+    train_w = SimpleNamespace(X=np.zeros((17, 4, 2)))
+    result = _window_context_scores(train, test, train_w, window_size=4, label_col="label")
+    assert {name: len(values) for name, values in result.items()} == {
+        "BSS": 77, "ECS": 77, "EC": 77, "MAS": 77
+    }
+
+
+def test_calibration_rejects_nonbinary_or_nonfinite_labels():
+    import pytest
+
+    for labels in ([0, 0.5, 1], [0, float("nan"), 1], [0, 2, 1]):
+        with pytest.raises(ValueError, match="labels"):
+            reliability_summary(labels, [0.1, 0.5, 0.9])

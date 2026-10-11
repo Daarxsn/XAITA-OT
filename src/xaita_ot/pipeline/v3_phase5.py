@@ -96,8 +96,22 @@ def _parameter_score(detector_p, evidence, parameter, value, timestamps):
     for i in range(n):
         attack = {"DC": float(detector_p[i]), **{k: float(v[i]) for k, v in e.items()}}
         benign = {k: 1.0 - v for k, v in attack.items()}
-        a = assess(["attack", "benign"], {"attack": attack, "benign": benign}, rel, threshold, 0.35)[0]
-        belief[i], plausibility[i] = a.belief, a.plausibility
+        assessments = assess(
+            ["attack", "benign"],
+            {"attack": attack, "benign": benign},
+            rel,
+            threshold,
+            0.35,
+        )
+        # assess() sorts by belief; the first item is not necessarily the attack
+        # hypothesis. Select by identity to avoid inverting benign evidence.
+        attack_assessment = next(
+            item for item in assessments if item.hypothesis == "attack"
+        )
+        belief[i], plausibility[i] = (
+            attack_assessment.belief,
+            attack_assessment.plausibility,
+        )
         p[i] = (belief[i] + plausibility[i]) / 2.0
     return p, float(np.mean(belief)), float(np.mean(plausibility)), float(np.mean(plausibility - belief))
 
