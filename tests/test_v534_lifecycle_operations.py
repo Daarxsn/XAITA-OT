@@ -62,13 +62,24 @@ def test_lifecycle_plan_has_explicit_rollback_and_retention():
 
 
 def test_prune_keeps_newest_backups(tmp_path):
+    import os
+
     for index in range(4):
+        source = tmp_path / f"source-{index}"
+        source.mkdir()
+        (source / "snapshot.txt").write_text(str(index), encoding="utf-8")
         path = tmp_path / f"xaita-backup-{index}.tar.gz"
-        path.write_text(str(index), encoding="utf-8")
-        path.touch()
+        create_backup(source, path)
+        os.utime(path, (100 + index, 100 + index))
+
     removed = prune_backups(tmp_path, keep=2)
-    assert len(removed) == 2
-    assert len(list(tmp_path.glob("xaita-backup-*.tar.gz"))) == 2
+    assert {path.name for path in removed} == {
+        "xaita-backup-0.tar.gz",
+        "xaita-backup-1.tar.gz",
+    }
+    remaining = sorted(path.name for path in tmp_path.glob("xaita-backup-*.tar.gz"))
+    assert remaining == ["xaita-backup-2.tar.gz", "xaita-backup-3.tar.gz"]
+    assert all(verify_backup(tmp_path / name)["verified"] for name in remaining)
 
 
 def test_lifecycle_cli(tmp_path):
