@@ -87,9 +87,14 @@ def _dataset_status(path: str | None) -> dict:
             csv_count = 1
             sample = root.name
         elif root.is_dir():
-            csvs = list(root.rglob("*.csv")) + list(root.rglob("*.CSV"))
+            csvs = sorted({
+                item.resolve()
+                for pattern in ("*.csv", "*.CSV")
+                for item in root.rglob(pattern)
+                if item.is_file()
+            })
             csv_count = len(csvs)
-            sample = sorted(csvs)[0].name if csvs else None
+            sample = csvs[0].name if csvs else None
     return {"configured": bool(path), "exists": exists, "ready": exists and csv_count > 0, "csv_count": csv_count, "sample_file": sample, "path": path}
 
 
@@ -101,25 +106,42 @@ def _experiment_detector_name(name: str) -> str:
 def _find_dataset_csv(path: str | Path, dataset: str) -> Path:
     root = Path(path)
     if root.is_file():
+        if root.suffix.lower() != ".csv":
+            raise HTTPException(status_code=409, detail=f"{dataset} dataset file must be a CSV")
         return root
     if not root.is_dir():
         raise HTTPException(status_code=409, detail=f"{dataset} dataset path is configured but unavailable")
     patterns = {"TON-IoT": ["**/train_test_network.csv", "**/Train_Test_IoT_*.csv", "**/*.csv"], "SWaT": ["**/*.csv", "**/*.CSV"], "BATADAL": ["**/*.csv", "**/*.CSV"]}.get(dataset, ["**/*.csv"])
     candidates = []
     for pattern in patterns:
-        candidates.extend(p for p in root.glob(pattern) if p.is_file())
+        candidates.extend(p for p in root.glob(pattern) if p.is_file() and p.suffix.lower() == ".csv")
         if candidates:
             break
+    candidates = sorted(set(candidates))
     if not candidates:
         raise HTTPException(status_code=409, detail=f"No CSV benchmark file found under {dataset} dataset path")
     if dataset == "TON-IoT":
         network = [p for p in candidates if p.name.lower() == "train_test_network.csv"]
-        if network:
+        if len(network) == 1:
             return network[0]
+        if len(network) > 1:
+            raise HTTPException(status_code=409, detail="Multiple TON-IoT train_test_network.csv files found; configure an explicit CSV path")
         iot = [p for p in candidates if "train_test_iot_modbus" in p.name.lower()]
-        if iot:
+        if len(iot) == 1:
             return iot[0]
-    return sorted(candidates)[0]
+        if len(iot) > 1:
+            raise HTTPException(status_code=409, detail="Multiple TON-IoT Modbus CSV candidates found; configure an explicit CSV path")
+    if len(candidates) == 1:
+        return candidates[0]
+    names = [p.relative_to(root).as_posix() for p in candidates[:5]]
+    suffix = " (showing first five)" if len(candidates) > 5 else ""
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            f"Ambiguous {dataset} dataset directory: found {len(candidates)} CSV files{suffix}. "
+            f"Configure a path to one validated, merged benchmark CSV. Candidates: {names}"
+        ),
+    )
 
 
 DATASET_PATHS = {"SWaT": _dataset_path("XAITA_SWAT_PATH", "data/raw/swat"), "BATADAL": _dataset_path("XAITA_BATADAL_PATH", "data/raw/batadal"), "TON-IoT": _dataset_path("XAITA_TONIOT_PATH", "data/raw/ton_iot")}

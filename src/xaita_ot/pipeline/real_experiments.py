@@ -31,6 +31,27 @@ def _canonical_json(payload: Any) -> bytes:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
 
 
+def source_code_fingerprint() -> str:
+    """Hash installed XAITA-OT Python sources with stable path/newline handling."""
+    source_root = Path(__file__).resolve().parents[1]
+    digest = hashlib.sha256()
+    files = sorted(
+        path for path in source_root.rglob("*.py")
+        if "__pycache__" not in path.parts
+    )
+    if not files:
+        raise RuntimeError(f"No Python source files found under {source_root}")
+    for path in files:
+        relative = path.relative_to(source_root).as_posix()
+        # Path.read_text performs universal-newline normalization.
+        content = path.read_text(encoding="utf-8").encode("utf-8")
+        digest.update(relative.encode("utf-8"))
+        digest.update(bytes([0]))
+        digest.update(content)
+        digest.update(bytes([0]))
+    return digest.hexdigest()
+
+
 def reproducibility_fingerprint(
     *,
     dataset_sha256: str,
@@ -40,7 +61,11 @@ def reproducibility_fingerprint(
     split_protocol: str,
     config: dict[str, Any],
     package_version: str = __version__,
+    implementation_sha256: str | None = None,
 ) -> str:
+    implementation_digest = implementation_sha256 or source_code_fingerprint()
+    if len(implementation_digest) != 64 or any(c not in "0123456789abcdef" for c in implementation_digest.lower()):
+        raise ValueError("implementation_sha256 must be a SHA-256 hex digest")
     payload = {
         "dataset_sha256": dataset_sha256,
         "dataset": dataset,
@@ -49,6 +74,7 @@ def reproducibility_fingerprint(
         "split_protocol": split_protocol,
         "config": config,
         "package_version": package_version,
+        "implementation_sha256": implementation_digest.lower(),
     }
     return hashlib.sha256(_canonical_json(payload)).hexdigest()
 
@@ -58,8 +84,10 @@ def build_result_envelope(
     run: ExperimentRun,
     *,
     config: AppConfig,
+    implementation_sha256: str | None = None,
 ) -> dict[str, Any]:
     experiment = asdict(run)
+    implementation_digest = implementation_sha256 or source_code_fingerprint()
     fingerprint = reproducibility_fingerprint(
         dataset_sha256=validation.sha256,
         dataset=run.dataset,
@@ -67,6 +95,7 @@ def build_result_envelope(
         seed=run.seed,
         split_protocol=str(run.config.get("split_protocol", "")),
         config=run.config,
+        implementation_sha256=implementation_digest,
     )
     return {
         "schema_version": SCHEMA_VERSION,
@@ -81,6 +110,7 @@ def build_result_envelope(
             "split_protocol": str(run.config.get("split_protocol", "")),
             "config_sha256": hashlib.sha256(_canonical_json(run.config)).hexdigest(),
             "package_version": __version__,
+            "implementation_sha256": implementation_digest,
         },
     }
 
@@ -134,12 +164,14 @@ def run_real_experiment_suite(
         raise ValueError("detectors must be unique")
 
     run_seed = config.seed if seed is None else seed
+    implementation_digest = source_code_fingerprint()
     runs: list[dict[str, Any]] = []
     for detector in requested:
         try:
             run = run_detection(csv_path, dataset, config, seed=run_seed, detector=detector)
             runs.append({"status": "completed", "detector": detector,
-                         "result": build_result_envelope(validation, run, config=config)})
+                         "result": build_result_envelope(validation, run, config=config,
+                                                         implementation_sha256=implementation_digest)})
         except Exception as exc:
             runs.append({"status": "failed", "detector": detector,
                          "error": {"type": type(exc).__name__, "message": str(exc)}})
@@ -158,6 +190,7 @@ def run_real_experiment_suite(
         "split_protocols": split_protocols,
         "config": config.model_dump(mode="json"),
         "package_version": __version__,
+        "implementation_sha256": implementation_digest,
     }
     return {
         "schema_version": SUITE_SCHEMA_VERSION,
@@ -175,6 +208,7 @@ def run_real_experiment_suite(
             "status": "completed" if failed == 0 else "failed",
             "split_protocols": split_protocols,
             "config_sha256": hashlib.sha256(_canonical_json(config.model_dump(mode="json"))).hexdigest(),
+            "implementation_sha256": implementation_digest,
             "fingerprint": hashlib.sha256(_canonical_json(fingerprint_payload)).hexdigest(),
         },
         "runs": runs,

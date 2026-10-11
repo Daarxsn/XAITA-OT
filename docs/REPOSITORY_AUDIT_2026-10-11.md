@@ -2,27 +2,32 @@
 
 ## Audit baseline
 
-Audited main commit `8ac654cc2267323c49ceb2113b4ef277d39b438b`. This branch contains targeted corrections and regression coverage; it is intentionally separate from `main`.
+Audited the public `main` snapshot `8ac654cc2267323c49ceb2113b4ef277d39b438b`. Corrections and regression tests are maintained on the separate `audit/repository-hardening-20261011-1549` branch and pull request #25.
 
-## Correctness and hardening fixes
+## Confirmed fixes in the audit branch
 
-- Parse SWaT timestamps with day-first semantics, require a real timestamp source for TON-IoT validation, and count explicit missing/unlabeled sentinels as unknown rather than confirmed attacks.
-- Correct the SWaT unsupervised anomaly-deviation row/feature index; cast Boolean telemetry to numeric float64; reject output folders nested in the input root; validate `top_n`; report empty CSVs as review items.
-- Enforce archive download size caps while streaming; reject duplicate ZIP destinations.
-- Exclude symlinked files from lifecycle backups and avoid excluding the entire root when the backup archive is written directly in the project root; normalize archive path separators.
-- Fail fast for invalid model dimensions, dropout and learning-rate configuration.
-- Resolve the application root for installed/container execution, enforce body limits when `Content-Length` is absent, include published artifacts in the Docker image, escape API-generated HTML, and fix filtering to cover all incident rows.
-- Add regression tests for these behaviors.
+- Parse SWaT and TON-IoT date/time pairs with day-first semantics; require a real timestamp source; and make dataset preflight reject duplicate or out-of-order timestamps that would later be rejected by execution.
+- Count missing/unlabeled values as unknown rather than confirmed attacks.
+- Correct the SWaT unsupervised anomaly-deviation row/feature index; cast Boolean telemetry to `float64`; reject output folders nested in the input root; validate `top_n`; and record empty CSVs as review items.
+- Enforce archive download limits while streaming and reject duplicate ZIP extraction destinations.
+- Exclude symlinked files from lifecycle backups and correctly handle an archive created at the backup root; normalize archive paths.
+- Validate model dimensions, dropout, and learning rate at configuration load time.
+- Add timezone-awareness and finite-value validation for API event inputs, bound chunked request bodies, and improve runtime project-root discovery.
+- Reject ambiguous directories containing multiple candidate benchmark CSVs rather than silently benchmarking one partial file. Retain the explicit TON-IoT `train_test_network.csv` preference.
+- Fix the Multi-Asset/Protocol consistency score so repeated known asset/protocol values score as more consistent than diverse values; unknown context does not count as reliable consistency.
+- Include a deterministic source-code SHA-256 in experiment reproducibility fingerprints so two builds with identical data/config/seeds but different Python source do not silently share the same identity.
+- Deduplicate repeated STIX attack-pattern objects, reject naive CTI timestamps, return domain-specific errors for malformed provenance items, and reject an explicitly empty correlation-weight mapping.
+- Resolve the application root more reliably, package artifacts in Docker, escape API-generated HTML and make incident search work across all rows.
+- Add regression tests covering these bug classes.
 
-## Follow-up findings that still need explicit acceptance
+## Findings that remain acceptance items
 
-1. **Experiment timeout is post-hoc.** `/v2/experiment` measures training duration and only marks a run timed out after `run_detection` returns. It does not stop the computation at the configured deadline. A worker/process-based execution lifecycle needs implementation and dedicated cancellation tests before describing this as an enforced runtime timeout.
-2. **Some dashboard monitoring content is demo data.** The hard-coded incident row and monitoring events, and random bar rendering, are not a live stream from a deployed OT environment. They must be visibly classified as illustrative or replaced with API-backed telemetry before claiming live monitoring.
-3. **Readiness currently reflects file presence, not benchmark validity.** A directory with at least one CSV can be shown as configured/ready even when those CSVs fail schema, timestamp, or label checks. Use dataset preflight/validation separately and make these statuses explicit.
-4. **Dataset selection can be ambiguous.** The API chooses a candidate CSV from a dataset directory; for nested/per-chunk corpora, a deterministic and documented selection policy (or an explicit file path) is needed to prevent an arbitrary subset being treated as the benchmark.
-5. **Benchmark evidence remains data-dependent.** SWaT A8 currently lacks authoritative labels in the archive used for unsupervised analysis; that output cannot support supervised precision/recall/AUROC claims. Do not promote anomaly-flagging ratios as attack rates.
-6. **Deployment-specific acceptance remains necessary.** The repo's CI workflow passing is valuable but does not prove every private dataset archive, OS, reverse proxy, production auth configuration, or customer OT deployment is valid.
+1. **Execution deadline is not process termination.** The documented contract marks a job `timed_out` only after `run_detection` returns; it does not interrupt a running model fit. The README discloses this behavior. If hard cancellation is required operationally, an isolated worker/process model and cancellation tests are still needed.
+2. **Readiness is not dataset validation.** `/ready` reports configured CSV presence; benchmark schema, labels and temporal integrity require the dataset preflight endpoint. Keep the UI/API wording explicit so “configured” is not interpreted as “validated.”
+3. **Monitoring is illustrative, not live OT data.** The detection monitor labels its synthetic stream as demo telemetry; the separately hard-coded incident content and chart are not a live plant connection. Replace them with real API-backed incidents before claiming live monitoring.
+4. **SWaT A8 supervised metrics are still blocked by label provenance.** The currently available A8 archive has no authoritative ground-truth attack labels. Unsupervised anomaly-flagging ratios are not attack rates, and cannot establish precision, recall, F1 or AUROC against actual attacks.
+5. **Deployment acceptance remains environment-specific.** The CI suite is essential, but cannot prove every private archive, Windows path, reverse proxy, production authentication setting, or customer OT deployment. Perform the target-environment smoke and security checks before release.
 
 ## Verification boundary
 
-A regression test passing proves only the asserted behavior. The repository's CI pipeline is the acceptance gate for these changes. Release readiness must remain conditional until CI on this branch passes and the follow-up findings above are either fixed or explicitly accepted with documented limitations.
+A passing regression test proves only the behavior asserted by that test. The pull request CI suite is the acceptance gate for these changes. Do not mark the whole repository release-ready until those checks pass and the follow-up findings above are fixed or explicitly accepted and documented.

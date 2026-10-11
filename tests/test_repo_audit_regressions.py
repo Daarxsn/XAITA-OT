@@ -304,3 +304,46 @@ def test_explicit_empty_correlation_weights_are_rejected():
 
     with pytest.raises(ValueError, match="exactly"):
         _validated_weights({})
+
+
+
+def test_reproducibility_fingerprint_binds_implementation_hash():
+    from xaita_ot.pipeline.real_experiments import (
+        reproducibility_fingerprint, source_code_fingerprint,
+    )
+
+    common = {
+        "dataset_sha256": "a" * 64,
+        "dataset": "SWaT",
+        "detector": "cnn_lstm",
+        "seed": 42,
+        "split_protocol": "chronological_episode_aware",
+        "config": {"window_size": 8},
+    }
+    implementation = source_code_fingerprint()
+    assert len(implementation) == 64
+    assert implementation == source_code_fingerprint()
+    current = reproducibility_fingerprint(**common, implementation_sha256=implementation)
+    other_build = reproducibility_fingerprint(**common, implementation_sha256="b" * 64)
+    assert current != other_build
+
+
+def test_api_dataset_selector_rejects_ambiguous_directory(tmp_path):
+    from fastapi import HTTPException
+    from xaita_ot.api.app import _find_dataset_csv
+
+    (tmp_path / "part-a.csv").write_text("timestamp,label,x\n2026-01-01T00:00:00Z,0,1\n", encoding="utf-8")
+    (tmp_path / "part-b.csv").write_text("timestamp,label,x\n2026-01-01T00:00:01Z,1,2\n", encoding="utf-8")
+    with pytest.raises(HTTPException) as exc:
+        _find_dataset_csv(tmp_path, "SWaT")
+    assert exc.value.status_code == 409
+    assert "Ambiguous SWaT dataset directory" in str(exc.value.detail)
+
+
+def test_api_dataset_selector_prefers_canonical_toniot_network_file(tmp_path):
+    from xaita_ot.api.app import _find_dataset_csv
+
+    preferred = tmp_path / "train_test_network.csv"
+    preferred.write_text("ts,type,x\n2026-01-01T00:00:00Z,normal,1\n", encoding="utf-8")
+    (tmp_path / "other.csv").write_text("ts,type,x\n2026-01-01T00:00:00Z,normal,1\n", encoding="utf-8")
+    assert _find_dataset_csv(tmp_path, "TON-IoT") == preferred
