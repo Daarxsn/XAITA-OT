@@ -1,6 +1,7 @@
 from pathlib import Path
 import pandas as pd
 from .taxonomy import harmonize_columns
+from .csv_headers import duplicate_column_names, read_csv_header
 
 REQUIRED_MIN = {"timestamp"}
 
@@ -23,6 +24,14 @@ def load_csv(
     source = Path(path)
     if not source.is_file():
         raise FileNotFoundError(source)
+    # Inspect the source header before pandas can rewrite duplicate names such
+    # as "label,label" into "label,label.1".
+    columns = read_csv_header(source)
+    if any(not column for column in columns):
+        raise ValueError(f"Blank column name in source CSV: {source}")
+    duplicates = duplicate_column_names(columns)
+    if duplicates:
+        raise ValueError(f"Duplicate columns in source CSV: {duplicates}")
     df = pd.read_csv(source)
     df.columns = [str(c).strip() for c in df.columns]
     # Some TON-IoT files store date and clock time in separate columns.

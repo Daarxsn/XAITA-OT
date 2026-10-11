@@ -14,6 +14,8 @@ from typing import Any
 
 import pandas as pd
 
+from .csv_headers import duplicate_column_names, read_csv_header
+
 
 DATASET_ALIASES = {
     "swat": "SWaT",
@@ -176,12 +178,18 @@ def validate_csv(
     except ValueError:
         display_path = source_resolved.as_posix()
 
-    header = pd.read_csv(source, nrows=0)
-    columns = [str(column).strip() for column in header.columns]
+    try:
+        # Read the raw CSV header: pandas mangles repeated names during import,
+        # which would otherwise make the duplicate-column check ineffective.
+        columns = read_csv_header(source)
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise DatasetValidationError(
+            f"{dataset_name}: invalid CSV header in {source}: {exc}"
+        ) from exc
     if any(not column for column in columns):
         raise DatasetValidationError(f"{dataset_name}: blank column name in {source}")
-    if len(columns) != len(set(columns)):
-        duplicates = sorted({column for column in columns if columns.count(column) > 1})
+    duplicates = duplicate_column_names(columns)
+    if duplicates:
         raise DatasetValidationError(f"{dataset_name}: duplicate columns {duplicates} in {source}")
 
     source_timestamp_column = _resolve_column(columns, TIMESTAMP_ALIASES[dataset_name])

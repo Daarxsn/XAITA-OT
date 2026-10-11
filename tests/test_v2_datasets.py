@@ -48,3 +48,18 @@ def test_unknown_dataset_rejected():
         assert "Unsupported V2 dataset" in str(exc)
     else:
         raise AssertionError("unknown dataset must be rejected")
+
+
+
+def test_load_csv_rejects_duplicate_raw_headers_even_when_pandas_would_mangle(tmp_path):
+    import pytest
+
+    path = tmp_path / "duplicate.csv"
+    path.write_text(
+        "timestamp, sensor ,sensor,label\n"
+        "2026-01-01T00:00:00Z,1,2,normal\n"
+        "2026-01-01T00:00:01Z,2,3,attack\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="Duplicate columns"):
+        load_csv(path)

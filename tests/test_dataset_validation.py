@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from xaita_ot.io.dataset_validation import (
     DatasetValidationError,
     build_manifest,
@@ -111,3 +113,15 @@ def test_missing_dataset_root_has_actionable_error(tmp_path):
         assert "CSV file not found" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("expected DatasetValidationError")
+
+
+
+def test_validate_rejects_duplicate_raw_headers_before_pandas_mangles_them(tmp_path):
+    path = _write(
+        tmp_path / "duplicate.csv",
+        "Timestamp,timestamp,Attack State,sensor\n"
+        "2026-01-01T00:00:00Z,2026-01-01T00:00:00Z,Normal,1.0\n"
+        "2026-01-01T00:00:01Z,2026-01-01T00:00:01Z,Attack,2.0\n",
+    )
+    with pytest.raises(DatasetValidationError, match="duplicate columns"):
+        validate_csv(path, "SWaT", tmp_path)
