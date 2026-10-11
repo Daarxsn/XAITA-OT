@@ -203,7 +203,7 @@ def test_experiment_lifecycle_completed_and_status(monkeypatch, tmp_path):
     response = client.post("/v2/experiment", json={"dataset": "TON-IoT", "detector": "CNN-LSTM", "seed": 42})
     assert response.status_code == 200
     body = response.json()
-    assert body["schema_version"] == "XAITA-OT-V2-RUN-1.3"
+    assert body["schema_version"] == "XAITA-OT-V2-RUN-1.4"
     assert body["job_id"]
     assert body["dataset_file"] == "sample.csv"
     assert str(tmp_path) not in response.text
