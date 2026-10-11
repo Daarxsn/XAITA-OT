@@ -57,3 +57,8 @@ A passing test proves only its asserted behavior. CI on PR #25 is the acceptance
 ## Paper-result integrity corrections
 
 The paper-table generator now refuses to substitute metrics: binary F1 is not Macro-F1; BTAE correlation strength is not correlation F1; presence of provenance IDs is not traceability proof; detector F1 is not attribution F1; and WEF/ACFM scores built from proxy channels are not paper-grade actor-attribution calibration. These unsupported table cells are emitted as `NA`, and the manifest reports `paper_ready: false` unless certified upstream artifacts explicitly declare the required semantics.
+
+
+## Split-audit evidence semantics
+
+The V3 Phase 1 leakage audit's threshold value is a synthetic monotonic probe used only to check deterministic train-only fitting; it is not an experimentally fitted detector threshold and is no longer exposed under the generic `threshold` field. The report explicitly labels it as a non-benchmark probe. Split checks now validate complete row coverage and map episode IDs by source index, so they remain correct for non-RangeIndex inputs and fail closed on duplicate indices.

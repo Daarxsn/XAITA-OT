@@ -615,3 +615,32 @@ def test_swat_unlabeled_duplicate_header_is_reviewed_without_aborting_other_file
     assert "duplicate CSV header" in by_name["bad.csv"]["reason"]
     assert by_name["valid.csv"]["status"] == "completed"
     assert result["unique_csv_count"] == 2
+
+
+
+def test_ot_preprocessor_excludes_normalized_attack_ground_truth_aliases():
+    from xaita_ot.pipeline.preprocess import OTPreprocessor
+
+    frame = pd.DataFrame({
+        "sensor_a": [1.0, 2.0, 3.0],
+        "label": [0, 1, 0],
+        "interval_attack_label": [0, 1, 0],
+        "ground_truth_label": [0, 1, 0],
+        "Attack-Flag": [0, 1, 0],
+        "sensor_b": [5.0, 6.0, 7.0],
+    })
+    result = OTPreprocessor._numeric_features(frame, "label")
+    assert list(result.columns) == ["sensor_a", "sensor_b"]
+
+
+def test_ot_preprocessor_excludes_custom_label_and_case_whitespace_aliases():
+    from xaita_ot.pipeline.preprocess import OTPreprocessor
+
+    frame = pd.DataFrame({
+        "Sensor_A": [1.0, 2.0],
+        "  ATT_FLAG ": [0, 1],
+        "Ground-Truth": [0, 1],
+        "Measurement": [2.0, 3.0],
+    })
+    result = OTPreprocessor._numeric_features(frame, "ATT_FLAG")
+    assert list(result.columns) == ["Sensor_A", "Measurement"]

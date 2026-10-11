@@ -21,17 +21,28 @@ class OTPreprocessor:
 
     CATEGORICAL_COLUMNS = ("asset", "protocol", "src_ip", "dst_ip")
     LABEL_ALIASES = {
-        "label", "attack", "attack state", "normal/attack", "att_flag",
-        "attack_label", "type", "normal", "malicious",
+        "label", "attack", "attack state", "normal/attack", "att flag",
+        "attack label", "interval attack label", "attack flag",
+        "ground truth", "ground truth label", "is attack", "anomaly label",
+        "attack hash", "attack name", "type", "normal", "malicious",
     }
+
+    @staticmethod
+    def _normalize_column_name(column: object) -> str:
+        return " ".join(
+            str(column).strip().casefold().replace("_", " ").replace("-", " ").split()
+        )
 
     @classmethod
     def _numeric_features(cls, df: pd.DataFrame, label_col: str) -> pd.DataFrame:
         numeric = df.select_dtypes(include=[np.number]).copy()
-        blocked = cls.LABEL_ALIASES | {str(label_col).strip().lower()}
+        blocked = {
+            cls._normalize_column_name(column)
+            for column in cls.LABEL_ALIASES | {str(label_col)}
+        }
         drop = [
             column for column in numeric.columns
-            if str(column).strip().lower() in blocked
+            if cls._normalize_column_name(column) in blocked
         ]
         return numeric.drop(columns=drop, errors="ignore")
 
