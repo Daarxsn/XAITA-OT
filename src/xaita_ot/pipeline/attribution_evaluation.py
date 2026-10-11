@@ -240,7 +240,8 @@ def run_phase4_attribution(
         "status": "EXECUTED",
         "source_kind": source_kind,
         "detector": "random_forest",
-        "benchmark_claims_allowed": source_kind == "real_benchmark",
+        "benchmark_claims_allowed": False,
+        "benchmark_claims_candidate": source_kind == "real_benchmark",
         "benchmark_claims_note": (
             "Source-kind metadata is user-declared and does not independently verify provenance, "
             "licensing, ground truth or benchmark authenticity."
