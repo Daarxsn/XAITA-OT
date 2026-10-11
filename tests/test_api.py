@@ -402,3 +402,14 @@ def test_experiment_timeout_marks_job_and_returns_gateway_timeout(monkeypatch, t
     job = api._experiment_jobs[job_id]
     assert job["status"] == "timed_out"
     assert job["error_type"] == "ExperimentTimeout"
+
+
+
+def test_openapi_docs_disabled_by_default_outside_development():
+    from xaita_ot.api.app import _docs_enabled
+
+    assert _docs_enabled("development") is True
+    assert _docs_enabled("staging") is False
+    assert _docs_enabled("production") is False
+    assert _docs_enabled("production", "true") is True
+    assert _docs_enabled("development", "false") is False

@@ -54,7 +54,14 @@ MAX_CONCURRENT_EXPERIMENTS = max(1, int(os.environ.get("XAITA_MAX_CONCURRENT_EXP
 MAX_RETAINED_EXPERIMENT_JOBS = max(100, int(os.environ.get("XAITA_MAX_RETAINED_EXPERIMENT_JOBS", "1000")))
 _experiment_lifecycle_lock = threading.Lock()
 _experiment_jobs: dict[str, dict] = {}
-ENABLE_DOCS = os.environ.get("XAITA_ENABLE_DOCS", "true").lower() == "true"
+def _docs_enabled(environment: str, configured: str | None = None) -> bool:
+    """Keep interactive API documentation off by default outside development."""
+    if configured is not None:
+        return configured.strip().lower() == "true"
+    return environment.strip().lower() not in {"staging", "production"}
+
+
+ENABLE_DOCS = _docs_enabled(ENVIRONMENT, os.environ.get("XAITA_ENABLE_DOCS"))
 FORCE_HTTPS = os.environ.get("XAITA_FORCE_HTTPS", "false").lower() == "true"
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get("XAITA_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") if h.strip()]
 CORS_ORIGINS = [o.strip() for o in os.environ.get("XAITA_CORS_ORIGINS", "").split(",") if o.strip()]
