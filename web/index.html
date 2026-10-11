@@ -73,6 +73,7 @@ button,input,select{font:inherit}.app{min-height:100vh;display:grid;grid-templat
 <main class="main">
 <header class="topbar"><div id="crumb" class="crumb">Command Center / Operational Posture</div><div class="top-actions"><span id="apiStatus" class="live">● ANALYTICS ONLINE</span><input id="apiKeyInput" class="search" type="password" placeholder="API key (optional)" autocomplete="off"><button class="btn ghost" onclick="saveApiKey()">Use key</button><button class="btn ghost" onclick="refreshAll()">↻ Refresh</button></div></header>
 <div class="wrap">
+<div class="notice info" role="note" aria-label="Demo data boundary"><b>RESEARCH PROTOTYPE · DEMO DATA BOUNDARY.</b> Incident queue, plant posture, asset inventory, attribution examples and the detection-monitor stream are illustrative fixtures, not live OT telemetry. API-backed fields are limited to service status, dataset inventory/preflight, committed benchmark artifacts and submitted experiment responses. Never use demo fixtures as operational alerts.</div>
 
 <section id="command" class="view active">
   <div class="hero"><div><div class="eyebrow">OT security operations center</div><h1>Good morning, analyst.</h1><p>Start with what requires attention, then drill into the evidence. XAITA-OT is designed for OT/ICS security analysts, incident responders and plant security teams.</p></div><div class="actions"><button class="btn primary" onclick="showView('incidents')">Review incidents</button><button class="btn" onclick="showView('assets')">View assets</button></div></div>
@@ -262,12 +263,17 @@ async function refreshDatasetReadiness(){
  try{
    const r=await apiFetch('/v2/datasets/preflight');
    const j=await r.json();
-   const selected=document.getElementById('expDataset')?.value;
+   const selected=document.getElementById('expDataset')?.value || 'Unknown dataset';
    const item=(j.datasets||{})[selected]||{};
-   const ready=item.archive_ready || item.ready;
-   const source=j.archive ? ('Private archive '+j.archive.sha256.slice(0,12)+'…') : 'Mounted dataset path';
+   // If an archive was found, its validation result takes precedence over the
+   // mere presence of a mounted directory; failed archive hashes are also valid.
+   const ready=j.archive ? item.archive_ready===true : item.ready===true;
+   const validated=Number(item.archive_validated_files ?? item.csv_count ?? 0);
+   const source=j.archive
+     ? (j.archive.sha256 ? 'Private archive '+String(j.archive.sha256).slice(0,12)+'…' : 'Private archive could not be verified')
+     : 'Mounted dataset path';
    box.className='notice '+(ready?'':'info');
-   box.innerHTML='<b>'+selected+': '+(ready?'READY':'NOT READY')+'</b> · '+(item.archive_validated_files ?? item.csv_count ?? 0)+' validated CSV file(s) · '+source;
+   box.innerHTML='<b>'+escapeHtml(selected)+': '+(ready?'READY':'NOT READY')+'</b> · '+validated+' validated CSV file(s) · '+escapeHtml(source);
  }catch(e){ box.className='notice info'; box.textContent='Dataset readiness check unavailable: '+e.message; }
 }
 document.getElementById('expDataset')?.addEventListener('change',refreshDatasetReadiness);

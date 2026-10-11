@@ -20,6 +20,7 @@ Audited the public `main` snapshot `8ac654cc2267323c49ceb2113b4ef277d39b438b`. C
 - Deduplicate repeated STIX attack-pattern objects, reject naive CTI timestamps and invalid ATT&CK IDs, emit canonical MITRE URLs, return domain-specific errors for malformed provenance, and reject empty correlation-weight mappings.
 - Package artifacts in Docker; escape API-generated strings before dynamic HTML insertion; and fix incident search to consider all table rows.
 - Add regression coverage for the above defects.
+- Make the dashboard's research-prototype/demo-data boundary persistent and visible; fix dataset preflight UI precedence so a failed archive cannot be reported READY just because a mounted path exists, and safely render archives with missing hashes.
 
 ## Findings that remain acceptance items
 
@@ -30,7 +31,10 @@ Audited the public `main` snapshot `8ac654cc2267323c49ceb2113b4ef277d39b438b`. C
 5. **MAS profiles require explicit configuration.** The default config leaves `attack_technique_profiles` empty because no defensible hypothesis-specific technique sets are bundled. MAS is explicitly unavailable and omitted from fusion until reference profiles are configured; this avoids inventing ATT&CK alignment ground truth.
 6. **Deployment acceptance is environment-specific.** CI cannot prove every private archive, Windows environment, reverse proxy, production auth setting, or customer OT deployment. Test on the intended deployment environment before release.
 
-## Follow-up after timeout hardening
+## Follow-up after timeout and dashboard hardening
+
+- The dashboard displays a persistent warning that incident/asset/monitoring cards are illustrative, and explicitly identifies which status areas are API-backed.
+- Dataset readiness display now prioritizes a discovered archive's preflight result; a failed archive can no longer be masked by a present mounted directory, and absent archive hashes no longer break the display.
 
 - A focused process-timeout regression test verifies that a stalled child is terminated within a bounded interval.
 - API regression coverage verifies that timeout results become terminal `timed_out` jobs and return HTTP 504.
