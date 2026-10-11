@@ -39,6 +39,8 @@ def test_phase4_attribution_executes_same_cases_and_reports_metrics():
     assert result["status"] == "EXECUTED"
     assert result["source_kind"] == "synthetic_fixture"
     assert result["benchmark_claims_allowed"] is False
+    assert len(result["fingerprint"]) == 64
+    assert result["run_configuration"]["split_protocol"] == "chronological_episode_aware"
     assert result["configurations"] == ["C1", "C2", "C3", "C4", "C5", "C6"]
     assert len(result["runs"]) == 3
     for run in result["runs"]:
@@ -71,6 +73,7 @@ def test_phase4_attribution_writes_json_and_csv(tmp_path):
     outputs = write_phase4_attribution_artifacts(result, tmp_path)
     payload = json.loads(Path(outputs["json"]).read_text(encoding="utf-8"))
     assert payload["schema_version"] == "XAITA-OT-PHASE4-ATTRIBUTION-1.0"
+    assert len(payload["fingerprint"]) == 64
     assert Path(outputs["metrics_csv"]).is_file()
     assert Path(outputs["metrics_csv"]).read_text(encoding="utf-8").count("\n") == 19
 
