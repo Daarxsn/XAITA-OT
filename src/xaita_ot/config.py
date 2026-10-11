@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 import re
 from pydantic import BaseModel, Field, field_validator, model_validator
 import yaml
@@ -69,6 +70,7 @@ class AttributionConfig(BaseModel):
         "DC": 0.70, "BSS": 0.80, "ECS": 0.85, "MAS": 0.65
     })
     attack_technique_profiles: dict[str, list[str]] = Field(default_factory=dict)
+    behavior_profiles: dict[str, dict[str, Any]] = Field(default_factory=dict)
     ambiguity_margin: float = 0.08
     support_threshold: float = 0.60
     conflict_threshold: float = 0.35
@@ -116,6 +118,59 @@ class AttributionConfig(BaseModel):
             if len(ids) != len(set(ids)):
                 raise ValueError(f"attack technique profile '{name}' contains duplicate technique IDs")
             normalized[name] = ids
+        return normalized
+
+    @field_validator("behavior_profiles")
+    @classmethod
+    def behavior_profiles_valid(cls, value):
+        required = {
+            "assets", "protocols", "sequence", "inter_event_seconds",
+            "feature_reference", "feature_scales", "temporal_decay_per_second", "weights",
+        }
+        required_weights = {"temporal", "protocol", "asset", "sequence", "behavior"}
+        normalized = {}
+        for hypothesis, profile in value.items():
+            name = str(hypothesis).strip()
+            if not name or not isinstance(profile, dict):
+                raise ValueError("behavior profile names must be non-empty and profiles must be mappings")
+            missing = required - set(profile)
+            if missing:
+                raise ValueError(f"behavior profile '{name}' missing keys: {sorted(missing)}")
+            cleaned = dict(profile)
+            for key in ("assets", "protocols", "sequence"):
+                items = cleaned[key]
+                if not isinstance(items, list) or not items or any(not str(item).strip() for item in items):
+                    raise ValueError(f"behavior profile '{name}' {key} must be a non-empty list")
+                cleaned[key] = [str(item).strip().lower() for item in items]
+            intervals = cleaned["inter_event_seconds"]
+            if not isinstance(intervals, list) or len(intervals) != len(cleaned["sequence"]) - 1:
+                raise ValueError(f"behavior profile '{name}' inter_event_seconds must have len(sequence)-1 values")
+            if any(not math.isfinite(float(item)) or float(item) < 0 for item in intervals):
+                raise ValueError(f"behavior profile '{name}' inter_event_seconds must be finite and non-negative")
+            cleaned["inter_event_seconds"] = [float(item) for item in intervals]
+            reference = cleaned["feature_reference"]
+            scales = cleaned["feature_scales"]
+            if not isinstance(reference, dict) or not reference or not isinstance(scales, dict) or set(reference) != set(scales):
+                raise ValueError(f"behavior profile '{name}' feature_reference and feature_scales must have matching non-empty keys")
+            if any(not math.isfinite(float(item)) for item in reference.values()):
+                raise ValueError(f"behavior profile '{name}' feature_reference values must be finite")
+            if any(not math.isfinite(float(item)) or float(item) <= 0 for item in scales.values()):
+                raise ValueError(f"behavior profile '{name}' feature_scales values must be finite and positive")
+            cleaned["feature_reference"] = {str(k): float(v) for k, v in reference.items()}
+            cleaned["feature_scales"] = {str(k): float(v) for k, v in scales.items()}
+            decay = float(cleaned["temporal_decay_per_second"])
+            if not math.isfinite(decay) or decay <= 0:
+                raise ValueError(f"behavior profile '{name}' temporal_decay_per_second must be finite and positive")
+            cleaned["temporal_decay_per_second"] = decay
+            weights = cleaned["weights"]
+            if not isinstance(weights, dict) or set(weights) != required_weights:
+                raise ValueError(f"behavior profile '{name}' weights must contain exactly {sorted(required_weights)}")
+            if any(not math.isfinite(float(item)) or float(item) < 0 for item in weights.values()):
+                raise ValueError(f"behavior profile '{name}' weights must be finite and non-negative")
+            if abs(sum(float(item) for item in weights.values()) - 1.0) > 1e-6:
+                raise ValueError(f"behavior profile '{name}' weights must sum to 1.0")
+            cleaned["weights"] = {str(k): float(v) for k, v in weights.items()}
+            normalized[name] = cleaned
         return normalized
 
     @field_validator("methods")

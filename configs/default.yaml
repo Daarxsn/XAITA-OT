@@ -31,6 +31,7 @@ attribution:
   support_threshold: 0.60
   conflict_threshold: 0.35
   attack_technique_profiles: {}
+  behavior_profiles: {}
   methods:
     - DC
     - DC+BSS

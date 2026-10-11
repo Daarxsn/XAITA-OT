@@ -38,6 +38,82 @@ class XAITAEngine:
         union = observed | reference
         return float(len(observed & reference) / len(union)) if union else 0.0
 
+    @staticmethod
+    def _jaccard_similarity(observed, reference):
+        ignored = {"", "unknown", "none", "null", "n/a"}
+        left = {str(item).strip().lower() for item in observed if str(item).strip().lower() not in ignored}
+        right = {str(item).strip().lower() for item in reference if str(item).strip().lower() not in ignored}
+        if not left or not right:
+            return None
+        return len(left & right) / len(left | right)
+
+    @staticmethod
+    def _sequence_similarity(observed, reference):
+        left = [str(item).strip().lower() for item in observed if str(item).strip()]
+        right = [str(item).strip().lower() for item in reference if str(item).strip()]
+        if not left or not right:
+            return None
+        previous = list(range(len(right) + 1))
+        for i, left_item in enumerate(left, start=1):
+            current = [i]
+            for j, right_item in enumerate(right, start=1):
+                current.append(min(
+                    current[-1] + 1,
+                    previous[j] + 1,
+                    previous[j - 1] + (left_item != right_item),
+                ))
+            previous = current
+        return float(1.0 - previous[-1] / max(len(left), len(right)))
+
+    @classmethod
+    def _bss(cls, episode, profile):
+        """Compute behavior similarity against a validated reference profile."""
+        if not profile or not episode.events:
+            return None
+        observed_sequence = episode.stages or [event.label for event in episode.events]
+        sequence_score = cls._sequence_similarity(observed_sequence, profile["sequence"])
+        asset_score = cls._jaccard_similarity([event.asset for event in episode.events], profile["assets"])
+        protocol_score = cls._jaccard_similarity([event.protocol for event in episode.events], profile["protocols"])
+        observed_intervals = [
+            max(0.0, (right.timestamp - left.timestamp).total_seconds())
+            for left, right in zip(episode.events, episode.events[1:])
+        ]
+        expected_intervals = profile["inter_event_seconds"]
+        temporal_score = None
+        if observed_intervals and expected_intervals:
+            decay = profile["temporal_decay_per_second"]
+            matched = min(len(observed_intervals), len(expected_intervals))
+            closeness = [
+                float(np.exp(-decay * abs(observed_intervals[i] - expected_intervals[i])))
+                for i in range(matched)
+            ]
+            temporal_score = float(np.mean(closeness) * matched / max(len(observed_intervals), len(expected_intervals)))
+        reference = profile["feature_reference"]
+        scales = profile["feature_scales"]
+        feature_scores = []
+        for name, expected in reference.items():
+            values = [
+                float(event.features[name])
+                for event in episode.events
+                if name in event.features and np.isfinite(float(event.features[name]))
+            ]
+            if values:
+                observed = float(np.mean(values))
+                feature_scores.append(float(np.exp(-abs(observed - expected) / scales[name])))
+        behavior_score = float(np.mean(feature_scores)) if feature_scores else None
+        components = {
+            "temporal": temporal_score,
+            "protocol": protocol_score,
+            "asset": asset_score,
+            "sequence": sequence_score,
+            "behavior": behavior_score,
+        }
+        weights = profile["weights"]
+        available_weight = sum(weights[key] for key, value in components.items() if value is not None)
+        if available_weight <= 0:
+            return None
+        return float(sum(weights[key] * value for key, value in components.items() if value is not None) / available_weight)
+
     def _hypothesis_evidence(self, base, hypotheses):
         profiles = self.config.attribution.hypothesis_profiles
         return {
@@ -62,13 +138,17 @@ class XAITAEngine:
         for ep in episodes:
             ctx = contextualize(ep, self.attack_mapping)
             dc = float(np.mean([e.detection_confidence for e in ep.events]))
-            bss = float(np.clip(0.45 + 0.35 * ep.correlation_strength + 0.20 * dc, 0.0, 1.0))
-            # ECS is the measured event-correlation strength. Avoid inventing a
-            # separate "EC" source from the same episode or ATT&CK coverage.
+            # ECS is the measured episode correlation strength. BSS and MAS are
+            # supplied only when their reference profiles are explicitly configured.
             ecs = float(np.clip(ep.correlation_strength, 0.0, 1.0))
-            base = {"DC": dc, "BSS": bss, "ECS": ecs}
+            base = {"DC": dc, "ECS": ecs}
             evidence = self._hypothesis_evidence(base, hypotheses)
             for hypothesis in hypotheses:
+                behavior_profile = self.config.attribution.behavior_profiles.get(hypothesis)
+                bss = self._bss(ep, behavior_profile)
+                if bss is not None:
+                    modifier = self.config.attribution.hypothesis_profiles.get(hypothesis, {}).get("BSS", 1.0)
+                    evidence[hypothesis]["BSS"] = float(np.clip(bss * modifier, 0.0, 1.0))
                 reference_techniques = self.config.attribution.attack_technique_profiles.get(hypothesis)
                 mas = self._mas(ctx, reference_techniques)
                 if mas is not None:
@@ -83,6 +163,11 @@ class XAITAEngine:
                     "available"
                     if best["hypothesis"] in self.config.attribution.attack_technique_profiles
                     else "unavailable_missing_reference_profile"
+                )
+                best["bss_status"] = (
+                    "available"
+                    if "BSS" in evidence.get(best["hypothesis"], {})
+                    else "unavailable_missing_reference_profile_or_episode_context"
                 )
                 best["alternatives"] = [to_dict(a) for a in attrs[1:]]
                 best["interpretation"] = (

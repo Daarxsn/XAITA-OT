@@ -487,3 +487,61 @@ def test_legacy_ec_attribution_reliability_is_migrated_to_eCS_only():
         "DC": 0.7, "BSS": 0.8, "ECS": 0.85, "EC": 0.8, "MAS": 0.65
     })
     assert set(cfg.reliability) == {"DC", "BSS", "ECS", "MAS"}
+
+
+def test_bss_is_unavailable_without_reference_behavior_profile():
+    from types import SimpleNamespace
+    from xaita_ot.pipeline.engine import XAITAEngine
+
+    episode = SimpleNamespace(events=[
+        SimpleNamespace(timestamp=pd.Timestamp("2026-10-11T10:00:00Z"),
+                        asset="PLC-1", protocol="modbus", label="recon",
+                        features={"flow": 10.0})
+    ], stages=["recon"])
+    assert XAITAEngine._bss(episode, None) is None
+
+
+def test_bss_uses_explicit_reference_profile():
+    from types import SimpleNamespace
+    from xaita_ot.pipeline.engine import XAITAEngine
+
+    start = pd.Timestamp("2026-10-11T10:00:00Z")
+    episode = SimpleNamespace(
+        stages=["recon", "command", "process"],
+        events=[
+            SimpleNamespace(timestamp=start, asset="plc-1", protocol="modbus",
+                            label="recon", features={"flow": 10.0}),
+            SimpleNamespace(timestamp=start + pd.Timedelta(seconds=1), asset="plc-1",
+                            protocol="modbus", label="command", features={"flow": 10.0}),
+            SimpleNamespace(timestamp=start + pd.Timedelta(seconds=2), asset="plc-1",
+                            protocol="modbus", label="process", features={"flow": 10.0}),
+        ],
+    )
+    profile = {
+        "assets": ["plc-1"], "protocols": ["modbus"],
+        "sequence": ["recon", "command", "process"],
+        "inter_event_seconds": [1.0, 1.0],
+        "feature_reference": {"flow": 10.0}, "feature_scales": {"flow": 2.0},
+        "temporal_decay_per_second": 1.0,
+        "weights": {"temporal": 0.2, "protocol": 0.2, "asset": 0.2, "sequence": 0.2, "behavior": 0.2},
+    }
+    assert XAITAEngine._bss(episode, profile) == pytest.approx(1.0)
+
+
+def test_behavior_profile_validation_rejects_invalid_weights_and_intervals():
+    from xaita_ot.config import AttributionConfig
+
+    base = {
+        "assets": ["plc-1"], "protocols": ["modbus"], "sequence": ["recon", "command"],
+        "inter_event_seconds": [1.0], "feature_reference": {"flow": 10.0},
+        "feature_scales": {"flow": 2.0}, "temporal_decay_per_second": 1.0,
+        "weights": {"temporal": 0.2, "protocol": 0.2, "asset": 0.2, "sequence": 0.2, "behavior": 0.2},
+    }
+    valid = AttributionConfig(behavior_profiles={"H1": base})
+    assert valid.behavior_profiles["H1"]["inter_event_seconds"] == [1.0]
+    invalid_weights = {**base, "weights": {**base["weights"], "behavior": 0.4}}
+    with pytest.raises(ValueError, match="weights must sum"):
+        AttributionConfig(behavior_profiles={"H1": invalid_weights})
+    invalid_intervals = {**base, "inter_event_seconds": [1.0, 2.0]}
+    with pytest.raises(ValueError, match=r"len\(sequence\)-1"):
+        AttributionConfig(behavior_profiles={"H1": invalid_intervals})
