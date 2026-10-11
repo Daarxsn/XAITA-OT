@@ -33,3 +33,8 @@ Audited the public `main` snapshot `8ac654cc2267323c49ceb2113b4ef277d39b438b`. C
 ## Verification boundary
 
 A passing test proves only its asserted behavior. CI on PR #25 is the acceptance gate; do not mark the repository release-ready until these checks pass and the remaining findings are fixed or explicitly accepted with documented limits.
+
+
+## Paper-result integrity corrections
+
+The paper-table generator now refuses to substitute metrics: binary F1 is not Macro-F1; BTAE correlation strength is not correlation F1; presence of provenance IDs is not traceability proof; detector F1 is not attribution F1; and WEF/ACFM scores built from proxy channels are not paper-grade actor-attribution calibration. These unsupported table cells are emitted as `NA`, and the manifest reports `paper_ready: false` unless certified upstream artifacts explicitly declare the required semantics.
