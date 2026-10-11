@@ -135,7 +135,7 @@ def _parse_timestamp(frame: pd.DataFrame, dataset: str, timestamp_column: str | 
         pd.to_datetime(
             frame[timestamp_column],
             errors="coerce",
-            dayfirst=dataset == "BATADAL",
+            dayfirst=dataset in {"BATADAL", "SWaT"},
             utc=True,
         ),
         timestamp_column,
