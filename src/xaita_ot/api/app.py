@@ -572,6 +572,12 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
                     "timeout_seconds": EXPERIMENT_TIMEOUT_SECONDS,
                 },
             )
+        # Mark the slot before submitting work. If the future completes immediately,
+        # add_done_callback executes synchronously when registered; this ordering prevents
+        # a fast worker from having its completion overwritten by a later True assignment.
+        with _experiment_lifecycle_lock:
+            _experiment_jobs[job_id]["worker_active"] = True
+
         future = _experiment_executor.submit(
             run_detection, csv_path, payload.dataset, load_config(),
             seed=payload.seed, detector=detector_key,
@@ -583,8 +589,6 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
                 if current is not None:
                     current["worker_active"] = False
 
-        with _experiment_lifecycle_lock:
-            _experiment_jobs[job_id]["worker_active"] = True
         future.add_done_callback(_release_worker_slot)
         remaining = max(0.0, EXPERIMENT_TIMEOUT_SECONDS - (time.monotonic() - started))
         try:
