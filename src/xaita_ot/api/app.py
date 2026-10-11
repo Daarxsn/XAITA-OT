@@ -594,6 +594,10 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
     except Exception as exc:
         duration = round(time.monotonic() - started, 3)
         error_type = type(exc).__name__
+        logger.exception(
+            "experiment_execution_failed",
+            extra={"job_id": job_id, "dataset": payload.dataset, "detector": detector_key},
+        )
         with _experiment_lifecycle_lock:
             if future is None or future.done():
                 _experiment_jobs[job_id]["worker_active"] = False
