@@ -48,7 +48,7 @@ Report, where ground truth and protocol support the metric:
 - [ ] CLI commands, exit codes, validation failures and error messages are covered.
 - [ ] API authentication/RBAC negative tests prove viewers cannot execute analyst operations and unauthenticated production requests are rejected.
 - [ ] API responses do not expose secrets, raw credentials or private local filesystem paths.
-- [ ] Request limits, rate limits, experiment concurrency, timeout/failure states and job retention are exercised.
+- [ ] Request limits, rate limits, experiment concurrency, timeout/failure states and job retention are exercised. The current thread-based timeout returns the API response at the deadline but cannot kill a hung worker; use process isolation if hard termination is required.
 - [ ] Dependency/security scans run; findings are fixed or documented with explicit risk acceptance.
 - [ ] Evidence IDs, provenance links, DC/AC separation and uncertainty survive the end-to-end analytical pipeline.
 - [ ] No component sends PLC/RTU/SCADA control commands or autonomously performs safety-critical OT actions.
