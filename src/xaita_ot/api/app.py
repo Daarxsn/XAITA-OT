@@ -306,7 +306,17 @@ def ready():
     datasets = {name: _dataset_status(path) for name, path in DATASET_PATHS.items()}
     datasets_ready = all(item["ready"] for item in datasets.values())
     status = "ready" if dashboard_ready and datasets_ready else "degraded"
-    return {"status": status, "dashboard": dashboard_ready, "datasets_ready": datasets_ready, "datasets": {name: item["ready"] for name, item in datasets.items()}, "max_events": MAX_EVENTS, "max_request_bytes": MAX_REQUEST_BYTES}
+    return {
+        "status": status,
+        "dashboard": dashboard_ready,
+        "datasets_ready": datasets_ready,
+        "dataset_files_present": datasets_ready,
+        "benchmark_validation_checked": False,
+        "readiness_basis": "dashboard_and_dataset_file_presence_only",
+        "datasets": {name: item["ready"] for name, item in datasets.items()},
+        "max_events": MAX_EVENTS,
+        "max_request_bytes": MAX_REQUEST_BYTES,
+    }
 
 
 @app.get("/v2/system")
@@ -330,7 +340,13 @@ def operations_summary(xaita_api_key: str | None = Header(default=None, alias="X
     benchmark_path = ROOT / "artifacts" / "toniOT_network_5seed_summary.json"
     dashboard_ready = bool(_dashboard_path())
     auth_configured = _auth_ready()
-    return {"schema_version": "XAITA-OT-V5-OPS-1.0", "status": "operational" if dashboard_ready and ready_count == len(datasets) else "degraded", "role": role, "release": {"version": VERSION, "environment": ENVIRONMENT}, "dashboard": {"ready": dashboard_ready}, "datasets": {"ready_count": ready_count, "total": len(datasets), "items": datasets}, "execution": {"detectors": list(SUPPORTED_DETECTORS), "attribution_configurations": attribution_configurations(), "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE, "max_request_bytes": MAX_REQUEST_BYTES, "max_events": MAX_EVENTS}, "security": {"authentication_required": REQUIRE_AUTH or bool(_configured_api_keys()), "authentication_configured": auth_configured, "force_https": FORCE_HTTPS, "allowed_hosts": ALLOWED_HOSTS, "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE, "max_request_bytes": MAX_REQUEST_BYTES, "max_events": MAX_EVENTS}, "research": {"benchmark_summary_available": benchmark_path.is_file(), "benchmark_summary_artifact": benchmark_path.name if benchmark_path.is_file() else None}, "safety_boundary": "Analyst-support only; no autonomous PLC/RTU/SCADA control action."}
+    return {"schema_version": "XAITA-OT-V5-OPS-1.0", "status": "operational" if dashboard_ready and ready_count == len(datasets) else "degraded", "role": role, "release": {"version": VERSION, "environment": ENVIRONMENT}, "dashboard": {"ready": dashboard_ready}, "datasets": {
+            "ready_count": ready_count,
+            "total": len(datasets),
+            "readiness_basis": "file_presence_only",
+            "benchmark_validation_checked": False,
+            "items": datasets,
+        }, "execution": {"detectors": list(SUPPORTED_DETECTORS), "attribution_configurations": attribution_configurations(), "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE, "max_request_bytes": MAX_REQUEST_BYTES, "max_events": MAX_EVENTS}, "security": {"authentication_required": REQUIRE_AUTH or bool(_configured_api_keys()), "authentication_configured": auth_configured, "force_https": FORCE_HTTPS, "allowed_hosts": ALLOWED_HOSTS, "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE, "max_request_bytes": MAX_REQUEST_BYTES, "max_events": MAX_EVENTS}, "research": {"benchmark_summary_available": benchmark_path.is_file(), "benchmark_summary_artifact": benchmark_path.name if benchmark_path.is_file() else None}, "safety_boundary": "Analyst-support only; no autonomous PLC/RTU/SCADA control action."}
 
 
 @app.get("/v2/dashboard")
@@ -348,7 +364,24 @@ def dashboard_summary(xaita_api_key: str | None = Header(default=None, alias="X-
         "generated_at": datetime.utcnow().isoformat() + "Z",
         "role": role,
         "platform": {"status": "operational" if bool(_dashboard_path()) and ready_count == len(datasets) else "degraded", "version": VERSION, "environment": ENVIRONMENT},
-        "datasets": {"ready_count": ready_count, "total": len(datasets), "items": {name: {"ready": item["ready"], "exists": item["exists"], "csv_count": item["csv_count"], "sample_file": item["sample_file"]} for name, item in datasets.items()}},
+        "datasets": {
+            "ready_count": ready_count,
+            "total": len(datasets),
+            "readiness_basis": "file_presence_only",
+            "benchmark_validation_checked": False,
+            "items": {
+                name: {
+                    "ready": item["ready"],
+                    "exists": item["exists"],
+                    "files_present": item["files_present"],
+                    "readiness_basis": item["readiness_basis"],
+                    "benchmark_validation_status": item["benchmark_validation_status"],
+                    "csv_count": item["csv_count"],
+                    "sample_file": item["sample_file"],
+                }
+                for name, item in datasets.items()
+            },
+        },
         "experiments": {"jobs_retained": len(jobs), "counts": job_counts, "max_concurrent": MAX_CONCURRENT_EXPERIMENTS, "timeout_seconds": EXPERIMENT_TIMEOUT_SECONDS},
         "benchmark": {"available": benchmark_path.is_file(), "artifact": benchmark_path.name if benchmark_path.is_file() else None},
         "security": {"authentication_required": REQUIRE_AUTH or bool(_configured_api_keys()), "authentication_configured": _auth_ready(), "force_https": FORCE_HTTPS},
