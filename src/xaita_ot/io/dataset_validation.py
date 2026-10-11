@@ -14,6 +14,8 @@ from typing import Any
 
 import pandas as pd
 
+from .csv_headers import duplicate_column_names, read_csv_header
+
 
 DATASET_ALIASES = {
     "swat": "SWaT",
@@ -34,7 +36,8 @@ LABEL_ALIASES = {
     "TON-IoT": ("label", "Label", "attack", "Attack", "type"),
 }
 
-BENIGN_VALUES = {"normal", "benign", "0", "0.0", "false", "no", "", "nan", "none", "null"}
+BENIGN_VALUES = {"normal", "benign", "0", "0.0", "false", "no"}
+UNKNOWN_LABEL_VALUES = {"", "nan", "none", "null", "unknown", "unlabeled", "unlabelled", "n/a", "na", "not available", "not_available", "-999", "-999.0"}
 
 
 class DatasetValidationError(ValueError):
@@ -128,18 +131,25 @@ def _parse_timestamp(frame: pd.DataFrame, dataset: str, timestamp_column: str | 
                 + " "
                 + frame[time_column].astype(str).str.strip()
             )
-            return pd.to_datetime(combined, errors="coerce", utc=True), f"{date_column} + {time_column}"
+            return pd.to_datetime(combined, errors="coerce", utc=True, dayfirst=True), f"{date_column} + {time_column}"
     if timestamp_column is None:
         return None, None
     return (
         pd.to_datetime(
             frame[timestamp_column],
             errors="coerce",
-            dayfirst=dataset == "BATADAL",
+            dayfirst=dataset in {"BATADAL", "SWaT"},
             utc=True,
         ),
         timestamp_column,
     )
+
+
+def _label_is_unknown(series: pd.Series) -> pd.Series:
+    """Identify missing/unlabeled sentinels instead of treating them as attacks."""
+    text = series.astype(str).str.strip().str.lower()
+    numeric = pd.to_numeric(series, errors="coerce")
+    return text.isin(UNKNOWN_LABEL_VALUES) | (numeric.notna() & (numeric < 0))
 
 
 def _label_is_attack(series: pd.Series) -> pd.Series:
@@ -147,7 +157,7 @@ def _label_is_attack(series: pd.Series) -> pd.Series:
         numeric = pd.to_numeric(series, errors="coerce")
         return numeric.fillna(0).astype(float) > 0
     text = series.astype(str).str.strip().str.lower()
-    return ~text.isin(BENIGN_VALUES)
+    return ~text.isin(BENIGN_VALUES | UNKNOWN_LABEL_VALUES)
 
 
 def validate_csv(
@@ -168,12 +178,18 @@ def validate_csv(
     except ValueError:
         display_path = source_resolved.as_posix()
 
-    header = pd.read_csv(source, nrows=0)
-    columns = [str(column).strip() for column in header.columns]
+    try:
+        # Read the raw CSV header: pandas mangles repeated names during import,
+        # which would otherwise make the duplicate-column check ineffective.
+        columns = read_csv_header(source)
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise DatasetValidationError(
+            f"{dataset_name}: invalid CSV header in {source}: {exc}"
+        ) from exc
     if any(not column for column in columns):
         raise DatasetValidationError(f"{dataset_name}: blank column name in {source}")
-    if len(columns) != len(set(columns)):
-        duplicates = sorted({column for column in columns if columns.count(column) > 1})
+    duplicates = duplicate_column_names(columns)
+    if duplicates:
         raise DatasetValidationError(f"{dataset_name}: duplicate columns {duplicates} in {source}")
 
     source_timestamp_column = _resolve_column(columns, TIMESTAMP_ALIASES[dataset_name])
@@ -227,12 +243,11 @@ def validate_csv(
             if source_label_column:
                 labels = frame[source_label_column]
                 label_values.update(str(value) for value in labels.dropna().unique())
-                numeric_labels = pd.to_numeric(labels, errors="coerce")
-                chunk_unknown = int((numeric_labels.notna() & (numeric_labels < 0)).sum())
-                unknown_label_rows += chunk_unknown
-                attacks = _label_is_attack(labels)
+                unknown_mask = _label_is_unknown(labels)
+                attacks = _label_is_attack(labels) & ~unknown_mask
+                unknown_label_rows += int(unknown_mask.sum())
                 attack_rows += int(attacks.sum())
-                normal_rows += int((~attacks).sum()) - chunk_unknown
+                normal_rows += int((~attacks & ~unknown_mask).sum())
 
     except Exception as exc:
         raise DatasetValidationError(
@@ -242,21 +257,15 @@ def validate_csv(
     if rows == 0:
         raise DatasetValidationError(f"{dataset_name}: {source} is empty")
 
+    # Keep validation aligned with run_detection: a "pass" must not conceal
+    # duplicate or out-of-order timestamps that would block the later experiment.
     timestamp_quality_ready = (
         invalid_timestamps == 0
-        and (
-            dataset_name == "TON-IoT"
-            or (
-                duplicate_timestamps == 0
-                and bool(monotonic)
-            )
-        )
+        and duplicate_timestamps == 0
+        and bool(monotonic)
     )
 
-    timestamp_column_ready = (
-        dataset_name == "TON-IoT"
-        or effective_timestamp_column is not None
-    )
+    timestamp_column_ready = effective_timestamp_column is not None
 
     ready = (
         timestamp_column_ready

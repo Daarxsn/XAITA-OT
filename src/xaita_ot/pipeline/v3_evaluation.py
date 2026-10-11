@@ -18,13 +18,13 @@ from ..core.seed import set_seed
 from ..core.schemas import DetectionEvent
 from ..io.telemetry import load_csv, semantic_harmonize
 from ..io.adapters import adapt_dataset
-from .evaluation import chronological_split, binary_metrics, expected_calibration_error, _positive_probability
+from .evaluation import chronological_split, binary_metrics, expected_calibration_error, _positive_probability, _validate_binary_labels
 from .preprocess import OTPreprocessor
 from ..models.trainer import Detector
 
 
 def _episode_ids(labels) -> np.ndarray:
-    labels = np.asarray(labels).astype(int)
+    labels = _validate_binary_labels(labels, allow_empty=True)
     ids = np.zeros(len(labels), dtype=int)
     episode = 0
     active = False
@@ -39,31 +39,54 @@ def _episode_ids(labels) -> np.ndarray:
     return ids
 
 
-def _assert_disjoint_rows(train, val, test) -> None:
-    sets = [set(train.index), set(val.index), set(test.index)]
-    assert not (sets[0] & sets[1] or sets[0] & sets[2] or sets[1] & sets[2]), "split row overlap detected"
+def _assert_disjoint_rows(original, train, val, test) -> None:
+    if not original.index.is_unique:
+        raise ValueError("source DataFrame index must be unique for split-integrity auditing")
+    source_rows = set(original.index)
+    partitions = (set(train.index), set(val.index), set(test.index))
+    if partitions[0] & partitions[1] or partitions[0] & partitions[2] or partitions[1] & partitions[2]:
+        raise ValueError("split row overlap detected")
+    if set.union(*partitions) != source_rows:
+        raise ValueError("split partitions do not cover every source row")
 
 
 def _assert_episode_disjoint(original, train, val, test, label_col="label") -> None:
-    """Verify episode ownership using IDs computed once on the full timeline."""
+    """Verify episode ownership by source index, independent of index labels."""
+    if not original.index.is_unique:
+        raise ValueError("source DataFrame index must be unique for episode auditing")
     global_ids = _episode_ids(original[label_col].to_numpy()) if label_col in original else np.zeros(len(original), dtype=int)
-    owners = {"train": set(), "validation": set(), "test": set()}
+    episode_by_index = dict(zip(original.index, global_ids))
+    owners = {}
     for name, frame in (("train", train), ("validation", val), ("test", test)):
-        owners[name] = {int(global_ids[i]) for i in frame.index if global_ids[i] > 0}
-    assert not (owners["train"] & owners["validation"] or owners["train"] & owners["test"] or owners["validation"] & owners["test"]), "attack episode overlap detected"
-    positive_rows = np.flatnonzero(global_ids > 0)
-    assert all(sum(i in frame.index for frame in (train, val, test)) == 1 for i in positive_rows), "attack episode row ownership violated"
+        owners[name] = {
+            int(episode_by_index[index])
+            for index in frame.index
+            if index in episode_by_index and episode_by_index[index] > 0
+        }
+    if owners["train"] & owners["validation"] or owners["train"] & owners["test"] or owners["validation"] & owners["test"]:
+        raise ValueError("attack episode overlap detected")
+    positive_rows = {index for index, episode in episode_by_index.items() if episode > 0}
+    if any(sum(index in frame.index for frame in (train, val, test)) != 1 for index in positive_rows):
+        raise ValueError("attack episode row ownership violated")
 
 
-def _assert_chronological(train, val, test) -> None:
-    for left, right in ((train, val), (val, test)):
-        if len(left) and len(right):
-            assert left.index.max() < right.index.min(), "chronological split ordering violated"
+def _assert_chronological(original, train, val, test) -> None:
+    """Verify partitions by their position in the original ordered input."""
+    if not original.index.is_unique:
+        raise ValueError("source DataFrame index must be unique for chronological auditing")
+    position_by_index = {index: position for position, index in enumerate(original.index)}
+    bounds = []
+    for frame in (train, val, test):
+        positions = [position_by_index[index] for index in frame.index if index in position_by_index]
+        bounds.append((min(positions), max(positions)) if positions else None)
+    for left, right in zip(bounds[:-1], bounds[1:]):
+        if left is not None and right is not None and left[1] >= right[0]:
+            raise ValueError("chronological split ordering violated")
 
 
 def fit_threshold_train_only(y_train, scores_train) -> float:
     """Fit a classification threshold using training labels/scores only."""
-    y_train = np.asarray(y_train).astype(int)
+    y_train = _validate_binary_labels(y_train)
     scores_train = np.asarray(scores_train, dtype=float)
     if len(y_train) != len(scores_train) or not len(y_train):
         raise ValueError("training labels and scores must be non-empty and aligned")
@@ -89,15 +112,16 @@ def fit_bss_reference_train_only(train_df: pd.DataFrame, label_col="label") -> d
         raise ValueError("BSS reference requires numeric telemetry features")
     medians = numeric.median().fillna(0.0)
     clean = numeric.fillna(medians)
-    normal = clean[train_df[label_col].astype(int).to_numpy() == 0] if label_col in train_df else clean
+    labels = _validate_binary_labels(train_df[label_col]) if label_col in train_df else np.zeros(len(train_df), dtype=int)
+    normal = clean[labels == 0] if label_col in train_df else clean
     if normal.empty:
         normal = clean
     return {
         "feature_names": list(normal.columns),
         "normal_mean": {k: float(v) for k, v in normal.mean().items()},
         "normal_std": {k: float(max(v, 1e-9)) for k, v in normal.std(ddof=0).items()},
-        "normal_rate": float((train_df[label_col].astype(int) == 0).mean()) if label_col in train_df else 1.0,
-        "attack_rate": float((train_df[label_col].astype(int) > 0).mean()) if label_col in train_df else 0.0,
+        "normal_rate": float((labels == 0).mean()) if label_col in train_df else 1.0,
+        "attack_rate": float((labels == 1).mean()) if label_col in train_df else 0.0,
         "fit_rows": int(len(train_df)),
         "fit_partition": "train",
     }
@@ -106,8 +130,8 @@ def fit_bss_reference_train_only(train_df: pd.DataFrame, label_col="label") -> d
 def audit_split_and_leakage(df: pd.DataFrame, cfg, label_col="label") -> dict:
     """Execute and report V3 Phase 1 split/leakage gates."""
     train, val, test = chronological_split(df, cfg.experiment.train_fraction, cfg.experiment.validation_fraction, label_col, cfg.experiment.episode_aware)
-    _assert_disjoint_rows(train, val, test)
-    _assert_chronological(train, val, test)
+    _assert_disjoint_rows(df, train, val, test)
+    _assert_chronological(df, train, val, test)
     if cfg.experiment.episode_aware:
         _assert_episode_disjoint(df, train, val, test, label_col)
 
@@ -148,7 +172,9 @@ def audit_split_and_leakage(df: pd.DataFrame, cfg, label_col="label") -> dict:
         "overlap_rows": 0,
         "preprocessing_fit_on_train_only": bool(preprocessing_unchanged),
         "threshold_fit_on_train_only": True,
-        "threshold": float(threshold),
+        "threshold_probe_value": float(threshold),
+        "threshold_source": "synthetic_monotonic_probe",
+        "threshold_is_benchmark_value": False,
         "bss_reference_fit_on_train_only": True,
         "bss_reference": bss_reference,
         "status": "PASS",
@@ -184,11 +210,12 @@ def reproducibility_audit(df: pd.DataFrame, cfg, label_col="label", seed=42) -> 
 
 
 def confidence_bins(y, p, bins=10) -> list[dict]:
-    y, p = np.asarray(y).astype(int), np.asarray(p, dtype=float)
-    if len(y) != len(p) or not len(y):
-        raise ValueError("labels and probabilities must be non-empty and aligned")
-    if not 1 <= int(bins) <= 100:
-        raise ValueError("bins must be between 1 and 100")
+    y = _validate_binary_labels(y)
+    p = np.asarray(p, dtype=float)
+    if p.ndim != 1 or len(y) != len(p):
+        raise ValueError("labels and probabilities must be one-dimensional, non-empty and aligned")
+    if isinstance(bins, bool) or not isinstance(bins, (int, np.integer)) or not 1 <= int(bins) <= 100:
+        raise ValueError("bins must be an integer between 1 and 100")
     if not np.isin(y, [0, 1]).all() or not np.isfinite(p).all() or np.any((p < 0.0) | (p > 1.0)):
         raise ValueError("labels must be binary and probabilities must be finite in [0, 1]")
     edges = np.linspace(0, 1, bins + 1)

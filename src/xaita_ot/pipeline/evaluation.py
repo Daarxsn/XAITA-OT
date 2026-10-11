@@ -12,6 +12,21 @@ from ..models.trainer import Detector
 from ..core.seed import set_seed
 
 
+def _validate_binary_labels(y, *, allow_empty: bool = False) -> np.ndarray:
+    """Validate binary labels before integer conversion to prevent silent coercion."""
+    try:
+        raw = np.asarray(y, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("labels must contain only binary 0/1 values") from exc
+    if raw.ndim != 1:
+        raise ValueError("labels must be a one-dimensional array")
+    if not allow_empty and raw.size == 0:
+        raise ValueError("labels must not be empty")
+    if not np.isfinite(raw).all() or not np.isin(raw, [0.0, 1.0]).all():
+        raise ValueError("labels must contain only finite binary 0/1 values")
+    return raw.astype(np.int64)
+
+
 @dataclass
 class Split:
     train: object
@@ -21,7 +36,7 @@ class Split:
 
 def _binary_episode_ids(labels):
     """Assign positive rows to an attack episode; normal rows always receive 0."""
-    labels = np.asarray(labels).astype(int)
+    labels = _validate_binary_labels(labels, allow_empty=True)
     ids = np.zeros(len(labels), dtype=int)
     episode = 0
     active = False
@@ -47,7 +62,7 @@ def stratified_split(df, train=0.70, val=0.15, label_col="label", seed=42):
     _validate_fractions(train, val)
     if label_col not in df.columns:
         raise ValueError(f"Cannot stratify without label column '{label_col}'")
-    labels = df[label_col].astype(int)
+    labels = pd.Series(_validate_binary_labels(df[label_col]), index=df.index)
     if labels.nunique() < 2:
         raise ValueError("Stratified split requires at least two classes")
     train_df, remainder = train_test_split(df, train_size=train, random_state=seed, stratify=labels)
@@ -76,7 +91,8 @@ def group_stratified_split(df, train=0.70, val=0.15, label_col="label", seed=42)
         raise ValueError(f"Cannot group-split without label column '{label_col}'")
     groups = _feature_group_ids(df, label_col)
     group_labels = {}
-    for group, label in zip(groups, df[label_col].astype(int).to_numpy()):
+    validated_labels = _validate_binary_labels(df[label_col])
+    for group, label in zip(groups, validated_labels):
         label = int(label)
         if group in group_labels and group_labels[group] != label:
             raise ValueError("A feature group contains conflicting labels; refusing to split")
@@ -104,7 +120,7 @@ def chronological_split(df, train=0.70, val=0.15, label_col="label", episode_awa
     if not episode_aware or label_col not in df.columns:
         a, b = int(n * train), int(n * (train + val))
         return df.iloc[:a].copy(), df.iloc[a:b].copy(), df.iloc[b:].copy()
-    labels = df[label_col].astype(int).to_numpy()
+    labels = _validate_binary_labels(df[label_col])
     episodes = _binary_episode_ids(labels)
     boundaries = sorted(i for i in range(1, n) if episodes[i - 1] != episodes[i])
     target_a, target_b = n * train, n * (train + val)
@@ -137,11 +153,12 @@ def chronological_split(df, train=0.70, val=0.15, label_col="label", episode_awa
 
 
 def select_threshold(y, p, metric="f1"):
-    y, p = np.asarray(y).astype(int), np.asarray(p, dtype=float)
-    if len(y) != len(p):
-        raise ValueError("labels and probabilities must have equal length")
-    if len(y) and not np.isfinite(p).all():
-        raise ValueError("probabilities must be finite")
+    y = _validate_binary_labels(y, allow_empty=True)
+    p = np.asarray(p, dtype=float)
+    if p.ndim != 1 or len(y) != len(p):
+        raise ValueError("labels and probabilities must be one-dimensional and have equal length")
+    if not np.isfinite(p).all() or np.any((p < 0.0) | (p > 1.0)):
+        raise ValueError("probabilities must be finite and in [0, 1]")
     if len(y) == 0 or np.unique(y).size < 2:
         return 0.5
     thresholds = np.unique(np.concatenate(([0.0], p, [1.0])))
@@ -173,13 +190,14 @@ def _positive_probability(classifier, X):
 
 
 def binary_metrics(y, p, threshold=0.5):
-    y, p = np.asarray(y).astype(int), np.asarray(p, dtype=float)
-    if len(y) != len(p):
-        raise ValueError("labels and probabilities must have equal length")
-    if not np.isfinite(p).all():
-        raise ValueError("probabilities must be finite")
-    if not 0.0 <= float(threshold) <= 1.0:
-        raise ValueError("threshold must be in [0, 1]")
+    y = _validate_binary_labels(y)
+    p = np.asarray(p, dtype=float)
+    if p.ndim != 1 or len(y) != len(p):
+        raise ValueError("labels and probabilities must be one-dimensional and have equal length")
+    if not np.isfinite(p).all() or np.any((p < 0.0) | (p > 1.0)):
+        raise ValueError("probabilities must be finite and in [0, 1]")
+    if not np.isfinite(float(threshold)) or not 0.0 <= float(threshold) <= 1.0:
+        raise ValueError("threshold must be finite and in [0, 1]")
     pred = (p >= threshold).astype(int)
     pr, re, f1, _ = precision_recall_fscore_support(y, pred, average="binary", zero_division=0)
     fp = ((pred == 1) & (y == 0)).sum(); tn = ((pred == 0) & (y == 0)).sum()
@@ -188,13 +206,14 @@ def binary_metrics(y, p, threshold=0.5):
 
 
 def expected_calibration_error(y, p, bins=10):
-    if int(bins) <= 0:
-        raise ValueError("bins must be positive")
-    y, p = np.asarray(y), np.asarray(p, dtype=float)
-    if len(y) != len(p) or (len(p) and not np.isfinite(p).all()):
-        raise ValueError("labels and probabilities must be finite and aligned")
-    if len(p) and ((p < 0.0).any() or (p > 1.0).any()):
-        raise ValueError("probabilities must be in [0, 1]")
+    if isinstance(bins, bool) or not isinstance(bins, (int, np.integer)) or int(bins) <= 0:
+        raise ValueError("bins must be a positive integer")
+    y = _validate_binary_labels(y)
+    p = np.asarray(p, dtype=float)
+    if p.ndim != 1 or len(y) != len(p):
+        raise ValueError("labels and probabilities must be one-dimensional and aligned")
+    if not np.isfinite(p).all() or np.any((p < 0.0) | (p > 1.0)):
+        raise ValueError("probabilities must be finite and in [0, 1]")
     edges = np.linspace(0, 1, bins + 1); ece = 0.0
     for lo, hi in zip(edges[:-1], edges[1:]):
         mask = (p >= lo) & (p < (hi if hi < 1 else hi + 1e-9))

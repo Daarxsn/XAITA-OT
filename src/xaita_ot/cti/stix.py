@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -12,10 +13,24 @@ def _timestamp(cti: dict) -> str:
     raw = cti.get("generated_at")
     if raw:
         try:
-            return datetime.fromisoformat(str(raw).replace("Z", "+00:00")).astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+            parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            if parsed.tzinfo is None or parsed.utcoffset() is None:
+                raise ValueError("timestamp has no timezone offset")
+            return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
         except ValueError as exc:
-            raise ValueError("CTI generated_at must be a valid ISO-8601 timestamp") from exc
+            raise ValueError("CTI generated_at must be a valid timezone-aware ISO-8601 timestamp") from exc
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _attack_technique_url(technique_id: str) -> str:
+    """Return a canonical MITRE ATT&CK URL for a validated technique identifier."""
+    value = technique_id.strip().upper()
+    if not re.fullmatch(r"T\d{4}(?:\.\d{3})?", value):
+        raise ValueError(f"Invalid ATT&CK technique ID: {technique_id!r}")
+    if "." in value:
+        parent, subtechnique = value.split(".", 1)
+        return f"https://attack.mitre.org/techniques/{parent}/{subtechnique}/"
+    return f"https://attack.mitre.org/techniques/{value}/"
 
 
 def to_stix_bundle(cti):
@@ -48,11 +63,11 @@ def to_stix_bundle(cti):
             "external_references": [{
                 "source_name": "mitre-attack",
                 "external_id": technique_id,
-                "url": f"https://attack.mitre.org/techniques/ics/{technique_id}",
+                "url": _attack_technique_url(technique_id),
             }],
         }
-        objects.append(ap)
         if ap["id"] not in seen:
+            objects.append(ap)
             refs.append(ap["id"])
             seen.add(ap["id"])
     note = {

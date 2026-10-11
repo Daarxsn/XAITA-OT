@@ -19,6 +19,7 @@ def canonical_json(value: Any) -> str:
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
+        allow_nan=False,
         default=_json_default,
     )
 
@@ -96,6 +97,8 @@ def validate_provenance(
     if not isinstance(manifest, list):
         raise ProvenanceValidationError("provenance manifest must be a list")
 
+    for item in manifest:
+        validate_provenance_item(item)
     evidence_ids = [item.get("evidence_id") for item in manifest]
     if any(not isinstance(value, str) or not value for value in evidence_ids):
         raise ProvenanceValidationError("every provenance item requires a non-empty evidence_id")
@@ -108,7 +111,6 @@ def validate_provenance(
         raise ProvenanceValidationError("provenance event order does not match episode event order")
 
     for item in manifest:
-        validate_provenance_item(item)
         if not item.get("observation_id") or not item.get("detection_id") or not item.get("episode_id"):
             raise ProvenanceValidationError("provenance items require observation, detection and episode references")
         if episode_id is not None and item["episode_id"] != episode_id:

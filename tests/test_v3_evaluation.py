@@ -61,3 +61,30 @@ def test_six_v3_ablation_variants_execute():
     out = evidence_ablation(evidence, ["H1", "H2", "H3"], rel)
     assert list(out) == ["Full XAITA-OT", "-BTAE", "-BSS", "-ATT&CK", "-ACFM", "Detection-only"]
     assert all(out.values())
+
+
+
+def test_v3_audit_supports_non_range_source_indexes_and_marks_threshold_probe():
+    cfg = AppConfig()
+    cfg.model.window_size = 16
+    frame = _df()
+    frame.index = np.arange(len(frame), dtype=int) * 3 + 100
+
+    audit = audit_split_and_leakage(frame, cfg)
+    assert audit["status"] == "PASS"
+    assert audit["threshold_fit_on_train_only"] is True
+    assert audit["threshold_is_benchmark_value"] is False
+    assert audit["threshold_source"] == "synthetic_monotonic_probe"
+    assert 0 <= audit["threshold_probe_value"] <= 1
+    assert "threshold" not in audit
+
+
+def test_v3_audit_rejects_duplicate_source_indexes():
+    import pytest
+
+    cfg = AppConfig()
+    cfg.model.window_size = 16
+    frame = _df()
+    frame.index = [0] * len(frame)
+    with pytest.raises(ValueError, match="index must be unique"):
+        audit_split_and_leakage(frame, cfg)

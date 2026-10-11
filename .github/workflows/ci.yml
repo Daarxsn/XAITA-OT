@@ -137,3 +137,23 @@ jobs:
         run: python scripts/v5_e2e_smoke.py
       - name: Compile package
         run: python -m compileall -q src scripts
+  windows-worker-smoke:
+    name: Windows worker and audit regression smoke
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install -e ".[dev]"
+      - name: Verify Windows process termination and audit regressions
+        run: |
+          python -m pytest -q tests/test_experiment_worker.py tests/test_audit_hardening.py tests/test_api.py -k "worker or detector or started_at or prune or timeout"

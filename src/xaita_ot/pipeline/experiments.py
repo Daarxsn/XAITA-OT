@@ -29,6 +29,7 @@ def _normalize_detector_name(name: str) -> str:
     return {'rf':'random_forest','random forest':'random_forest','random_forest':'random_forest','cnn':'cnn','lstm':'lstm','cnn-lstm':'cnn_lstm','cnn_lstm':'cnn_lstm'}.get(name.strip().lower(), name.strip().lower().replace('-','_'))
 
 def run_detection(csv_path: str | Path, dataset: str, config: AppConfig, seed: int | None = None, detector: str | None = None) -> ExperimentRun:
+    started_at = datetime.now(timezone.utc)
     started = time.perf_counter(); run_seed = config.seed if seed is None else seed; set_seed(run_seed)
     raw = load_csv(
         csv_path,
@@ -68,8 +69,8 @@ def run_detection(csv_path: str | Path, dataset: str, config: AppConfig, seed: i
         raise ValueError(f"{dataset} requires both normal and attack classes in train and test windows")
     detector_key = _normalize_detector_name(detector) if detector else None
     metrics=train_baselines(train_w,val_w,test_w,config,seed=run_seed,detectors=[detector_key] if detector_key else None)
-    duration=time.perf_counter()-started; now=datetime.now(timezone.utc)
-    return ExperimentRun(experiment_id=f'{dataset}-{detector_key or "all"}-{run_seed}-{now.strftime("%Y%m%dT%H%M%SZ")}',dataset=dataset,seed=run_seed,started_at=now.isoformat(),duration_seconds=float(duration),config={**config.model_dump(mode='json'),'split_protocol':split_protocol,'detector':detector_key or 'all'},rows={'train':len(train),'validation':len(val),'test':len(test)},windows={'train':len(train_w.X),'validation':len(val_w.X),'test':len(test_w.X)},metrics=metrics)
+    duration=time.perf_counter()-started
+    return ExperimentRun(experiment_id=f'{dataset}-{detector_key or "all"}-{run_seed}-{started_at.strftime("%Y%m%dT%H%M%S%fZ")}',dataset=dataset,seed=run_seed,started_at=started_at.isoformat(),duration_seconds=float(duration),config={**config.model_dump(mode='json'),'split_protocol':split_protocol,'detector':detector_key or 'all'},rows={'train':len(train),'validation':len(val),'test':len(test)},windows={'train':len(train_w.X),'validation':len(val_w.X),'test':len(test_w.X)},metrics=metrics)
 
 def attribution_configurations() -> list[str]: return ['DC','DC+BSS','DC+BSS+ECS','DC+BSS+ECS+MAS','WEF','ACFM']
 def experiment_contract(dataset: str, seed: int, detector_names: list[str] | None = None) -> dict: return {'schema_version':'XAITA-OT-V2-CONTRACT-1.0','dataset':dataset,'seed':seed,'detectors':detector_names or ['RF','CNN','LSTM','CNN-LSTM'],'attribution_configurations':attribution_configurations(),'outputs':['metrics','runtime','config','provenance','xai','artifacts'],'status_semantics':['planned','running','completed','failed','blocked_data']}

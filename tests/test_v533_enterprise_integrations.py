@@ -93,3 +93,56 @@ def test_contracts_fail_closed_on_invalid_input():
         validate_cti_export({"schema_version": CTI_EXPORT_SCHEMA})
     with pytest.raises(ValueError):
         build_audit_event(action="", actor="a", outcome="success", correlation_id="c")
+
+
+
+def test_siem_validation_rejects_tampered_content():
+    event = build_siem_event(load_smoke_cti(), source="test-siem")
+    event["source"] = "tampered-source"
+    with pytest.raises(ValueError, match="ID does not match"):
+        validate_siem_event(event)
+
+
+def test_cti_export_validation_rejects_tampered_bundle():
+    export = build_cti_export(load_smoke_cti())
+    export["bundle"]["objects"][0]["name"] = "tampered identity"
+    with pytest.raises(ValueError, match="digest does not match"):
+        validate_cti_export(export)
+
+
+def test_cti_export_validation_rejects_non_hex_digest():
+    export = build_cti_export(load_smoke_cti())
+    export["export_sha256"] = "g" * 64
+    with pytest.raises(ValueError, match="lowercase SHA-256"):
+        validate_cti_export(export)
+
+
+def test_audit_event_validation_rejects_tampering_and_naive_timestamps():
+    event = build_audit_event(
+        action="cti.export", actor="analyst", outcome="success",
+        correlation_id="corr-001", timestamp="2026-10-05T08:00:00Z",
+    )
+    event["outcome"] = "tampered"
+    with pytest.raises(ValueError, match="ID does not match"):
+        validate_audit_event(event)
+    with pytest.raises(ValueError, match="timezone offset"):
+        build_audit_event(
+            action="cti.export", actor="analyst", outcome="success",
+            correlation_id="corr-002", timestamp="2026-10-05T08:00:00",
+        )
+
+
+def test_canonical_event_hashing_rejects_non_finite_json_numbers():
+    with pytest.raises(ValueError):
+        build_audit_event(
+            action="x", actor="analyst", outcome="success", correlation_id="corr",
+            details={"confidence": float("nan")},
+        )
+
+
+
+def test_enterprise_json_writer_rejects_non_finite_numbers(tmp_path):
+    from xaita_ot.integrations.enterprise import write_json
+
+    with pytest.raises(ValueError):
+        write_json({"risk": float("nan")}, tmp_path / "invalid.json")

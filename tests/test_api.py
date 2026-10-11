@@ -193,7 +193,7 @@ def test_experiment_lifecycle_completed_and_status(monkeypatch, tmp_path):
     monkeypatch.setattr(api, "API_KEY", None)
     monkeypatch.setattr(api, "DATASET_PATHS", {"TON-IoT": str(tmp_path)})
     (tmp_path / "sample.csv").write_text("timestamp,label\n2026-01-01,0\n", encoding="utf-8")
-    monkeypatch.setattr(api, "run_detection", lambda *args, **kwargs: _fake_run())
+    monkeypatch.setattr(api, "run_detection_with_timeout", lambda *args, **kwargs: _fake_run())
     with api._experiment_lifecycle_lock:
         api._experiment_jobs.clear()
 
@@ -228,7 +228,7 @@ def test_experiment_failure_becomes_terminal_job(monkeypatch, tmp_path):
     (tmp_path / "sample.csv").write_text("timestamp,label\n2026-01-01,0\n", encoding="utf-8")
     def fail(*args, **kwargs):
         raise RuntimeError("controlled failure")
-    monkeypatch.setattr(api, "run_detection", fail)
+    monkeypatch.setattr(api, "run_detection_with_timeout", fail)
     with api._experiment_lifecycle_lock:
         api._experiment_jobs.clear()
 
@@ -364,7 +364,7 @@ def test_experiment_materializes_private_archive_when_runtime_path_is_missing(mo
         )
     monkeypatch.setenv("XAITA_DATASET_ARCHIVE", str(archive))
     monkeypatch.setattr(api, "DATASET_PATHS", {"TON-IoT": str(dataset_root)})
-    monkeypatch.setattr(api, "run_detection", lambda *args, **kwargs: _fake_run())
+    monkeypatch.setattr(api, "run_detection_with_timeout", lambda *args, **kwargs: _fake_run())
     with api._experiment_lifecycle_lock:
         api._experiment_jobs.clear()
 
@@ -374,3 +374,42 @@ def test_experiment_materializes_private_archive_when_runtime_path_is_missing(mo
     )
     assert response.status_code == 200
     assert (dataset_root / "TON-IoT.csv").is_file()
+
+
+
+def test_experiment_timeout_marks_job_and_returns_gateway_timeout(monkeypatch, tmp_path):
+    from xaita_ot.operations.experiment_worker import ExperimentTimeoutError
+
+    monkeypatch.setattr(api, "API_KEY", None)
+    monkeypatch.setattr(api, "DATASET_PATHS", {"TON-IoT": str(tmp_path)})
+    (tmp_path / "sample.csv").write_text(
+        "timestamp,label\n2026-01-01T00:00:00Z,0\n", encoding="utf-8"
+    )
+
+    def timeout(*args, **kwargs):
+        raise ExperimentTimeoutError("controlled timeout")
+
+    monkeypatch.setattr(api, "run_detection_with_timeout", timeout)
+    with api._experiment_lifecycle_lock:
+        api._experiment_jobs.clear()
+
+    response = client.post(
+        "/v2/experiment",
+        json={"dataset": "TON-IoT", "detector": "CNN-LSTM", "seed": 42},
+    )
+    assert response.status_code == 504
+    job_id = next(iter(api._experiment_jobs))
+    job = api._experiment_jobs[job_id]
+    assert job["status"] == "timed_out"
+    assert job["error_type"] == "ExperimentTimeout"
+
+
+
+def test_openapi_docs_disabled_by_default_outside_development():
+    from xaita_ot.api.app import _docs_enabled
+
+    assert _docs_enabled("development") is True
+    assert _docs_enabled("staging") is False
+    assert _docs_enabled("production") is False
+    assert _docs_enabled("production", "true") is True
+    assert _docs_enabled("development", "false") is False

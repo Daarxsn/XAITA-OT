@@ -19,6 +19,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import precision_recall_fscore_support, roc_auc_score
 
 from ..config import AppConfig
+from .evaluation import _validate_binary_labels
 from ..core.attribution import assess
 from ..core.attribution_baselines import weighted_evidence_fusion
 from ..core.seed import set_seed
@@ -41,7 +42,7 @@ RELIABILITIES = {"DC": 1.0, "BSS": .80, "ECS": .85, "ATT&CK": .75, "MAS": .65}
 
 
 def _metrics(y, p):
-    y = np.asarray(y).astype(int); p = np.asarray(p, dtype=float)
+    y = _validate_binary_labels(y); p = np.asarray(p, dtype=float)
     if len(y) != len(p) or not np.isfinite(p).all() or np.any((p < 0) | (p > 1)):
         raise ValueError("ablation probabilities must be finite and in [0, 1]")
     pred = (p >= .5).astype(int)
@@ -164,7 +165,22 @@ def run_phase4(paths: dict[str, str], cfg: AppConfig, seeds=None) -> dict:
             p = float(stats.ttest_rel(a, b).pvalue) if len(d) > 1 else None
             paired.append({"metric": metric, "n": int(len(d)), "full_minus_variant_mean": float(np.nanmean(d)) if len(d) else None, "cohens_dz": float(np.nanmean(d) / sd) if sd > 0 else 0.0, "p_value": p})
         effects[variant] = paired
-    return {"phase": "V3.4", "status": "PASS", "datasets": list(paths), "seeds": seeds, "variants": list(VARIANTS), "runs": runs, "effects_vs_full": effects, "row_count": len(rows)}
+    return {
+        "phase": "V3.4",
+        "status": "PASS",
+        "paper_grade_component_ablation": False,
+        "evidence_mode": "proxy_telemetry_statistics",
+        "limitations": [
+            "Variants remove proxy inputs, not the integrated BTAE/BSS/ATT&CK/ACFM components in the research method.",
+            "These are exploratory binary attack-classification comparisons, not component-attribution ablation evidence.",
+        ],
+        "datasets": list(paths),
+        "seeds": seeds,
+        "variants": list(VARIANTS),
+        "runs": runs,
+        "effects_vs_full": effects,
+        "row_count": len(rows),
+    }
 
 
 def write_phase4_artifacts(result: dict, out_dir: str | Path):

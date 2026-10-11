@@ -77,6 +77,10 @@ def validate_assessments(assessments):
     if len(hypotheses) != len(set(hypotheses)):
         raise AttributionValidationError("hypothesis identifiers must be unique")
     for item in assessments:
+        try:
+            validate_attribution_evidence(item)
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise AttributionValidationError(f"invalid attribution evidence: {exc}") from exc
         if not 0.0 <= item.belief <= item.plausibility <= 1.0:
             raise AttributionValidationError("belief/plausibility must satisfy 0 <= belief <= plausibility <= 1")
         if abs(item.interval_width - (item.plausibility - item.belief)) > 1e-12:

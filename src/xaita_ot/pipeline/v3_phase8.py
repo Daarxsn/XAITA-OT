@@ -96,9 +96,11 @@ def _table6(phase2):
                 continue
             detector = metrics.get("cnn_lstm")
             if isinstance(detector, dict):
-                vals.append(detector.get("f1"))
-        f1=_nanmean(vals)
-        rows.append({"Training Environment":source,"Test Environment":target,"Macro-F1":f1,"Degradation":"NA"})
+                # Cross-environment artifacts currently store binary F1, not
+                # macro-F1 computed from class-wise predictions.
+                vals.append(detector.get("macro_f1"))
+        macro_f1=_nanmean(vals)
+        rows.append({"Training Environment":source,"Test Environment":target,"Macro-F1":macro_f1 if macro_f1 is not None else "NA","Degradation":"NA"})
     return rows
 
 
@@ -109,8 +111,9 @@ def _table7(phase7, paths):
         cases=(obj or {}).get("cases",[])
         if not cases:
             rows.append({"Dataset":dataset,"Correlation Precision":"NA","Correlation Recall":"NA","Correlation F1":"NA","Episode Accuracy":"NA","Stage Accuracy":"NA"}); continue
-        cor=[c.get("btae_reconstruction",{}).get("correlation_strength") for c in cases]
-        rows.append({"Dataset":dataset,"Correlation Precision":"NA","Correlation Recall":"NA","Correlation F1":_nanmean(cor),"Episode Accuracy":"NA","Stage Accuracy":"NA"})
+        # Correlation strength is not edge-level correlation F1. There are no
+        # annotated correlated-edge predictions in this artifact contract.
+        rows.append({"Dataset":dataset,"Correlation Precision":"NA","Correlation Recall":"NA","Correlation F1":"NA","Episode Accuracy":"NA","Stage Accuracy":"NA"})
     return rows
 
 
@@ -123,17 +126,23 @@ def _table8(phase3):
         for r in phase3.get("runs",[]):
             s=r.get("detector",{}) if key=="detector" else r.get("fusion",{}).get(key,{})
             runs.append(s)
+        paper_grade_fusion = bool(phase3.get("paper_grade_attribution_calibration", False))
+        if key != "detector" and not paper_grade_fusion:
+            # Proxy fusion scores evaluated against binary attack labels do not
+            # validate actor-attribution confidence; leave these metrics NA.
+            rows.append({"Configuration":label,"Attribution Metric":key,"ECE ↓":"NA","Mean Belief":"NA","Mean Plausibility":"NA","Interval Width":"NA"})
+            continue
         if key == "WEF":
-            mean_belief = _nanmean([x.get("score_mean") for x in runs])
-            mean_plausibility = mean_belief
-            mean_width = 0.0 if mean_belief is not None else None
+            mean_belief = _nanmean([x.get("belief_mean") for x in runs])
+            mean_plausibility = _nanmean([x.get("plausibility_mean") for x in runs])
+            mean_width = _nanmean([x.get("interval_width_mean") for x in runs])
         elif key == "ACFM":
             mean_belief = _nanmean([x.get("belief_mean") for x in runs])
             mean_plausibility = _nanmean([x.get("plausibility_mean") for x in runs])
             mean_width = _nanmean([x.get("interval_width_mean") for x in runs])
         else:
             mean_belief = mean_plausibility = mean_width = None
-        rows.append({"Configuration":label,"Attribution Metric":key,"ECE ↓":_nanmean([x.get("ece") for x in runs]),"Mean Belief":mean_belief,"Mean Plausibility":mean_plausibility,"Interval Width":mean_width})
+        rows.append({"Configuration":label,"Attribution Metric":key,"ECE ↓":_nanmean([x.get("ece") for x in runs]) if key == "detector" else "NA","Mean Belief":mean_belief if key == "ACFM" else ("NA" if key == "WEF" else "NA"),"Mean Plausibility":mean_plausibility if key == "ACFM" else "NA","Interval Width":mean_width if key == "ACFM" else "NA"})
     return rows
 
 
@@ -160,8 +169,9 @@ def _table10(phase7):
         {"Dimension":"Risk prioritization","Metric":"Priority Accuracy","Result":"NA"},
         {"Dimension":"Context representation","Metric":"Context Completeness","Result":"NA"},
         {"Dimension":"CTI generation","Metric":"CTI Completeness","Result":"NA"},
-        {"Dimension":"Evidence linkage","Metric":"Traceability","Result":_nanmean([1.0 if c.get("provenance") and c.get("cti",{}).get("provenance") else None for c in cases])},
-        {"Dimension":"Provenance","Metric":"Provenance Consistency","Result":_nanmean([1.0 if len(c.get("provenance",[]))>=5 else None for c in cases])},
+        # Identifier presence is not a traceability or consistency validation.
+        {"Dimension":"Evidence linkage","Metric":"Traceability","Result":"NA"},
+        {"Dimension":"Provenance","Metric":"Provenance Consistency","Result":"NA"},
     ]
 
 
@@ -181,10 +191,17 @@ def _table18(phase4, phase3, phase7):
     if not phase4: return rows
     all_cases=[]
     for obj in (phase7 or {}).values(): all_cases.extend(obj.get("cases",[]))
-    trace=_nanmean([1.0 if c.get("provenance") else None for c in all_cases])
+    paper_grade_ablation = bool(phase4.get("paper_grade_component_ablation", False))
     for run in phase4.get("runs",[]):
         for cfg,metrics in run.get("variants",{}).items():
-            rows.append({"Configuration":cfg,"Detection F1":metrics.get("f1"),"Behavioral F1":"NA","Attribution F1":metrics.get("f1"),"ECE ↓":"NA","Traceability":trace if trace is not None else "NA"})
+            rows.append({
+                "Configuration":cfg,
+                "Detection F1":metrics.get("f1") if paper_grade_ablation else "NA",
+                "Behavioral F1":"NA",
+                "Attribution F1":"NA",
+                "ECE ↓":"NA",
+                "Traceability":"NA",
+            })
     return rows
 
 
@@ -214,7 +231,12 @@ def generate_phase8(paths: dict[str,str], artifact_root: str | Path, out_dir: st
         frame=pd.DataFrame(rows,columns=cols)
         csv=out/f"table_{number}.csv"; frame.to_csv(csv,index=False)
         generated[number]=str(csv)
-    manifest={"phase":"V3.8","status":"PASS","tables":list(tables),"generated":generated,"schemas":TABLE_SCHEMAS,"source_artifacts":[str(p) for p in [root/"phase2/phase2_cross_environment.json",root/"phase3/phase3_calibration.json",root/"phase4/phase4_ablation.json"] if p.exists()],"na_policy":"Unsupported metrics are emitted as NA; no paper result is fabricated."}
+    paper_ready = bool(
+        phase3 and phase3.get("paper_grade_attribution_calibration")
+        and phase4 and phase4.get("paper_grade_component_ablation")
+        and phase7 and all(item.get("paper_grade_attribution", False) for item in phase7.values())
+    )
+    manifest={"phase":"V3.8","status":"PASS","paper_ready":paper_ready,"tables":list(tables),"generated":generated,"schemas":TABLE_SCHEMAS,"source_artifacts":[str(p) for p in [root/"phase2/phase2_cross_environment.json",root/"phase3/phase3_calibration.json",root/"phase4/phase4_ablation.json"] if p.exists()],"na_policy":"Unsupported metrics are emitted as NA; no paper result is fabricated."}
     (out/"paper_tables.json").write_text(json.dumps(tables,indent=2,default=str),encoding="utf-8")
     (out/"phase8_manifest.json").write_text(json.dumps(manifest,indent=2),encoding="utf-8")
     return manifest

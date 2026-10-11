@@ -9,24 +9,32 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+import platform
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
+import sklearn
 from sklearn.ensemble import IsolationForest
+
+from ..io.csv_headers import duplicate_column_names, read_csv_header
 
 
 EXCLUDED_COLUMNS = {
-    "timestamp",
-    "annotation",
-    "other anomalies",
-    "attack hash",
-    "attack name",
-    "attack state",
-    "label",
-    "normal/attack",
+    "timestamp", "time", "date", "annotation", "other anomalies",
+    "attack hash", "attack name", "attack state", "attack",
+    "attack flag", "att flag", "attack label", "label attack",
+    "interval attack label", "ground truth", "ground truth label",
+    "is attack", "anomaly label", "label", "normal/attack",
 }
+
+
+def _normalized_column_name(column: Any) -> str:
+    return " ".join(
+        str(column).strip().casefold().replace("_", " ").replace("-", " ").split()
+    )
 
 
 def _sha256(path: Path) -> str:
@@ -51,7 +59,7 @@ def _unique_csvs(root: Path) -> list[Path]:
 def _numeric_features(frame: pd.DataFrame) -> list[str]:
     features: list[str] = []
     for column in frame.columns:
-        if str(column).strip().lower() in EXCLUDED_COLUMNS:
+        if _normalized_column_name(column) in EXCLUDED_COLUMNS:
             continue
         converted = pd.to_numeric(frame[column], errors="coerce")
         if converted.notna().mean() >= 0.90 and converted.nunique(dropna=True) > 1:
@@ -70,9 +78,9 @@ def _top_deviations(
     order = np.argsort(-deviation, axis=1)[:, :top_n]
     names: list[str] = []
     scores: list[float] = []
-    for row in order:
+    for row_index, row in enumerate(order):
         names.append("|".join(feature_names[i] for i in row))
-        scores.append(float(deviation[row[0]]))
+        scores.append(float(deviation[row_index, row[0]]))
     return names, scores
 
 
@@ -87,17 +95,39 @@ def analyze_swat_unlabeled(
 ) -> dict[str, Any]:
     source_root = Path(root).resolve()
     output_root = Path(out)
-    output_root.mkdir(parents=True, exist_ok=True)
+    resolved_output_root = output_root.resolve()
 
-    if not source_root.exists():
-        raise ValueError(f"SWaT root not found: {source_root}")
-    if not 0.1 <= train_fraction < 1.0:
-        raise ValueError("train_fraction must be in [0.1, 1.0)")
+    if not source_root.is_dir():
+        raise ValueError(f"SWaT root must be an existing directory: {source_root}")
+    try:
+        resolved_output_root.relative_to(source_root)
+    except ValueError:
+        pass
+    else:
+        raise ValueError("output directory must be outside the input root to prevent recursive rescoring")
+    if isinstance(seed, bool) or not isinstance(seed, (int, np.integer)) or int(seed) < 0:
+        raise ValueError("seed must be a non-negative integer")
+    seed = int(seed)
+    if isinstance(top_n, bool) or not isinstance(top_n, int) or top_n < 1:
+        raise ValueError("top_n must be a positive integer")
+    if isinstance(max_train_rows, bool) or not isinstance(max_train_rows, int):
+        raise ValueError("max_train_rows must be an integer")
+    if isinstance(n_estimators, bool) or not isinstance(n_estimators, int):
+        raise ValueError("n_estimators must be an integer")
+    if isinstance(train_fraction, bool):
+        raise ValueError("train_fraction must be a finite number in [0.1, 1.0)")
+    try:
+        train_fraction = float(train_fraction)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("train_fraction must be a finite number in [0.1, 1.0)") from exc
+    if not math.isfinite(train_fraction) or not 0.1 <= train_fraction < 1.0:
+        raise ValueError("train_fraction must be a finite number in [0.1, 1.0)")
     if max_train_rows < 256:
         raise ValueError("max_train_rows must be at least 256")
     if n_estimators < 10:
         raise ValueError("n_estimators must be at least 10")
 
+    output_root.mkdir(parents=True, exist_ok=True)
     files = _unique_csvs(source_root)
     if not files:
         raise ValueError(f"No CSV files found under {source_root}")
@@ -107,8 +137,33 @@ def analyze_swat_unlabeled(
     total_flagged = 0
 
     for source in files:
-        frame = pd.read_csv(source, low_memory=False)
+        try:
+            raw_header = read_csv_header(source)
+            if any(not column for column in raw_header):
+                raise ValueError("blank CSV header field")
+            duplicates = duplicate_column_names(raw_header)
+            if duplicates:
+                raise ValueError(f"duplicate CSV header names: {duplicates}")
+            frame = pd.read_csv(source, low_memory=False)
+        except (OSError, UnicodeError, ValueError, pd.errors.ParserError) as exc:
+            file_results.append({
+                "file": source.relative_to(source_root).as_posix(),
+                "sha256": _sha256(source),
+                "status": "review",
+                "reason": f"CSV could not be read safely ({type(exc).__name__}): {str(exc)[:240]}",
+                "rows": 0,
+                "feature_count": 0,
+            })
+            continue
         if frame.empty:
+            file_results.append({
+                "file": source.relative_to(source_root).as_posix(),
+                "sha256": _sha256(source),
+                "status": "review",
+                "reason": "CSV contains no data rows",
+                "rows": 0,
+                "feature_count": 0,
+            })
             continue
 
         features = _numeric_features(frame)
@@ -125,17 +180,30 @@ def analyze_swat_unlabeled(
 
         numeric = pd.DataFrame(
             {
-                column: pd.to_numeric(frame[column], errors="coerce")
+                column: pd.to_numeric(frame[column], errors="coerce").astype("float64")
                 for column in features
             }
         )
-        split = max(256, int(len(numeric) * train_fraction))
-        split = min(split, len(numeric))
+        if len(numeric) < 3:
+            file_results.append({
+                "file": source.relative_to(source_root).as_posix(),
+                "sha256": _sha256(source),
+                "status": "review",
+                "reason": "at least three rows are required to create a train/score split",
+                "rows": len(frame),
+                "feature_count": len(features),
+            })
+            continue
+
+        # Normalize non-finite telemetry before estimating medians. This avoids
+        # infinite medians and guarantees at least one row remains outside fit data.
+        numeric = numeric.replace([np.inf, -np.inf], np.nan)
+        split = min(max(2, int(len(numeric) * train_fraction)), len(numeric) - 1)
         train = numeric.iloc[:split].copy()
 
         medians = train.median()
-        train = train.fillna(medians).replace([np.inf, -np.inf], np.nan)
-        numeric = numeric.fillna(medians).replace([np.inf, -np.inf], np.nan)
+        train = train.fillna(medians)
+        numeric = numeric.fillna(medians)
 
         valid_columns = [
             column for column in features
@@ -178,7 +246,7 @@ def analyze_swat_unlabeled(
         flagged = prediction == -1
 
         names, deviation = _top_deviations(
-            numeric.to_numpy(dtype=float),
+            X_all.astype(float),
             valid_columns,
             medians.to_numpy(dtype=float),
             scales.to_numpy(dtype=float),
@@ -251,7 +319,19 @@ def analyze_swat_unlabeled(
         "total_anomaly_rows": total_flagged,
         "files": file_results,
     }
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    module_root = Path(__file__).resolve().parents[1]
+    implementation = {
+        "analysis_module_sha256": _sha256(Path(__file__).resolve()),
+        "csv_header_module_sha256": _sha256(module_root / "io" / "csv_headers.py"),
+        "python_version": platform.python_version(),
+        "numpy_version": np.__version__,
+        "pandas_version": pd.__version__,
+        "scikit_learn_version": sklearn.__version__,
+    }
+    payload["implementation"] = implementation
+    canonical = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), allow_nan=False
+    ).encode("utf-8")
     payload["fingerprint"] = hashlib.sha256(canonical).hexdigest()
     summary_path = output_root / "summary.json"
     summary_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")

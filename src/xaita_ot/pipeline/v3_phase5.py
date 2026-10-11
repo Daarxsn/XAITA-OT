@@ -10,6 +10,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import precision_recall_fscore_support, roc_auc_score
 
 from ..config import AppConfig
+from .evaluation import _validate_binary_labels
 from ..core.attribution import assess
 from ..core.seed import set_seed
 from ..io.adapters import adapt_dataset
@@ -29,7 +30,7 @@ BASE_RELIABILITY = {"DC": 1.0, "BSS": 0.80, "ECS": 0.85, "EC": 0.80, "MAS": 0.65
 
 
 def _metrics(y, p):
-    y = np.asarray(y).astype(int); p = np.asarray(p, dtype=float)
+    y = _validate_binary_labels(y); p = np.asarray(p, dtype=float)
     if len(y) != len(p) or not np.isfinite(p).all() or np.any((p < 0) | (p > 1)):
         raise ValueError("sensitivity probabilities must be finite and in [0, 1]")
     pred = (p >= 0.5).astype(int)
@@ -96,8 +97,22 @@ def _parameter_score(detector_p, evidence, parameter, value, timestamps):
     for i in range(n):
         attack = {"DC": float(detector_p[i]), **{k: float(v[i]) for k, v in e.items()}}
         benign = {k: 1.0 - v for k, v in attack.items()}
-        a = assess(["attack", "benign"], {"attack": attack, "benign": benign}, rel, threshold, 0.35)[0]
-        belief[i], plausibility[i] = a.belief, a.plausibility
+        assessments = assess(
+            ["attack", "benign"],
+            {"attack": attack, "benign": benign},
+            rel,
+            threshold,
+            0.35,
+        )
+        # assess() sorts by belief; the first item is not necessarily the attack
+        # hypothesis. Select by identity to avoid inverting benign evidence.
+        attack_assessment = next(
+            item for item in assessments if item.hypothesis == "attack"
+        )
+        belief[i], plausibility[i] = (
+            attack_assessment.belief,
+            attack_assessment.plausibility,
+        )
         p[i] = (belief[i] + plausibility[i]) / 2.0
     return p, float(np.mean(belief)), float(np.mean(plausibility)), float(np.mean(plausibility - belief))
 
@@ -135,7 +150,21 @@ def run_phase5(paths: dict[str, str], cfg: AppConfig, seeds=None):
     summary = frame.groupby(["parameter", "value"], as_index=False).agg(
         f1_mean=("f1", "mean"), f1_std=("f1", "std"), precision_mean=("precision", "mean"), recall_mean=("recall", "mean"), fpr_mean=("fpr", "mean"), auroc_mean=("auroc", "mean"), interval_width_mean=("interval_width_mean", "mean"), n=("f1", "size")
     )
-    return {"phase": "V3.5", "status": "PASS", "datasets": list(paths), "seeds": seeds, "parameters": PARAMETER_VALUES, "rows": rows, "summary": summary.to_dict(orient="records"), "run_count": len(rows)}
+    return {
+        "phase": "V3.5",
+        "status": "PASS",
+        "paper_grade_sensitivity": False,
+        "evidence_mode": "proxy_telemetry_statistics",
+        "limitations": [
+            "Sensitivity sweeps operate on proxy telemetry statistics; integrated reference-profile BSS/BTAE/ATT&CK alignment parameters are not being swept.",
+        ],
+        "datasets": list(paths),
+        "seeds": seeds,
+        "parameters": PARAMETER_VALUES,
+        "rows": rows,
+        "summary": summary.to_dict(orient="records"),
+        "run_count": len(rows),
+    }
 
 
 def write_phase5_artifacts(result: dict, out_dir: str | Path):

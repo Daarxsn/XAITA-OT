@@ -1,4 +1,5 @@
 from pathlib import Path
+import math
 import numpy as np
 import torch
 from torch import nn
@@ -33,6 +34,10 @@ class _LSTMOnly(nn.Module):
 
 class Detector:
     def __init__(self, n_features: int, config, architecture="cnn_lstm"):
+        if not isinstance(n_features, int) or n_features <= 0:
+            raise ValueError("n_features must be a positive integer")
+        if architecture not in {"cnn", "lstm", "cnn_lstm"}:
+            raise ValueError(f"unsupported detector architecture: {architecture!r}")
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if architecture == "cnn":
             self.model = _CNNOnly(n_features, config.cnn_channels, config.dropout).to(self.device)
@@ -44,8 +49,10 @@ class Detector:
         self.threshold = 0.5
 
     def fit(self, X, y, epochs=8, batch_size=128, lr=1e-3):
-        X = np.asarray(X, dtype=np.float32)
-        y = np.asarray(y, dtype=np.float32)
+        # Window arrays may be read-only sliding_window_view objects. Copy into
+        # writable C-contiguous storage before creating PyTorch tensors.
+        X = np.array(X, dtype=np.float32, copy=True, order="C")
+        y = np.array(y, dtype=np.float32, copy=True)
         if X.ndim != 3 or len(X) != len(y) or not len(X):
             raise ValueError("training data must be non-empty with shapes [N, T, F] and [N]")
         if not np.isfinite(X).all() or not np.isfinite(y).all():
@@ -54,8 +61,12 @@ class Detector:
             raise ValueError("training labels must be binary 0/1")
         if np.unique(y).size < 2:
             raise ValueError("training requires both normal (0) and attack (1) classes")
-        if epochs <= 0 or batch_size <= 0 or lr <= 0:
-            raise ValueError("epochs, batch_size and lr must be positive")
+        if (
+            not isinstance(epochs, int) or epochs <= 0
+            or not isinstance(batch_size, int) or batch_size <= 0
+            or not math.isfinite(float(lr)) or float(lr) <= 0
+        ):
+            raise ValueError("epochs and batch_size must be positive integers; lr must be finite and positive")
         ds = TensorDataset(torch.from_numpy(X), torch.from_numpy(y))
         loader = DataLoader(ds, batch_size=batch_size, shuffle=True)
         pos = int(y.sum()); neg = len(y) - pos
@@ -81,10 +92,21 @@ class Detector:
 
     def evaluate(self, X, y):
         X = np.asarray(X, dtype=np.float32)
-        y = np.asarray(y).astype(int)
-        if len(X) != len(y) or not np.isfinite(X).all():
-            raise ValueError("evaluation data must be aligned and finite")
-        p = self.predict_proba(X); pred = (p >= self.threshold).astype(int)
+        try:
+            raw_y = np.asarray(y, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("evaluation labels must be finite binary 0/1 values") from exc
+        if raw_y.ndim != 1 or not np.isfinite(raw_y).all() or not np.isin(raw_y, [0.0, 1.0]).all():
+            raise ValueError("evaluation labels must be finite binary 0/1 values")
+        y = raw_y.astype(int)
+        if X.ndim != 3 or len(X) != len(y) or not len(X) or not np.isfinite(X).all():
+            raise ValueError("evaluation data must be non-empty, aligned and finite")
+        if not math.isfinite(float(self.threshold)) or not 0 <= float(self.threshold) <= 1:
+            raise ValueError("detector threshold must be finite and in [0, 1]")
+        p = self.predict_proba(X)
+        if len(p) != len(y) or not np.isfinite(p).all() or np.any((p < 0.0) | (p > 1.0)):
+            raise ValueError("detector returned invalid evaluation probabilities")
+        pred = (p >= self.threshold).astype(int)
         pr, re, f1, _ = precision_recall_fscore_support(y, pred, average='binary', zero_division=0)
         auc = roc_auc_score(y, p) if len(np.unique(y)) > 1 else float('nan')
         fp = ((pred == 1) & (y == 0)).sum(); tn = ((pred == 0) & (y == 0)).sum()
@@ -95,7 +117,9 @@ class Detector:
         torch.save({'state_dict': self.model.state_dict(), 'threshold': self.threshold, 'architecture': self.architecture}, path)
 
     def load(self, path):
-        obj = torch.load(path, map_location=self.device, weights_only=False)
+        # Checkpoints created by Detector.save contain only tensors and primitive
+        # metadata. Use weights_only loading so untrusted pickle globals cannot run.
+        obj = torch.load(path, map_location=self.device, weights_only=True)
         if not isinstance(obj, dict) or not isinstance(obj.get('state_dict'), dict):
             raise ValueError("invalid detector checkpoint")
         threshold = float(obj.get('threshold', 0.5))

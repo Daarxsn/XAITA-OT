@@ -1,4 +1,6 @@
 from pathlib import Path
+from typing import Any
+import re
 from pydantic import BaseModel, Field, field_validator, model_validator
 import yaml
 import math
@@ -13,6 +15,25 @@ class ModelConfig(BaseModel):
     epochs: int = 8
     batch_size: int = 128
     learning_rate: float = 1e-3
+
+    @model_validator(mode="after")
+    def validate_model_parameters(self):
+        positive_ints = {
+            "input_features": self.input_features,
+            "window_size": self.window_size,
+            "cnn_channels": self.cnn_channels,
+            "lstm_hidden": self.lstm_hidden,
+            "epochs": self.epochs,
+            "batch_size": self.batch_size,
+        }
+        invalid = [name for name, value in positive_ints.items() if value <= 0]
+        if invalid:
+            raise ValueError(f"model parameters must be positive integers: {', '.join(invalid)}")
+        if not math.isfinite(self.dropout) or not 0.0 <= self.dropout < 1.0:
+            raise ValueError("dropout must be finite and in [0, 1)")
+        if not math.isfinite(self.learning_rate) or self.learning_rate <= 0:
+            raise ValueError("learning_rate must be finite and positive")
+        return self
 
 
 class CorrelationConfig(BaseModel):
@@ -46,8 +67,10 @@ class CorrelationConfig(BaseModel):
 
 class AttributionConfig(BaseModel):
     reliability: dict[str, float] = Field(default_factory=lambda: {
-        "DC": 0.70, "BSS": 0.80, "ECS": 0.85, "EC": 0.80, "MAS": 0.65
+        "DC": 0.70, "BSS": 0.80, "ECS": 0.85, "MAS": 0.65
     })
+    attack_technique_profiles: dict[str, list[str]] = Field(default_factory=dict)
+    behavior_profiles: dict[str, dict[str, Any]] = Field(default_factory=dict)
     ambiguity_margin: float = 0.08
     support_threshold: float = 0.60
     conflict_threshold: float = 0.35
@@ -55,20 +78,100 @@ class AttributionConfig(BaseModel):
         "DC", "DC+BSS", "DC+BSS+ECS", "DC+BSS+ECS+MAS", "WEF", "ACFM"
     ])
     hypothesis_profiles: dict[str, dict[str, float]] = Field(default_factory=lambda: {
-        "H1": {"DC": 1.00, "BSS": 1.00, "ECS": 1.00, "EC": 1.00, "MAS": 1.00},
-        "H2": {"DC": 0.95, "BSS": 1.00, "ECS": 0.80, "EC": 0.90, "MAS": 0.90},
-        "H3": {"DC": 0.85, "BSS": 0.80, "ECS": 0.70, "EC": 0.75, "MAS": 0.80},
+        "H1": {"DC": 1.00, "BSS": 1.00, "ECS": 1.00, "MAS": 1.00},
+        "H2": {"DC": 0.95, "BSS": 1.00, "ECS": 0.80, "MAS": 0.90},
+        "H3": {"DC": 0.85, "BSS": 0.80, "ECS": 0.70, "MAS": 0.80},
     })
+
+    @field_validator("reliability", mode="before")
+    @classmethod
+    def migrate_legacy_ec_reliability(cls, value):
+        # Earlier configs represented event correlation twice (EC and ECS).
+        # The research model defines ECS as Event Correlation Strength.
+        if isinstance(value, dict) and "EC" in value:
+            value = {key: item for key, item in value.items() if key != "EC"}
+        return value
 
     @field_validator("reliability")
     @classmethod
     def reliability_valid(cls, value):
-        required = {"DC", "BSS", "ECS", "EC", "MAS"}
+        required = {"DC", "BSS", "ECS", "MAS"}
         if set(value) != required:
             raise ValueError(f"attribution reliability must contain exactly {sorted(required)}")
         if any(not math.isfinite(float(v)) or not 0.0 <= float(v) <= 1.0 for v in value.values()):
             raise ValueError("attribution reliability values must be finite and in [0, 1]")
         return {str(k): float(v) for k, v in value.items()}
+
+    @field_validator("attack_technique_profiles")
+    @classmethod
+    def attack_profiles_valid(cls, value):
+        normalized = {}
+        for hypothesis, techniques in value.items():
+            name = str(hypothesis).strip()
+            if not name:
+                raise ValueError("attack technique profile names must be non-empty")
+            if not isinstance(techniques, list) or not techniques:
+                raise ValueError(f"attack technique profile '{name}' must contain at least one technique ID")
+            ids = [str(item).strip().upper() for item in techniques]
+            if any(not re.fullmatch(r"T\d{4}(?:\.\d{3})?", item) for item in ids):
+                raise ValueError(f"attack technique profile '{name}' contains an invalid ATT&CK technique ID")
+            if len(ids) != len(set(ids)):
+                raise ValueError(f"attack technique profile '{name}' contains duplicate technique IDs")
+            normalized[name] = ids
+        return normalized
+
+    @field_validator("behavior_profiles")
+    @classmethod
+    def behavior_profiles_valid(cls, value):
+        required = {
+            "assets", "protocols", "sequence", "inter_event_seconds",
+            "feature_reference", "feature_scales", "temporal_decay_per_second", "weights",
+        }
+        required_weights = {"temporal", "protocol", "asset", "sequence", "behavior"}
+        normalized = {}
+        for hypothesis, profile in value.items():
+            name = str(hypothesis).strip()
+            if not name or not isinstance(profile, dict):
+                raise ValueError("behavior profile names must be non-empty and profiles must be mappings")
+            missing = required - set(profile)
+            if missing:
+                raise ValueError(f"behavior profile '{name}' missing keys: {sorted(missing)}")
+            cleaned = dict(profile)
+            for key in ("assets", "protocols", "sequence"):
+                items = cleaned[key]
+                if not isinstance(items, list) or not items or any(not str(item).strip() for item in items):
+                    raise ValueError(f"behavior profile '{name}' {key} must be a non-empty list")
+                cleaned[key] = [str(item).strip().lower() for item in items]
+            intervals = cleaned["inter_event_seconds"]
+            if not isinstance(intervals, list) or len(intervals) != len(cleaned["sequence"]) - 1:
+                raise ValueError(f"behavior profile '{name}' inter_event_seconds must have len(sequence)-1 values")
+            if any(not math.isfinite(float(item)) or float(item) < 0 for item in intervals):
+                raise ValueError(f"behavior profile '{name}' inter_event_seconds must be finite and non-negative")
+            cleaned["inter_event_seconds"] = [float(item) for item in intervals]
+            reference = cleaned["feature_reference"]
+            scales = cleaned["feature_scales"]
+            if not isinstance(reference, dict) or not reference or not isinstance(scales, dict) or set(reference) != set(scales):
+                raise ValueError(f"behavior profile '{name}' feature_reference and feature_scales must have matching non-empty keys")
+            if any(not math.isfinite(float(item)) for item in reference.values()):
+                raise ValueError(f"behavior profile '{name}' feature_reference values must be finite")
+            if any(not math.isfinite(float(item)) or float(item) <= 0 for item in scales.values()):
+                raise ValueError(f"behavior profile '{name}' feature_scales values must be finite and positive")
+            cleaned["feature_reference"] = {str(k): float(v) for k, v in reference.items()}
+            cleaned["feature_scales"] = {str(k): float(v) for k, v in scales.items()}
+            decay = float(cleaned["temporal_decay_per_second"])
+            if not math.isfinite(decay) or decay <= 0:
+                raise ValueError(f"behavior profile '{name}' temporal_decay_per_second must be finite and positive")
+            cleaned["temporal_decay_per_second"] = decay
+            weights = cleaned["weights"]
+            if not isinstance(weights, dict) or set(weights) != required_weights:
+                raise ValueError(f"behavior profile '{name}' weights must contain exactly {sorted(required_weights)}")
+            if any(not math.isfinite(float(item)) or float(item) < 0 for item in weights.values()):
+                raise ValueError(f"behavior profile '{name}' weights must be finite and non-negative")
+            if abs(sum(float(item) for item in weights.values()) - 1.0) > 1e-6:
+                raise ValueError(f"behavior profile '{name}' weights must sum to 1.0")
+            cleaned["weights"] = {str(k): float(v) for k, v in weights.items()}
+            normalized[name] = cleaned
+        return normalized
 
     @field_validator("methods")
     @classmethod

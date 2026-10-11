@@ -6,6 +6,8 @@ import argparse
 import json
 import hashlib
 import subprocess
+import tarfile
+import zipfile
 from pathlib import Path
 
 from . import __version__
@@ -613,7 +615,15 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         parser.error(f"unsupported command: {args.cmd}")
-    except (OSError, ValueError, TypeError, json.JSONDecodeError, DatasetValidationError, FileNotFoundError) as exc:
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        RuntimeError,
+        DatasetValidationError,
+        tarfile.TarError,
+        zipfile.BadZipFile,
+    ) as exc:
         parser.exit(1, f"xaita: error: {exc}\n")
 
     return 1

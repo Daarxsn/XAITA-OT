@@ -115,3 +115,12 @@ def test_explanation_fidelity_rejects_invalid_feature_importance():
     )
     with pytest.raises(ExplanationValidationError, match="aggregate"):
         validate_explanation(explanation, episode, context, risk)
+
+
+
+def test_canonical_provenance_json_rejects_nan():
+    import pytest
+    from xaita_ot.core.provenance import canonical_json
+
+    with pytest.raises(ValueError, match="Out of range float values"):
+        canonical_json({"score": float("nan")})

@@ -43,3 +43,8 @@ xaita support-check --severity critical
 Sensitive vulnerabilities must use the private security-reporting path described in `SECURITY.md`, not a public issue. The policy defines severity, acknowledgement and triage targets but does not create a contractual SLA or remediation guarantee.
 
 Maintenance is reviewed monthly. Security fixes may require an upgrade to a supported release; use the verified Day 34 backup and rollback workflow before upgrades. Customer-specific support, SLAs and production commitments require separate written agreement and environment-specific review.
+
+
+## API documentation exposure
+
+Interactive Swagger/ReDoc/OpenAPI routes default to enabled in development and disabled in staging/production. Set `XAITA_ENABLE_DOCS=true` only when the deployment's exposure of schema and endpoint documentation has been explicitly reviewed. This does not replace authentication, trusted-host configuration or reverse-proxy policy.

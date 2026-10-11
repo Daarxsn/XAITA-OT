@@ -29,7 +29,7 @@ def _files(root: Path, extra_excludes: set[Path] | None = None) -> list[Path]:
     found = []
     extra_excludes = {Path(item) for item in (extra_excludes or set())}
     for path in root.rglob("*"):
-        if not path.is_file():
+        if path.is_symlink() or not path.is_file():
             continue
         rel = path.relative_to(root)
         if any(part in DEFAULT_EXCLUDES for part in rel.parts):
@@ -64,13 +64,15 @@ def create_backup(root: str | Path, output: str | Path) -> Path:
     base = Path(root).resolve()
     destination = Path(output).resolve()
     destination.parent.mkdir(parents=True, exist_ok=True)
-    extra_excludes = set()
+    extra_excludes: set[Path] = set()
     try:
-        output_parent = destination.parent.relative_to(base)
+        output_relative = destination.relative_to(base)
     except ValueError:
-        output_parent = None
-    if output_parent is not None:
-        extra_excludes.add(output_parent)
+        output_relative = None
+    if output_relative is not None:
+        # Exclude the archive itself at root; nested backup stores are excluded
+        # as a directory to avoid recursively packaging older backups.
+        extra_excludes.add(output_relative if output_relative.parent == Path(".") else output_relative.parent)
     manifest = build_backup_manifest(base, extra_excludes=extra_excludes)
     with tempfile.TemporaryDirectory() as temp:
         stage = Path(temp) / "xaita-backup"
@@ -102,7 +104,7 @@ def _safe_member_path(name: str) -> Path:
     prefix = "xaita-backup/"
     if not name.startswith(prefix):
         raise ValueError(f"unexpected archive member: {name}")
-    rel = Path(name[len(prefix):])
+    rel = Path(name[len(prefix):].replace("\\", "/"))
     if not rel.parts or rel.is_absolute() or ".." in rel.parts:
         raise ValueError(f"unsafe archive member path: {name}")
     return rel
@@ -115,7 +117,7 @@ def _validate_archive_members(archive: tarfile.TarFile, manifest: dict[str, Any]
     for item in manifest["files"]:
         if not isinstance(item, dict) or not isinstance(item.get("path"), str):
             raise ValueError("backup manifest contains an invalid file entry")
-        rel = Path(item["path"])
+        rel = Path(item["path"].replace("\\", "/"))
         if rel.is_absolute() or ".." in rel.parts or not item.get("sha256") or len(str(item["sha256"])) != 64:
             raise ValueError("backup manifest contains an unsafe file entry")
         if rel.as_posix() in manifest_paths:
@@ -126,6 +128,7 @@ def _validate_archive_members(archive: tarfile.TarFile, manifest: dict[str, Any]
     expected = {"manifest.json"} | set(manifest_paths)
     actual_files = set()
     seen_members = set()
+    seen_paths = set()
     for member in archive.getmembers():
         if member.name in seen_members:
             raise ValueError(f"duplicate archive member: {member.name}")
@@ -136,6 +139,10 @@ def _validate_archive_members(archive: tarfile.TarFile, manifest: dict[str, Any]
             continue
         rel = _safe_member_path(member.name)
         rel_name = rel.as_posix()
+        normalized_path = rel_name.casefold()
+        if normalized_path in seen_paths:
+            raise ValueError(f"duplicate normalized archive path: {rel_name}")
+        seen_paths.add(normalized_path)
         if member.isdir():
             prefix = rel_name.rstrip("/") + "/"
             if not any(name.startswith(prefix) for name in expected):
@@ -201,10 +208,38 @@ def restore_backup(backup: str | Path, staging_root: str | Path) -> Path:
 
 
 def prune_backups(directory: str | Path, *, keep: int = 5) -> list[Path]:
-    if keep < 1:
-        raise ValueError("keep must be at least 1")
+    """Prune verified backups only; make no deletions if any candidate is invalid.
+
+    Verification is performed for the full candidate set before the first unlink,
+    so a corrupt recent backup cannot cause older recovery points to be deleted.
+    """
+    if not isinstance(keep, int) or keep < 1:
+        raise ValueError("keep must be a positive integer")
     base = Path(directory)
-    backups = sorted(base.glob("xaita-backup-*.tar.gz"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not base.exists():
+        return []
+    if not base.is_dir():
+        raise ValueError(f"backup directory is not a directory: {base}")
+    backups = sorted(
+        base.glob("xaita-backup-*.tar.gz"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+
+    invalid: list[str] = []
+    for path in backups:
+        try:
+            result = verify_backup(path)
+            if not result.get("verified"):
+                invalid.append(f"{path.name}: checksum verification failed")
+        except Exception as exc:
+            invalid.append(f"{path.name}: {type(exc).__name__}: {exc}")
+    if invalid:
+        raise ValueError(
+            "refusing to prune backups because one or more candidate backups failed verification: "
+            + "; ".join(invalid)
+        )
+
     removed = backups[keep:]
     for path in removed:
         path.unlink()

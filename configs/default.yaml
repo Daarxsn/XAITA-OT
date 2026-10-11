@@ -26,11 +26,12 @@ attribution:
     DC: 0.70
     BSS: 0.80
     ECS: 0.85
-    EC: 0.80
     MAS: 0.65
   ambiguity_margin: 0.08
   support_threshold: 0.60
   conflict_threshold: 0.35
+  attack_technique_profiles: {}
+  behavior_profiles: {}
   methods:
     - DC
     - DC+BSS
@@ -43,19 +44,16 @@ attribution:
       DC: 1.00
       BSS: 1.00
       ECS: 1.00
-      EC: 1.00
       MAS: 1.00
     H2:
       DC: 0.95
       BSS: 1.00
       ECS: 0.80
-      EC: 0.90
       MAS: 0.90
     H3:
       DC: 0.85
       BSS: 0.80
       ECS: 0.70
-      EC: 0.75
       MAS: 0.80
 risk:
   weights:

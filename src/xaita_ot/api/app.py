@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import datetime, timezone
+import math
 import hmac
 import json
 import logging
@@ -14,7 +15,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .. import __version__
 from ..config import load_config
@@ -22,12 +23,23 @@ from ..core.schemas import DetectionEvent
 from ..io.dataset_validation import validate_csv
 from ..io.dataset_archive import prepare_dataset, preflight_archive
 from ..pipeline.engine import XAITAEngine
-from ..pipeline.experiments import attribution_configurations, run_detection
+from ..pipeline.experiments import attribution_configurations
+from ..operations.experiment_worker import ExperimentTimeoutError, run_detection_with_timeout
 
 VERSION = __version__
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _discover_project_root() -> Path:
+    """Find the runtime checkout root when this package is installed elsewhere."""
+    for candidate in (Path.cwd(), Path("/app"), _PROJECT_ROOT):
+        if (candidate / "pyproject.toml").is_file() and (candidate / "web" / "index.html").is_file():
+            return candidate.resolve()
+    return _PROJECT_ROOT
+
+
 _CONFIGURED_ROOT = os.environ.get("XAITA_OT_ROOT")
-ROOT = Path(_CONFIGURED_ROOT) if _CONFIGURED_ROOT else _PROJECT_ROOT
+ROOT = Path(_CONFIGURED_ROOT).resolve() if _CONFIGURED_ROOT else _discover_project_root()
 _DEFAULT_ROOT = ROOT
 MAX_EVENTS = int(os.environ.get("XAITA_MAX_EVENTS", "5000"))
 MAX_REQUEST_BYTES = max(1024, int(os.environ.get("XAITA_MAX_REQUEST_BYTES", str(8 * 1024 * 1024))))
@@ -42,7 +54,14 @@ MAX_CONCURRENT_EXPERIMENTS = max(1, int(os.environ.get("XAITA_MAX_CONCURRENT_EXP
 MAX_RETAINED_EXPERIMENT_JOBS = max(100, int(os.environ.get("XAITA_MAX_RETAINED_EXPERIMENT_JOBS", "1000")))
 _experiment_lifecycle_lock = threading.Lock()
 _experiment_jobs: dict[str, dict] = {}
-ENABLE_DOCS = os.environ.get("XAITA_ENABLE_DOCS", "true").lower() == "true"
+def _docs_enabled(environment: str, configured: str | None = None) -> bool:
+    """Keep interactive API documentation off by default outside development."""
+    if configured is not None:
+        return configured.strip().lower() == "true"
+    return environment.strip().lower() not in {"staging", "production"}
+
+
+ENABLE_DOCS = _docs_enabled(ENVIRONMENT, os.environ.get("XAITA_ENABLE_DOCS"))
 FORCE_HTTPS = os.environ.get("XAITA_FORCE_HTTPS", "false").lower() == "true"
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get("XAITA_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") if h.strip()]
 CORS_ORIGINS = [o.strip() for o in os.environ.get("XAITA_CORS_ORIGINS", "").split(",") if o.strip()]
@@ -76,9 +95,14 @@ def _dataset_status(path: str | None) -> dict:
             csv_count = 1
             sample = root.name
         elif root.is_dir():
-            csvs = list(root.rglob("*.csv")) + list(root.rglob("*.CSV"))
+            csvs = sorted({
+                item.resolve()
+                for pattern in ("*.csv", "*.CSV")
+                for item in root.rglob(pattern)
+                if item.is_file()
+            })
             csv_count = len(csvs)
-            sample = sorted(csvs)[0].name if csvs else None
+            sample = csvs[0].name if csvs else None
     return {"configured": bool(path), "exists": exists, "ready": exists and csv_count > 0, "csv_count": csv_count, "sample_file": sample, "path": path}
 
 
@@ -90,28 +114,90 @@ def _experiment_detector_name(name: str) -> str:
 def _find_dataset_csv(path: str | Path, dataset: str) -> Path:
     root = Path(path)
     if root.is_file():
+        if root.suffix.lower() != ".csv":
+            raise HTTPException(status_code=409, detail=f"{dataset} dataset file must be a CSV")
         return root
     if not root.is_dir():
         raise HTTPException(status_code=409, detail=f"{dataset} dataset path is configured but unavailable")
-    patterns = {"TON-IoT": ["**/train_test_network.csv", "**/Train_Test_IoT_*.csv", "**/*.csv"], "SWaT": ["**/*.csv", "**/*.CSV"], "BATADAL": ["**/*.csv", "**/*.CSV"]}.get(dataset, ["**/*.csv"])
-    candidates = []
-    for pattern in patterns:
-        candidates.extend(p for p in root.glob(pattern) if p.is_file())
-        if candidates:
-            break
+    # Enumerate all candidates before preference rules, otherwise the first
+    # glob pattern can hide a canonical file in a different nested folder.
+    candidates = sorted({
+        candidate
+        for candidate in root.rglob("*")
+        if candidate.is_file() and candidate.suffix.lower() == ".csv"
+    })
     if not candidates:
         raise HTTPException(status_code=409, detail=f"No CSV benchmark file found under {dataset} dataset path")
     if dataset == "TON-IoT":
         network = [p for p in candidates if p.name.lower() == "train_test_network.csv"]
-        if network:
+        if len(network) == 1:
             return network[0]
+        if len(network) > 1:
+            raise HTTPException(status_code=409, detail="Multiple TON-IoT train_test_network.csv files found; configure an explicit CSV path")
         iot = [p for p in candidates if "train_test_iot_modbus" in p.name.lower()]
-        if iot:
+        if len(iot) == 1:
             return iot[0]
-    return sorted(candidates)[0]
+        if len(iot) > 1:
+            raise HTTPException(status_code=409, detail="Multiple TON-IoT Modbus CSV candidates found; configure an explicit CSV path")
+    if len(candidates) == 1:
+        return candidates[0]
+    names = [p.relative_to(root).as_posix() for p in candidates[:5]]
+    suffix = " (showing first five)" if len(candidates) > 5 else ""
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            f"Ambiguous {dataset} dataset directory: found {len(candidates)} CSV files{suffix}. "
+            f"Configure a path to one validated, merged benchmark CSV. Candidates: {names}"
+        ),
+    )
 
 
 DATASET_PATHS = {"SWaT": _dataset_path("XAITA_SWAT_PATH", "data/raw/swat"), "BATADAL": _dataset_path("XAITA_BATADAL_PATH", "data/raw/batadal"), "TON-IoT": _dataset_path("XAITA_TONIOT_PATH", "data/raw/ton_iot")}
+
+class RequestBodyLimitMiddleware:
+    """Bound streamed request bodies even when Content-Length is absent."""
+
+    def __init__(self, app, max_bytes_getter):
+        self.app = app
+        self.max_bytes_getter = max_bytes_getter
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http" or scope.get("method") not in {"POST", "PUT", "PATCH"}:
+            await self.app(scope, receive, send)
+            return
+        max_bytes = max(1024, int(self.max_bytes_getter()))
+        chunks = []
+        total = 0
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            if message["type"] != "http.request":
+                continue
+            chunk = message.get("body", b"")
+            total += len(chunk)
+            if total > max_bytes:
+                response = JSONResponse(
+                    status_code=413,
+                    content={"detail": f"Maximum request body is {max_bytes} bytes"},
+                )
+                await response(scope, receive, send)
+                return
+            chunks.append(chunk)
+            if not message.get("more_body", False):
+                break
+        body = b"".join(chunks)
+        sent_body = False
+
+        async def replay_receive():
+            nonlocal sent_body
+            if not sent_body:
+                sent_body = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        await self.app(scope, replay_receive, send)
+
 
 app = FastAPI(title="XAITA-OT API", version=VERSION, description="Evidence-continuous OT/ICS security analytics API", docs_url="/docs" if ENABLE_DOCS else None, redoc_url="/redoc" if ENABLE_DOCS else None, openapi_url="/openapi.json" if ENABLE_DOCS else None)
 if ALLOWED_HOSTS:
@@ -121,6 +207,7 @@ if FORCE_HTTPS:
 if CORS_ORIGINS:
     app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_credentials=False, allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type", "X-XAITA-API-Key", "xaita-api-key", "X-Request-ID"])
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+app.add_middleware(RequestBodyLimitMiddleware, max_bytes_getter=lambda: MAX_REQUEST_BYTES)
 engine = XAITAEngine(load_config())
 
 
@@ -255,8 +342,25 @@ class EventIn(BaseModel):
     source: str = Field(default="unknown", min_length=1, max_length=128)
     destination: str = Field(default="unknown", min_length=1, max_length=128)
     label: str = Field(default="unknown", min_length=1, max_length=128)
-    detection_confidence: float = Field(ge=0, le=1)
+    detection_confidence: float = Field(ge=0, le=1, allow_inf_nan=False)
     features: dict[str, float] = Field(default_factory=dict)
+
+    @field_validator("timestamp")
+    @classmethod
+    def timestamp_must_be_timezone_aware(cls, value):
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("timestamp must include a timezone offset")
+        return value.astimezone(timezone.utc)
+
+    @field_validator("features")
+    @classmethod
+    def features_must_be_finite(cls, value):
+        for name, feature_value in value.items():
+            if not str(name).strip():
+                raise ValueError("feature names must be non-empty")
+            if not math.isfinite(float(feature_value)):
+                raise ValueError(f"feature '{name}' must be finite")
+        return value
 
 
 class ExperimentJob(BaseModel):
@@ -492,18 +596,32 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
                     "manifest": validation.as_dict(),
                 },
             )
-        run = run_detection(csv_path, payload.dataset, load_config(), seed=payload.seed, detector=detector_key)
+        run = run_detection_with_timeout(
+            csv_path, payload.dataset, load_config(), seed=payload.seed,
+            detector=detector_key, timeout_seconds=EXPERIMENT_TIMEOUT_SECONDS,
+            project_root=ROOT,
+        )
         duration = round(time.monotonic() - started, 3)
-        if duration > EXPERIMENT_TIMEOUT_SECONDS:
-            with _experiment_lifecycle_lock:
-                _experiment_jobs[job_id].update({
-                    "status": "timed_out", "finished_at": datetime.utcnow().isoformat() + "Z",
-                    "duration_seconds": duration, "error_type": "ExperimentTimeout",
-                    "error": f"Experiment exceeded {EXPERIMENT_TIMEOUT_SECONDS:g}s execution deadline",
-                })
-            raise HTTPException(status_code=504, detail={"message": "Experiment exceeded execution deadline", "job_id": job_id, "timeout_seconds": EXPERIMENT_TIMEOUT_SECONDS})
         with _experiment_lifecycle_lock:
             _experiment_jobs[job_id].update({"status": "completed", "finished_at": datetime.utcnow().isoformat() + "Z", "duration_seconds": duration})
+    except ExperimentTimeoutError as exc:
+        duration = round(time.monotonic() - started, 3)
+        with _experiment_lifecycle_lock:
+            _experiment_jobs[job_id].update({
+                "status": "timed_out",
+                "finished_at": datetime.utcnow().isoformat() + "Z",
+                "duration_seconds": duration,
+                "error_type": "ExperimentTimeout",
+                "error": "Isolated experiment worker was terminated at the execution deadline.",
+            })
+        raise HTTPException(
+            status_code=504,
+            detail={
+                "message": "Experiment exceeded its execution deadline; the worker was terminated.",
+                "job_id": job_id,
+                "timeout_seconds": EXPERIMENT_TIMEOUT_SECONDS,
+            },
+        ) from exc
     except HTTPException as exc:
         with _experiment_lifecycle_lock:
             _experiment_jobs[job_id].update({
@@ -516,7 +634,7 @@ def run_v2_experiment(payload: ExperimentIn, request: Request, xaita_api_key: st
         raise
     except Exception as exc:
         duration = round(time.monotonic() - started, 3)
-        error_type = type(exc).__name__
+        error_type = getattr(exc, "error_type", type(exc).__name__)
         with _experiment_lifecycle_lock:
             _experiment_jobs[job_id].update({
                 "status": "failed", "finished_at": datetime.utcnow().isoformat() + "Z",

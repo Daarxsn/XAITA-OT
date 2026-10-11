@@ -1,6 +1,7 @@
 from pathlib import Path
 import pandas as pd
 from .taxonomy import harmonize_columns
+from .csv_headers import duplicate_column_names, read_csv_header
 
 REQUIRED_MIN = {"timestamp"}
 
@@ -23,8 +24,37 @@ def load_csv(
     source = Path(path)
     if not source.is_file():
         raise FileNotFoundError(source)
+    # Inspect the source header before pandas can rewrite duplicate names such
+    # as "label,label" into "label,label.1".
+    columns = read_csv_header(source)
+    if any(not column for column in columns):
+        raise ValueError(f"Blank column name in source CSV: {source}")
+    duplicates = duplicate_column_names(columns)
+    if duplicates:
+        raise ValueError(f"Duplicate columns in source CSV: {duplicates}")
     df = pd.read_csv(source)
     df.columns = [str(c).strip() for c in df.columns]
+    # Some TON-IoT files store date and clock time in separate columns.
+    # Combine before taxonomy harmonization could mistake "time" alone for the
+    # event timestamp and sort/deduplicate records by time-of-day.
+    raw_columns = {str(column).strip().lower(): column for column in df.columns}
+    explicit_timestamp_aliases = {"timestamp", "datetime", "ts", "date_time", "date time"}
+    if (
+        "timestamp" not in raw_columns
+        and not (explicit_timestamp_aliases & set(raw_columns))
+        and "date" in raw_columns
+        and "time" in raw_columns
+    ):
+        date_column = raw_columns["date"]
+        time_column = raw_columns["time"]
+        df["timestamp"] = pd.to_datetime(
+            df[date_column].astype(str).str.strip()
+            + " "
+            + df[time_column].astype(str).str.strip(),
+            errors="coerce",
+            utc=True,
+            dayfirst=True,
+        )
     if len(df.columns) != len(set(df.columns)):
         duplicates = sorted({c for c in df.columns if list(df.columns).count(c) > 1})
         raise ValueError(f"Duplicate columns: {duplicates}")
@@ -34,7 +64,9 @@ def load_csv(
         raise ValueError(f"Missing required columns: {sorted(missing)}")
     if "timestamp" not in df.columns:
         return df
-    parsed = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
+    # SWaT, BATADAL, and TON-IoT include day-first timestamps as well as ISO
+    # timestamps. ISO year-first values remain unambiguous with dayfirst enabled.
+    parsed = pd.to_datetime(df["timestamp"], errors="coerce", utc=True, dayfirst=True)
     invalid = int(parsed.isna().sum())
     duplicate_timestamps = int(parsed.dropna().duplicated().sum())
     out_of_order = bool(not parsed.dropna().is_monotonic_increasing)

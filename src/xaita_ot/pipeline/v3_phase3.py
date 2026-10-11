@@ -25,18 +25,20 @@ from ..core.seed import set_seed
 from ..io.adapters import adapt_dataset
 from ..io.telemetry import load_csv, semantic_harmonize
 from ..io.dataset_validation import validate_csv, DatasetValidationError
-from .evaluation import chronological_split, expected_calibration_error
+from .evaluation import chronological_split, expected_calibration_error, _validate_binary_labels
 from .preprocess import OTPreprocessor
 
 
 def confidence_bins(y, p, bins: int = 10) -> list[dict]:
     """Return empirical confidence/accuracy statistics for fixed probability bins."""
-    y = np.asarray(y).astype(int)
+    y = _validate_binary_labels(y)
     p = np.asarray(p, dtype=float)
-    if len(y) != len(p) or len(y) == 0:
-        raise ValueError("labels and probabilities must be non-empty and aligned")
-    if not 1 <= bins <= 100:
-        raise ValueError("bins must be between 1 and 100")
+    if p.ndim != 1 or len(y) != len(p):
+        raise ValueError("labels and probabilities must be one-dimensional, non-empty and aligned")
+    if isinstance(bins, bool) or not isinstance(bins, int) or not 1 <= bins <= 100:
+        raise ValueError("bins must be an integer between 1 and 100")
+    if not np.isfinite(p).all() or np.any((p < 0.0) | (p > 1.0)):
+        raise ValueError("probabilities must be finite and in [0, 1]")
     edges = np.linspace(0.0, 1.0, bins + 1)
     rows = []
     for i, (lo, hi) in enumerate(zip(edges[:-1], edges[1:])):
@@ -52,12 +54,21 @@ def confidence_bins(y, p, bins: int = 10) -> list[dict]:
 
 def reliability_summary(y, p, bins: int = 10) -> dict:
     """Compute ECE, Brier score and confidence-bin data without silently altering scores."""
-    y = np.asarray(y).astype(int)
-    p = np.asarray(p, dtype=float)
-    if len(y) != len(p) or not len(y):
+    try:
+        raw_y = np.asarray(y, dtype=float)
+        p = np.asarray(p, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("labels must be binary and probabilities must be numeric") from exc
+    if len(raw_y) != len(p) or not len(raw_y):
         raise ValueError("labels and probabilities must be non-empty and aligned")
-    if not np.isin(y, [0, 1]).all() or not np.isfinite(p).all() or np.any((p < 0.0) | (p > 1.0)):
+    if (
+        not np.isfinite(raw_y).all()
+        or not np.isin(raw_y, [0, 1]).all()
+        or not np.isfinite(p).all()
+        or np.any((p < 0.0) | (p > 1.0))
+    ):
         raise ValueError("labels must be binary and probabilities must be finite in [0, 1]")
+    y = raw_y.astype(int)
     return {
         "ece": float(expected_calibration_error(y, p, bins)),
         "brier": float(brier_score_loss(y, p)),
@@ -112,8 +123,11 @@ def _window_context_scores(train_df: pd.DataFrame, test_df: pd.DataFrame, train_
     row_change = np.clip((diffs / std).mean(axis=1).to_numpy() / 4.0, 0.0, 1.0)
 
     def roll(values):
-        out = np.convolve(values, np.ones(window_size) / window_size, mode="valid")
-        return out[:len(train_w.X)] if len(out) >= len(train_w.X) else np.pad(out, (0, len(train_w.X) - len(out)), mode="edge")
+        # These inputs come from test_df, so outputs must align to test windows
+        # (len(test_df) - window_size + 1), never train_w length.
+        if len(values) < window_size:
+            return np.array([], dtype=float)
+        return np.convolve(values, np.ones(window_size) / window_size, mode="valid")
 
     return {"BSS": roll(row_anomaly), "ECS": roll(row_dispersion), "EC": roll(row_range), "MAS": roll(row_change)}
 
@@ -215,7 +229,22 @@ def run_phase3(paths: dict[str, str], cfg: AppConfig, seeds=None, bins: int = 10
     def agg(values):
         a = np.asarray(values, dtype=float)
         return {"mean": float(a.mean()), "std": float(a.std(ddof=1)) if len(a) > 1 else 0.0, "n": int(len(a))}
-    return {"phase": "V3.3", "status": "PASS", "datasets": list(paths), "seeds": seeds, "bins": bins, "runs": results, "ece_summary": {k: agg(v) for k, v in by_method.items()}}
+    return {
+        "phase": "V3.3",
+        "status": "PASS",
+        "paper_grade_attribution_calibration": False,
+        "evidence_mode": "proxy_telemetry_statistics",
+        "limitations": [
+            "WEF/ACFM channels use telemetry-statistic proxies rather than the manuscript-defined BSS/ECS/MAS evidence.",
+            "Fusion scores are compared with binary attack labels; they are not calibrated actor-attribution probabilities.",
+            "Only detector ECE/Brier values should be interpreted as detector calibration results.",
+        ],
+        "datasets": list(paths),
+        "seeds": seeds,
+        "bins": bins,
+        "runs": results,
+        "ece_summary": {k: agg(v) for k, v in by_method.items()},
+    }
 
 
 def write_phase3_artifacts(result: dict, out_dir: str | Path) -> dict[str, str]:
