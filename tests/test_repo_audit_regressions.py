@@ -187,21 +187,24 @@ def test_request_body_limit_middleware_rejects_streamed_oversize_body():
 
 
 
-def test_multi_asset_consistency_rewards_repeated_known_context():
-    from types import SimpleNamespace
-    from datetime import datetime, timezone
+def test_mas_matches_attack_technique_profile_jaccard():
     from xaita_ot.pipeline.engine import XAITAEngine
 
-    timestamp = datetime(2026, 10, 11, tzinfo=timezone.utc)
-    repeated = SimpleNamespace(events=[
-        SimpleNamespace(asset="PLC-1", protocol="modbus", label="normal", detection_confidence=0.8),
-        SimpleNamespace(asset="PLC-1", protocol="modbus", label="normal", detection_confidence=0.8),
-    ])
-    varied = SimpleNamespace(events=[
-        SimpleNamespace(asset="PLC-1", protocol="modbus", label="normal", detection_confidence=0.8),
-        SimpleNamespace(asset="PLC-2", protocol="opc-ua", label="attack", detection_confidence=0.8),
-    ])
-    assert XAITAEngine._mas(repeated) > XAITAEngine._mas(varied)
+    context = [
+        {"technique_id": "T0846"},
+        {"technique_id": "T0855"},
+        {"technique_id": "T0831"},
+    ]
+    # Intersection={T0846,T0855}; union={T0846,T0855,T0831,T0869}.
+    score = XAITAEngine._mas(context, ["T0846", "T0855", "T0869"])
+    assert score == pytest.approx(2 / 4)
+
+
+def test_mas_is_unavailable_without_reference_profile():
+    from xaita_ot.pipeline.engine import XAITAEngine
+
+    assert XAITAEngine._mas([{"technique_id": "T0869"}], None) is None
+
 
 
 def test_api_rejects_naive_event_timestamp_and_nonfinite_features():
@@ -462,3 +465,25 @@ def test_backup_verification_rejects_duplicate_normalized_paths(tmp_path):
     with tarfile.open(archive_path, "r:gz") as archive:
         with pytest.raises(ValueError, match="duplicate normalized archive path"):
             _validate_archive_members(archive, manifest)
+
+
+def test_attack_technique_profiles_require_unique_valid_ids():
+    from xaita_ot.config import AttributionConfig
+
+    config = AttributionConfig(attack_technique_profiles={
+        "H1": ["T0846", "T0855.001"],
+    })
+    assert config.attack_technique_profiles["H1"] == ["T0846", "T0855.001"]
+    with pytest.raises(ValueError, match="invalid ATT&CK technique ID"):
+        AttributionConfig(attack_technique_profiles={"H1": ["not-a-technique"]})
+    with pytest.raises(ValueError, match="duplicate technique IDs"):
+        AttributionConfig(attack_technique_profiles={"H1": ["T0846", "T0846"]})
+
+
+def test_legacy_ec_attribution_reliability_is_migrated_to_eCS_only():
+    from xaita_ot.config import AttributionConfig
+
+    cfg = AttributionConfig(reliability={
+        "DC": 0.7, "BSS": 0.8, "ECS": 0.85, "EC": 0.8, "MAS": 0.65
+    })
+    assert set(cfg.reliability) == {"DC", "BSS", "ECS", "MAS"}

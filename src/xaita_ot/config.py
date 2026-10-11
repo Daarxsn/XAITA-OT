@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 from pydantic import BaseModel, Field, field_validator, model_validator
 import yaml
 import math
@@ -65,8 +66,9 @@ class CorrelationConfig(BaseModel):
 
 class AttributionConfig(BaseModel):
     reliability: dict[str, float] = Field(default_factory=lambda: {
-        "DC": 0.70, "BSS": 0.80, "ECS": 0.85, "EC": 0.80, "MAS": 0.65
+        "DC": 0.70, "BSS": 0.80, "ECS": 0.85, "MAS": 0.65
     })
+    attack_technique_profiles: dict[str, list[str]] = Field(default_factory=dict)
     ambiguity_margin: float = 0.08
     support_threshold: float = 0.60
     conflict_threshold: float = 0.35
@@ -74,20 +76,47 @@ class AttributionConfig(BaseModel):
         "DC", "DC+BSS", "DC+BSS+ECS", "DC+BSS+ECS+MAS", "WEF", "ACFM"
     ])
     hypothesis_profiles: dict[str, dict[str, float]] = Field(default_factory=lambda: {
-        "H1": {"DC": 1.00, "BSS": 1.00, "ECS": 1.00, "EC": 1.00, "MAS": 1.00},
-        "H2": {"DC": 0.95, "BSS": 1.00, "ECS": 0.80, "EC": 0.90, "MAS": 0.90},
-        "H3": {"DC": 0.85, "BSS": 0.80, "ECS": 0.70, "EC": 0.75, "MAS": 0.80},
+        "H1": {"DC": 1.00, "BSS": 1.00, "ECS": 1.00, "MAS": 1.00},
+        "H2": {"DC": 0.95, "BSS": 1.00, "ECS": 0.80, "MAS": 0.90},
+        "H3": {"DC": 0.85, "BSS": 0.80, "ECS": 0.70, "MAS": 0.80},
     })
+
+    @field_validator("reliability", mode="before")
+    @classmethod
+    def migrate_legacy_ec_reliability(cls, value):
+        # Earlier configs represented event correlation twice (EC and ECS).
+        # The research model defines ECS as Event Correlation Strength.
+        if isinstance(value, dict) and "EC" in value:
+            value = {key: item for key, item in value.items() if key != "EC"}
+        return value
 
     @field_validator("reliability")
     @classmethod
     def reliability_valid(cls, value):
-        required = {"DC", "BSS", "ECS", "EC", "MAS"}
+        required = {"DC", "BSS", "ECS", "MAS"}
         if set(value) != required:
             raise ValueError(f"attribution reliability must contain exactly {sorted(required)}")
         if any(not math.isfinite(float(v)) or not 0.0 <= float(v) <= 1.0 for v in value.values()):
             raise ValueError("attribution reliability values must be finite and in [0, 1]")
         return {str(k): float(v) for k, v in value.items()}
+
+    @field_validator("attack_technique_profiles")
+    @classmethod
+    def attack_profiles_valid(cls, value):
+        normalized = {}
+        for hypothesis, techniques in value.items():
+            name = str(hypothesis).strip()
+            if not name:
+                raise ValueError("attack technique profile names must be non-empty")
+            if not isinstance(techniques, list) or not techniques:
+                raise ValueError(f"attack technique profile '{name}' must contain at least one technique ID")
+            ids = [str(item).strip().upper() for item in techniques]
+            if any(not re.fullmatch(r"T\d{4}(?:\.\d{3})?", item) for item in ids):
+                raise ValueError(f"attack technique profile '{name}' contains an invalid ATT&CK technique ID")
+            if len(ids) != len(set(ids)):
+                raise ValueError(f"attack technique profile '{name}' contains duplicate technique IDs")
+            normalized[name] = ids
+        return normalized
 
     @field_validator("methods")
     @classmethod

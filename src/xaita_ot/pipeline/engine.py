@@ -1,5 +1,3 @@
-from collections import Counter
-
 import numpy as np
 
 from ..config import AppConfig
@@ -19,31 +17,26 @@ class XAITAEngine:
         self.attack_mapping = load_attack_map()
 
     @staticmethod
-    def _mas(episode):
-        if not episode.events:
+    def _mas(context, reference_techniques=None):
+        """Return Jaccard alignment with a hypothesis's ATT&CK reference profile.
+
+        None indicates that no reference profile is configured; missing profile
+        evidence must not be interpreted as evidence against a hypothesis.
+        """
+        if not reference_techniques:
+            return None
+        reference = {str(value).strip().upper() for value in reference_techniques}
+        observed = {
+            str(item.get("technique_id", "")).strip().upper()
+            for item in (context or [])
+            if item.get("technique_id")
+        }
+        if not reference:
+            return None
+        if not observed:
             return 0.0
-        assets = [e.asset for e in episode.events]
-        protocols = [e.protocol for e in episode.events]
-        labels = [e.label for e in episode.events]
-
-        def consistency(values):
-            known = [
-                str(value).strip().lower()
-                for value in values
-                if value is not None
-                and str(value).strip().lower() not in {"", "unknown", "n/a", "none", "null"}
-            ]
-            if not known:
-                return 0.0
-            return max(Counter(known).values()) / len(values)
-
-        # Reward repeated known asset/protocol identities, not diversity. Unknown
-        # values stay in the denominator so missing context lowers confidence.
-        asset_consistency = consistency(assets)
-        protocol_consistency = consistency(protocols)
-        behavior_consistency = sum(1 for i in range(1, len(labels)) if labels[i] == labels[i - 1]) / max(1, len(labels) - 1)
-        detection_consistency = float(np.mean([e.detection_confidence for e in episode.events]))
-        return float(np.clip(0.30 * asset_consistency + 0.20 * protocol_consistency + 0.20 * behavior_consistency + 0.30 * detection_consistency, 0.0, 1.0))
+        union = observed | reference
+        return float(len(observed & reference) / len(union)) if union else 0.0
 
     def _hypothesis_evidence(self, base, hypotheses):
         profiles = self.config.attribution.hypothesis_profiles
@@ -70,17 +63,27 @@ class XAITAEngine:
             ctx = contextualize(ep, self.attack_mapping)
             dc = float(np.mean([e.detection_confidence for e in ep.events]))
             bss = float(np.clip(0.45 + 0.35 * ep.correlation_strength + 0.20 * dc, 0.0, 1.0))
-            coverage = len(ctx) / max(1, len(ep.events))
-            ecs = float(np.clip(0.45 + 0.30 * coverage, 0.0, 0.75))
-            ec = float(ep.correlation_strength)
-            mas = self._mas(ep)
-            base = {"DC": dc, "BSS": bss, "ECS": ecs, "EC": ec, "MAS": mas}
+            # ECS is the measured event-correlation strength. Avoid inventing a
+            # separate "EC" source from the same episode or ATT&CK coverage.
+            ecs = float(np.clip(ep.correlation_strength, 0.0, 1.0))
+            base = {"DC": dc, "BSS": bss, "ECS": ecs}
             evidence = self._hypothesis_evidence(base, hypotheses)
+            for hypothesis in hypotheses:
+                reference_techniques = self.config.attribution.attack_technique_profiles.get(hypothesis)
+                mas = self._mas(ctx, reference_techniques)
+                if mas is not None:
+                    modifier = self.config.attribution.hypothesis_profiles.get(hypothesis, {}).get("MAS", 1.0)
+                    evidence[hypothesis]["MAS"] = float(np.clip(mas * modifier, 0.0, 1.0))
             attrs = assess(hypotheses, evidence, self.config.attribution.reliability, self.config.attribution.support_threshold, self.config.attribution.conflict_threshold)
             validate_assessments(attrs)
             best = to_dict(attrs[0]) if attrs else None
             if best is not None:
                 best["evidence_vector"] = evidence.get(best["hypothesis"], {})
+                best["mas_status"] = (
+                    "available"
+                    if best["hypothesis"] in self.config.attribution.attack_technique_profiles
+                    else "unavailable_missing_reference_profile"
+                )
                 best["alternatives"] = [to_dict(a) for a in attrs[1:]]
                 best["interpretation"] = (
                     "narrow interval" if best["interval_width"] <= 0.10
