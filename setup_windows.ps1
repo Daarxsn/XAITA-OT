@@ -34,10 +34,27 @@ if (-not $py312) {
         Write-Host "Enable the Python Launcher. Then reopen this folder and rerun SETUP_WINDOWS.cmd."
         exit 2
     }
-    Write-Host "Installing Python 3.12 for this user..." -ForegroundColor Yellow
-    & $winget.Source install --exact --id Python.Python.3.12 --source winget --scope user --accept-package-agreements --accept-source-agreements
+    Write-Host "Installing the official Python install manager..." -ForegroundColor Yellow
+    & $winget.Source install 9NQ7512CXL7T --accept-package-agreements --accept-source-agreements
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "Automatic install failed. Install Python from https://www.python.org/downloads/windows/ then rerun SETUP_WINDOWS.cmd." -ForegroundColor Red
+        Write-Host "Automatic install failed. Open https://www.python.org/downloads/windows/ and install the Python install manager, then rerun SETUP_WINDOWS.cmd." -ForegroundColor Red
+        exit 2
+    }
+
+    # Refresh this PowerShell process's PATH after the per-user manager install.
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if ($userPath) { $env:Path = $env:Path + ";" + $userPath }
+    $env:Path = $env:Path + ";" + "$env:LOCALAPPDATA\Microsoft\WindowsApps"
+    $launcher = Get-Command py.exe -ErrorAction SilentlyContinue
+    if (-not $launcher) {
+        Write-Host "Python manager installed. Close this window, reopen SETUP_WINDOWS.cmd, and run setup again." -ForegroundColor Yellow
+        exit 2
+    }
+
+    Write-Host "Installing the Python 3.12 runtime..." -ForegroundColor Yellow
+    & $launcher.Source install 3.12
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Could not install the Python 3.12 runtime. Close and rerun setup, or follow https://www.python.org/downloads/windows/." -ForegroundColor Red
         exit 2
     }
     $py312 = Find-Python312
