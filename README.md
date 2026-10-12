@@ -60,7 +60,7 @@ XAITA-OT is an **analyst-support security analytics system**. It does not issue 
 
 1. Download the [source ZIP](https://github.com/Daarxsn/XAITA-OT/archive/refs/heads/main.zip) and fully extract it to a writable folder, such as `Documents\XAITA-OT`.
 2. Open the extracted `XAITA-OT` folder.
-3. Double-click `SETUP_WINDOWS.cmd`. It detects Python 3.12 or installs it for the current user with Windows Package Manager (`winget`), creates a project-local `.venv`, installs dependencies, and runs demo/data/API import smoke checks. Git is not required. Internet access and sufficient disk space are required. If `winget` is unavailable, the setup script prints the official Python installation instructions.
+3. Double-click `SETUP_WINDOWS.cmd`. It detects Python 3.12 or installs the official Python install manager through Windows Package Manager (`winget`), then uses the manager to install the Python 3.12 runtime. It creates a project-local `.venv`, installs dependencies, and runs demo/data/API import smoke checks. Git is not required. Internet access and sufficient disk space are required. If `winget` is unavailable, the setup script prints the official Python installation instructions.
 4. After setup reports success, double-click `RUN_DASHBOARD.cmd`. It starts the local API, checks the health endpoint, then opens the dashboard in your default browser. Keep the launcher window open while using XAITA-OT.
 
 Dashboard: `http://127.0.0.1:8080/`  
