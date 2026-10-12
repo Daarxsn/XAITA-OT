@@ -5,7 +5,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_windows_setup_installs_or_detects_python_and_runs_smokes():
     setup = (ROOT / "setup_windows.ps1").read_text(encoding="utf-8")
-    assert "Python.Python.3.12" in setup
+    assert "9NQ7512CXL7T" in setup
+    assert "install 3.12" in setup
     assert "https://www.python.org/downloads/windows/" in setup
     assert "pip install -e ." in setup
     assert "synthetic_smoke.csv" in setup
