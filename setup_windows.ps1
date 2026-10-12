@@ -50,10 +50,10 @@ if (-not $py312) {
 $venv = Join-Path $Root ".venv"
 $venvPython = Join-Path $venv "Scripts\python.exe"
 if (-not (Test-Path $venvPython)) {
-    $args = @()
-    $args += $py312.prefix
-    $args += @("-m", "venv", $venv)
-    & $py312.exe @args
+    $venvArgs = @()
+    $venvArgs += $py312.prefix
+    $venvArgs += @("-m", "venv", $venv)
+    & $py312.exe @venvArgs
     if ($LASTEXITCODE -ne 0) { throw "Unable to create the Python virtual environment." }
 }
 
