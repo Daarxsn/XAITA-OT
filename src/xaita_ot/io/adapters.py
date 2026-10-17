@@ -68,7 +68,7 @@ def adapt_swat(df):
 
 
 def adapt_batadal(df):
-    return _adapt(df, ('DATETIME',), ('label','Label','attack','Attack','attack_label'), 'BATADAL', 'water-process')
+    return _adapt(df, ('DATETIME',), ('label','Label','ATT_FLAG','attack','Attack','attack_label'), 'BATADAL', 'water-process')
 
 
 def adapt_toniot(df):
