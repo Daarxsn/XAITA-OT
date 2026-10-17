@@ -7,7 +7,7 @@ def test_all_v2_adapters_harmonize_native_timestamp_and_labels(tmp_path):
     fixtures = {
         "SWaT": {"Timestamp": ["2026-01-01T00:00:00Z", "2026-01-01T00:00:01Z"], "Label": ["Normal", "Attack"]},
         "BATADAL": {"DATETIME": ["2026-01-01T00:00:00Z", "2026-01-01T00:00:01Z"], "attack": [0, 1]},
-        "TON-IoT": {"ts": ["2026-01-01T00:00:00Z", "2026-01-01T00:00:01Z"], "type": ["normal", "attack"]},
+        "TON-IoT": {"ts": ["2026-01-01T00:00:00Z", "2026-01-01T00:00:01Z"], "type": ["normal", "attack"], "label": [0, 1]},
     }
     for dataset, values in fixtures.items():
         path = tmp_path / f"{dataset}.csv"
@@ -37,3 +37,26 @@ def test_unknown_dataset_rejected():
         assert "Unsupported V2 dataset" in str(exc)
     else:
         raise AssertionError("unknown dataset must be rejected")
+
+
+
+def test_toniot_categorical_type_is_not_used_as_binary_ground_truth():
+    import pytest
+
+    df = pd.DataFrame({
+        "ts": ["2026-01-01T00:00:00Z", "2026-01-01T00:00:01Z"],
+        "type": ["normal", "backdoor"],
+    })
+    with pytest.raises(ValueError, match="No explicit binary ground-truth label column"):
+        adapt_dataset(df, "TON-IoT")
+
+
+def test_adapter_fails_closed_when_no_dataset_label_exists():
+    import pytest
+
+    df = pd.DataFrame({
+        "Timestamp": ["2026-01-01T00:00:00Z"],
+        "sensor": [1.25],
+    })
+    with pytest.raises(ValueError, match="No explicit binary ground-truth label column"):
+        adapt_dataset(df, "SWaT")
