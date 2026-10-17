@@ -235,10 +235,10 @@ def test_swat_prefers_explicit_attack_state_over_generic_attack_metadata(tmp_pat
 def test_toniot_categorical_type_is_not_misclassified_as_binary_ground_truth(tmp_path):
     path = _write(
         tmp_path / "Train_Test_Network.csv",
-        "ts,type,feature\\n"
-        "2026-01-01T00:00:00Z,normal,1.0\\n"
-        "2026-01-01T00:00:01Z,backdoor,2.0\\n"
-        "2026-01-01T00:00:02Z,ddos,3.0\\n",
+        "ts,type,feature\n"
+        "2026-01-01T00:00:00Z,normal,1.0\n"
+        "2026-01-01T00:00:01Z,backdoor,2.0\n"
+        "2026-01-01T00:00:02Z,ddos,3.0\n",
     )
     result = validate_csv(path, "TON-IoT", tmp_path)
     assert result.label_column is None
