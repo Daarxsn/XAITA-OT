@@ -25,6 +25,14 @@ Use `adapt_batadal()` and validate timestamp/attack-label semantics against the 
 
 Use `adapt_toniot()` and validate the selected telemetry/network/security subset and label definition.
 
+## Ground-truth label integrity
+
+Adapters do not infer ground truth from arbitrary feature/category columns. TON-IoT's `type` field is not treated as a binary target; supply an explicit binary `label` (or a supported explicit label alias). Missing labels, unknown categorical values, and negative numeric sentinels such as BATADAL's `ATT_FLAG=-999` are rejected by the generic V2 adapter rather than silently converted to benign or attack.
+
+For BATADAL, apply the reviewed attack-interval metadata through the dedicated BATADAL dataset adapter before using interval-derived labels. Keep the native `ATT_FLAG` values intact for provenance; interval-derived labels are a separate field and do not overwrite native unknown values. Resolve unknowns according to the dataset's documented labeling policy before supervised evaluation.
+
+Supported normalized categorical values are explicit: benign (`normal`, `benign`, `0`, `0.0`, `false`, `no`) and attack (`attack`, `anomaly`, `malicious`, `1`, `1.0`, `true`, `yes`). Any other category requires dataset-specific mapping and review.
+
 ## Evaluation rule
 
 Do not train on the complete dataset and report that score as a test result. Use chronological or attack-episode-aware 70/15/15 partitions, fit preprocessing only on training data, and retain attack episodes in one partition.
