@@ -15,6 +15,12 @@ def normalize_labels(df: pd.DataFrame, candidates=('label','Label','Normal/Attac
         numeric = pd.to_numeric(vals, errors="coerce")
         if numeric.isna().any():
             raise ValueError(f"Label column '{source}' contains non-numeric values that cannot be normalized")
+        if (numeric < 0).any():
+            unknown = sorted(float(value) for value in numeric[numeric < 0].unique())
+            raise ValueError(
+                f"Label column '{source}' contains negative/unknown sentinel values: {unknown[:8]}; "
+                "resolve dataset-specific unknown labels before binary normalization"
+            )
         out['label'] = (numeric > 0).astype(int)
         return out
     text = vals.astype(str).str.strip().str.lower()
