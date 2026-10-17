@@ -31,7 +31,7 @@ TIMESTAMP_ALIASES = {
 LABEL_ALIASES = {
     "SWaT": ("label", "Label", "Normal/Attack", "Attack State", "attack_state", "attack", "Attack"),
     "BATADAL": ("ATT_FLAG", "label", "Label", "attack", "Attack", "attack_label"),
-    "TON-IoT": ("label", "Label", "attack", "Attack", "type"),
+    # TON-IoT `type` is commonly a categorical attack-family field, not the\n    # binary ground-truth target. Never infer a binary label from it.\n    "TON-IoT": ("label", "Label", "attack", "Attack", "attack_label"),
 }
 
 BENIGN_VALUES = {"normal", "benign", "0", "0.0", "false", "no", "", "nan", "none", "null"}
