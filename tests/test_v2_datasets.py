@@ -72,3 +72,15 @@ def test_adapter_rejects_unknown_categorical_label_values():
     })
     with pytest.raises(ValueError, match="unknown/non-binary values"):
         adapt_dataset(df, "SWaT")
+
+
+
+def test_batadal_unknown_negative_label_sentinel_is_not_normalized_as_benign():
+    import pytest
+
+    df = pd.DataFrame({
+        "DATETIME": ["2026-01-01T00:00:00Z", "2026-01-01T01:00:00Z"],
+        "ATT_FLAG": [0, -999],
+    })
+    with pytest.raises(ValueError, match="negative/unknown sentinel values"):
+        adapt_dataset(df, "BATADAL")
