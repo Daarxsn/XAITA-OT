@@ -60,3 +60,15 @@ def test_adapter_fails_closed_when_no_dataset_label_exists():
     })
     with pytest.raises(ValueError, match="No explicit binary ground-truth label column"):
         adapt_dataset(df, "SWaT")
+
+
+
+def test_adapter_rejects_unknown_categorical_label_values():
+    import pytest
+
+    df = pd.DataFrame({
+        "Timestamp": ["2026-01-01T00:00:00Z", "2026-01-01T00:00:01Z"],
+        "Label": ["Normal", "backdoor"],
+    })
+    with pytest.raises(ValueError, match="unknown/non-binary values"):
+        adapt_dataset(df, "SWaT")
