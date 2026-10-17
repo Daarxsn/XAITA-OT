@@ -18,8 +18,15 @@ def normalize_labels(df: pd.DataFrame, candidates=('label','Label','Normal/Attac
         out['label'] = (numeric > 0).astype(int)
         return out
     text = vals.astype(str).str.strip().str.lower()
-    benign = {'normal', 'benign', '0', '0.0', 'false', 'no', '', 'nan', 'none', 'null'}
-    out['label'] = (~text.isin(benign)).astype(int)
+    benign = {'normal', 'benign', '0', '0.0', 'false', 'no'}
+    attack = {'attack', 'anomaly', 'malicious', '1', '1.0', 'true', 'yes'}
+    unknown = sorted(set(text) - benign - attack)
+    if unknown:
+        preview = ", ".join(repr(value) for value in unknown[:8])
+        raise ValueError(
+            f"Label column '{source}' contains unknown/non-binary values: {preview}"
+        )
+    out['label'] = text.isin(attack).astype(int)
     return out
 
 
