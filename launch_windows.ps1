@@ -4,13 +4,14 @@ $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Root
 $py = Join-Path $Root ".venv\Scripts\python.exe"
 $url = "http://127.0.0.1:8080"
+$healthUrl = "http://127.0.0.1:8080/health"
 
 if (-not (Test-Path $py)) {
     Write-Host "Run SETUP_WINDOWS.cmd first." -ForegroundColor Yellow
     exit 2
 }
 try {
-    $health = Invoke-WebRequest -Uri "$url/health" -UseBasicParsing -TimeoutSec 2
+    $health = Invoke-WebRequest -Uri $healthUrl -UseBasicParsing -TimeoutSec 2
     if ($health.StatusCode -eq 200) {
         Start-Process "$url/"
         Write-Host "XAITA-OT was already running; opened the dashboard."
@@ -29,7 +30,7 @@ try {
         $server.Refresh()
         if ($server.HasExited) { break }
         try {
-            $r = Invoke-WebRequest -Uri "$url/health" -UseBasicParsing -TimeoutSec 2
+            $r = Invoke-WebRequest -Uri $healthUrl -UseBasicParsing -TimeoutSec 2
             if ($r.StatusCode -eq 200) { $ready = $true; break }
         } catch { Start-Sleep -Seconds 1 }
     }
