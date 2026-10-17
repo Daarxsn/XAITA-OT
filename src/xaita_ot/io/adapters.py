@@ -2,13 +2,14 @@ import pandas as pd
 from .taxonomy import harmonize_columns
 
 
-def normalize_labels(df: pd.DataFrame, candidates=('label','Label','Normal/Attack','attack','Attack','Attack State','attack_label','type')):
+def normalize_labels(df: pd.DataFrame, candidates=('label','Label','Normal/Attack','attack','Attack','Attack State','attack_label')):
     """Normalize heterogeneous dataset labels to the canonical binary ``label``."""
     out = df.copy()
     source = next((c for c in candidates if c in out.columns), None)
     if source is None:
-        out['label'] = 0
-        return out
+        raise ValueError(
+            "No explicit binary ground-truth label column found; refusing to assume all rows are benign"
+        )
     vals = out[source]
     if pd.api.types.is_numeric_dtype(vals):
         numeric = pd.to_numeric(vals, errors="coerce")
@@ -45,7 +46,7 @@ def adapt_batadal(df):
 
 
 def adapt_toniot(df):
-    out = _adapt(df, ('ts',), ('label','Label','attack','Attack','type'), 'TON-IoT', 'iiot')
+    out = _adapt(df, ('ts',), ('label','Label','attack','Attack','attack_label'), 'TON-IoT', 'iiot')
     if {'date', 'time'}.issubset(out.columns):
         out['timestamp'] = pd.to_datetime(
             out['date'].astype(str).str.strip() + ' ' + out['time'].astype(str).str.strip(),
