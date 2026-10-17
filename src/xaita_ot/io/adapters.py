@@ -2,7 +2,7 @@ import pandas as pd
 from .taxonomy import harmonize_columns
 
 
-def normalize_labels(df: pd.DataFrame, candidates=('label','Label','Normal/Attack','attack','Attack','Attack State','attack_label')):
+def normalize_labels(df: pd.DataFrame, candidates=('label','Label','Normal/Attack','attack','Attack','Attack State','attack_label','ATT_FLAG')):
     """Normalize heterogeneous dataset labels to the canonical binary ``label``."""
     out = df.copy()
     source = next((c for c in candidates if c in out.columns), None)
@@ -24,7 +24,20 @@ def normalize_labels(df: pd.DataFrame, candidates=('label','Label','Normal/Attac
         out['label'] = (numeric > 0).astype(int)
         return out
     text = vals.astype(str).str.strip().str.lower()
-    benign = {'normal', 'benign', '0', '0.0', 'false', 'no'}
+    # Some explicit ground-truth fields (notably SWaT Attack State) use
+    # numeric state codes beyond 0/1. Preserve their documented binary meaning:
+    # zero/blank/false are benign; any positive numeric state is an attack.
+    numeric_text = pd.to_numeric(text.replace({"": "0", "false": "0", "true": "1"}), errors="coerce")
+    if numeric_text.notna().all():
+        if (numeric_text < 0).any():
+            unknown = sorted(float(value) for value in numeric_text[numeric_text < 0].unique())
+            raise ValueError(
+                f"Label column '{source}' contains negative/unknown sentinel values: {unknown[:8]}; "
+                "resolve dataset-specific unknown labels before binary normalization"
+            )
+        out['label'] = (numeric_text > 0).astype(int)
+        return out
+    benign = {'normal', 'benign', '0', '0.0', 'false', 'no', ''}
     attack = {'attack', 'anomaly', 'malicious', '1', '1.0', 'true', 'yes'}
     unknown = sorted(set(text) - benign - attack)
     if unknown:
